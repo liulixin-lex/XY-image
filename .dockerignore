@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.next
+**/out
+**/.turbo
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.local.example
+**/credentials
+**/*.log
+apps/web
