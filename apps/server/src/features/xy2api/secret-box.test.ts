@@ -11,7 +11,10 @@ describe("secret box", () => {
   });
   it.each([0, 1, 2, 3])("rejects tampering with segment %i", (index) => {
     const parts = box.sealSecret("synthetic credential").split(".");
-    parts[index] = `x${parts[index]?.slice(1)}`;
+    const original = parts[index] ?? "";
+    const replacement = original.startsWith("x") ? "y" : "x";
+    parts[index] = `${replacement}${original.slice(1)}`;
+    expect(parts[index]).not.toBe(original);
     expect(() => box.openSecret(parts.join("."))).toThrow();
   });
   it("rejects a different key", () => {
