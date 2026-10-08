@@ -14,6 +14,7 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import type { TaskDrain } from "../lifecycle/drain-tasks.js";
 import type {
   AuthenticatedUser,
   RequestAuthenticator,
@@ -25,6 +26,7 @@ import { createPipelineLogger } from "./logger.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
+  taskDrain: TaskDrain;
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   createUserClient?: (token: string) => UserSupabaseClient;
@@ -214,33 +216,43 @@ async function authenticateAndBind(
       if (msg.action === "agent.run") {
         const p = msg.payload;
         const runToken = currentToken;
-        void handleRunCommand(
-          {
-            ...authenticatedUser,
-            accessToken: runToken,
-          },
-          connectionId,
-          {
-            sessionId: p.sessionId,
-            conversationId: p.conversationId,
-            prompt: p.prompt,
-            ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
-            ...(p.attachments !== undefined
-              ? { attachments: p.attachments }
-              : {}),
-            ...(p.imageGenerationPreference !== undefined
-              ? { imageGenerationPreference: p.imageGenerationPreference }
-              : {}),
-            ...(p.videoGenerationPreference !== undefined
-              ? { videoGenerationPreference: p.videoGenerationPreference }
-              : {}),
-            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
-            ...(p.model !== undefined ? { model: p.model } : {}),
-          },
-          agentRuns,
-          connectionManager,
-          options,
+        const pending = options.taskDrain.run(() =>
+          handleRunCommand(
+            {
+              ...authenticatedUser,
+              accessToken: runToken,
+            },
+            connectionId,
+            {
+              sessionId: p.sessionId,
+              conversationId: p.conversationId,
+              prompt: p.prompt,
+              ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
+              ...(p.attachments !== undefined
+                ? { attachments: p.attachments }
+                : {}),
+              ...(p.imageGenerationPreference !== undefined
+                ? { imageGenerationPreference: p.imageGenerationPreference }
+                : {}),
+              ...(p.videoGenerationPreference !== undefined
+                ? { videoGenerationPreference: p.videoGenerationPreference }
+                : {}),
+              ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
+              ...(p.model !== undefined ? { model: p.model } : {}),
+            },
+            agentRuns,
+            connectionManager,
+            options,
+          ),
         );
+        if (!pending) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            message: "服务正在维护，请稍后再试",
+          });
+          return;
+        }
+        await pending;
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
           userId: authenticatedUser.id,
@@ -324,45 +336,22 @@ async function handleRunCommand(
   });
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
-  // Resolve thread + model in parallel
-  const [threadId, model] = await Promise.all([
-    (async (): Promise<string | undefined> => {
-      if (!services.threadService) return undefined;
-      try {
-        const sessionThread =
-          await services.threadService.resolveOwnedSessionThread(
-            authenticatedUser,
-            payload.sessionId,
-          );
-        return sessionThread.threadId;
-      } catch (error) {
-        log.warn("thread_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-    (async (): Promise<string | undefined> => {
-      if (!services.settingsService || !services.viewerService)
-        return undefined;
-      try {
-        const viewer =
-          await services.viewerService.ensureViewer(authenticatedUser);
-        const settings = await services.settingsService.getWorkspaceSettings(
-          authenticatedUser,
-          viewer.workspace.id,
-        );
-        return settings.defaultModel;
-      } catch (error) {
-        log.warn("model_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-  ]);
-  // Client-provided model takes priority over workspace default
-  const resolvedModel = payload.model ?? model;
+  // Resolve the owned thread; account model selection happens inside the runtime.
+  const threadId = await (async (): Promise<string | undefined> => {
+    if (!services.threadService) return undefined;
+    try {
+      const session = await services.threadService.resolveOwnedSessionThread(
+        authenticatedUser,
+        payload.sessionId,
+      );
+      return session.threadId;
+    } catch {
+      log.warn("thread_resolve_failed");
+      return undefined;
+    }
+  })();
+  // Only an explicit per-run model overrides account preferences.
+  const resolvedModel = payload.model;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
 
   const response = agentRuns.createRun(payload, {

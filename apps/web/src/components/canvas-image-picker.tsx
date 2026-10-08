@@ -63,8 +63,8 @@ function itemKeywords(item: MessageMentionPickerItem): string[] {
 }
 
 function groupTitle(kind: MessageMentionPickerItem["kind"]): string {
-  if (kind === "canvas-image") return "This Project";
-  if (kind === "brand-kit-asset") return "Brand Kit";
+  if (kind === "canvas-image") return "本项目";
+  if (kind === "brand-kit-asset") return "品牌套件";
   if (kind === "skill") return "Skills";
   return "Model";
 }
@@ -127,7 +127,7 @@ export function MessageMentionPicker({
         className="absolute bottom-full left-2 mb-2 w-56 rounded-xl border border-border bg-popover p-3 shadow-lg"
       >
         <p className="text-xs text-muted-foreground">
-          {items.length === 0 ? "No items available to mention" : `No match for "${query}"`}
+          {items.length === 0 ? "还没有可以引用的图片" : `没有匹配「${query}」的内容`}
         </p>
       </div>
     );
@@ -228,7 +228,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
   }
 
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-muted text-[10px] font-medium uppercase text-muted-foreground">
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-muted text-[11px] font-medium uppercase text-muted-foreground">
       {item.kind === "brand-kit-asset"
         ? item.assetType.slice(0, 2)
         : item.kind === "skill"

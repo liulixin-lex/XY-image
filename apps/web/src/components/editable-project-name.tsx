@@ -1,7 +1,9 @@
 "use client";
 
-import { updateProject } from "@/lib/server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useToast } from "@/components/toast";
+import { updateProject } from "@/lib/server-api";
 
 interface EditableProjectNameProps {
   accessToken: string;
@@ -14,6 +16,7 @@ export function EditableProjectName({
   projectId,
   initialName,
 }: EditableProjectNameProps) {
+  const { error: toastError } = useToast();
   const [name, setName] = useState(initialName);
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -27,19 +30,23 @@ export function EditableProjectName({
 
   const save = useCallback(
     async (newName: string) => {
-      const trimmed = newName.trim() || "Untitled";
+      const trimmed = newName.trim() || "未命名项目";
       setName(trimmed);
       setEditing(false);
       if (trimmed !== prevName.current) {
+        const previous = prevName.current;
         prevName.current = trimmed;
         try {
           await updateProject(accessToken, projectId, { name: trimmed });
         } catch (err) {
-          console.warn("Failed to update project name:", err);
+          console.warn("[canvas] rename failed", err);
+          prevName.current = previous;
+          setName(previous);
+          toastError("项目名没有保存，请稍后再试");
         }
       }
     },
-    [accessToken, projectId],
+    [accessToken, projectId, toastError],
   );
 
   const startEditing = useCallback(() => {
@@ -69,7 +76,8 @@ export function EditableProjectName({
         onChange={(e) => setName(e.target.value)}
         onBlur={() => save(name)}
         onKeyDown={handleKeyDown}
-        className="h-8 rounded-lg bg-card/80 backdrop-blur-sm border border-border px-2.5 text-sm font-medium text-foreground outline-none focus:ring-1 focus:ring-ring/20 max-w-[200px]"
+        aria-label="项目名称"
+        className="h-8 w-[min(220px,40vw)] rounded-md glass px-2.5 text-sm font-medium text-fg outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amb"
         maxLength={100}
       />
     );
@@ -79,8 +87,8 @@ export function EditableProjectName({
     <button
       type="button"
       onClick={startEditing}
-      className="h-8 rounded-lg bg-transparent hover:bg-card/60 backdrop-blur-sm px-2.5 text-sm font-medium text-foreground transition-colors truncate max-w-[200px] cursor-text"
-      title={name}
+      className="glass h-8 max-w-[min(220px,40vw)] cursor-text truncate rounded-md px-2.5 text-sm font-medium text-fg transition-colors hover:border-white/25 focus-visible:outline-2 focus-visible:outline-amb"
+      title={`${name}（点击重命名）`}
     >
       {name}
     </button>

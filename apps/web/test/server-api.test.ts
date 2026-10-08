@@ -2,11 +2,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  AUTH_EXPIRED_EVENT,
+  ApiApplicationError,
+  createImageJob,
   createProject,
   createRun,
+  fetchImageModels,
+  fetchJobs,
   fetchProjects,
-  fetchVideoModels,
   fetchViewer,
+  generateImageDirect,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -158,61 +163,102 @@ describe("authenticated server API", () => {
     expect(result.projects).toHaveLength(1);
   });
 
-  it("fetchVideoModels preserves capability, limits, and verified pricing metadata", async () => {
-    const payload = {
-      models: [
-        {
-          id: "metaso/minimax-h3",
-          displayName: "MiniMax H3 (Metaso)",
-          description: "Metaso H3",
-          provider: "metaso",
-          creditCost: 51,
-          capabilities: {
-            textToVideo: true,
-            imageToVideo: true,
-            videoToVideo: false,
-            audio: false,
-          },
-          limits: {
-            maxDuration: 15,
-            allowedDurations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-            maxResolution: "1080p",
-            maxInputImages: 2,
-          },
-          pricing: {
-            currency: "CNY",
-            billingUnit: "generated_second",
-            providerPointsName: "H3 points",
-            evidenceDate: "2026-08-19",
-            rates: [
-              {
-                resolution: "720p",
-                displayResolution: "768P",
-                providerPointsPerSecond: 10.2,
-                cnyPerSecond: { min: 0.0897, max: 0.1102 },
-              },
-            ],
-          },
-        },
-      ],
-    };
+  it("fetchImageModels sends the bearer token and keeps maxQuality", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => payload,
+      json: async () => ({
+        models: [
+          {
+            id: "gpt-image-2",
+            displayName: "GPT Image 2",
+            description: "OpenAI",
+            provider: "openai",
+            priceUsd: null,
+            maxQuality: "hd",
+          },
+        ],
+      }),
     });
 
-    const result = await fetchVideoModels();
+    const result = await fetchImageModels("token_models");
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:3001/api/video-models",
+      "http://localhost:3001/api/image-models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token_models" },
+      }),
     );
-    expect(result.models[0]).toMatchObject({
-      id: "metaso/minimax-h3",
-      creditCost: 51,
-      limits: { maxDuration: 15, maxInputImages: 2 },
-      pricing: { evidenceDate: "2026-08-19" },
+    expect(result.models[0]).toMatchObject({ id: "gpt-image-2", maxQuality: "hd" });
+  });
+
+  it("createImageJob posts the payload and surfaces billing codes with Retry-After", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({ "Retry-After": "12" }),
+      json: async () => ({
+        error: { code: "rate_limited", message: "Too many requests" },
+      }),
     });
+
+    const error = await createImageJob("token_job", {
+      prompt: "a lighthouse",
+      model: "gpt-image-2",
+      quality: "hd",
+      aspect_ratio: "1:1",
+    }).catch((e: unknown) => e);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/jobs/image-generation",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          prompt: "a lighthouse",
+          model: "gpt-image-2",
+          quality: "hd",
+          aspect_ratio: "1:1",
+        }),
+      }),
+    );
+    expect(error).toBeInstanceOf(ApiApplicationError);
+    expect(error).toMatchObject({ code: "rate_limited", status: 429, retryAfter: 12 });
+  });
+
+  it("generateImageDirect maps a dropped connection to upstream_unknown and never retries", async () => {
+    mockFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const error = await generateImageDirect("token_gen", "a cat").catch((e: unknown) => e);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(error).toBeInstanceOf(ApiApplicationError);
+    expect((error as ApiApplicationError).code).toBe("upstream_unknown");
+  });
+
+  it("fetchJobs encodes status and job type filters", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ jobs: [] }) });
+
+    await fetchJobs("token_jobs", { status: "succeeded", jobType: "image_generation" });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/jobs?status=succeeded&job_type=image_generation",
+      expect.objectContaining({ headers: { Authorization: "Bearer token_jobs" } }),
+    );
+  });
+
+  it("a protected 401 announces session expiry once", async () => {
+    const listener = vi.fn();
+    window.addEventListener(AUTH_EXPIRED_EVENT, listener);
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { code: "unauthorized", message: "Bad token." } }),
+    });
+
+    await expect(fetchProjects("expired")).rejects.toBeDefined();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(AUTH_EXPIRED_EVENT, listener);
   });
 
   it("createProject throws ApiApplicationError with code on 409", async () => {

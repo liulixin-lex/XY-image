@@ -63,15 +63,15 @@ export function GuidanceSection({ value, onSave }: GuidanceSectionProps) {
 
   return (
     <section>
-      <SectionHeader title="Brand Guidance" />
+      <SectionHeader title="品牌说明" />
       <textarea
         ref={textareaRef}
         value={draft}
         onChange={handleChange}
         onBlur={handleBlur}
-        placeholder="Describe your brand voice, personality, and style guidelines..."
+        placeholder="写下品牌的语气、性格和视觉要求，比如：克制、留白多、避免卡通感…"
         rows={3}
-        className="w-full resize-none rounded-xl border bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/60 transition-colors"
+        className="w-full resize-none rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/60 transition-colors"
       />
     </section>
   );

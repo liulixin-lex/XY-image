@@ -1,0 +1,23 @@
+create schema storage;
+create table storage.buckets(id text primary key);
+insert into storage.buckets values ('project-assets'),('brand-kit-assets'),('canvases'),('user-avatars');
+create schema langgraph;
+create table langgraph.checkpoints(id int);
+create table langgraph.store(id int);
+create schema pgmq;
+create table pgmq.q_image_generation_jobs(id int);
+create table public.agent_runs(id uuid primary key);
+alter table public.agent_runs enable row level security;
+create table public.subscriptions(id uuid);
+create table public.credit_balances(id uuid);
+create table public.credit_transactions(id uuid);
+create table public.daily_credit_claims(id uuid);
+create table public.payment_events(id uuid);
+-- Deliberately vulnerable defaults reproduce the retired RPC exposure.
+create function public.grant_plan_credits(p_id uuid) returns int language sql security definer as $$ select 1 $$;
+create function public.deduct_credits(p_id uuid) returns int language sql security definer as $$ select 1 $$;
+create function public.refund_credits(p_id uuid) returns int language sql security definer as $$ select 1 $$;
+create function public.claim_daily_credits(p_id uuid) returns int language sql security definer as $$ select 1 $$;
+create function public.increment_job_attempt(p_id uuid) returns int language sql as $$ select 1 $$;
+grant all on public.subscriptions,public.credit_balances,public.credit_transactions,public.daily_credit_claims,public.payment_events to anon,authenticated;
+grant usage on schema langgraph to public;

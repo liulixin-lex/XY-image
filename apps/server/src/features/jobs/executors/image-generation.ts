@@ -4,5 +4,9 @@ import { registerExecutor } from "../job-executor.js";
 
 registerExecutor("image_generation", async (jobId, _rawPayload, ctx) => {
   const xy2api = createXy2apiServices(ctx.env, ctx.getAdminClient);
-  return executeImageJob(jobId, { ...ctx, xy2api });
+  try {
+    return await executeImageJob(jobId, { ...ctx, xy2api });
+  } finally {
+    await xy2api.providers.network.close();
+  }
 });

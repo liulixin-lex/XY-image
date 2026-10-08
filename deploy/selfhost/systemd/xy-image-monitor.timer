@@ -1,0 +1,11 @@
+[Unit]
+Description=XY-IMAGE periodic health and backup monitor
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=xy-image-monitor.service
+
+[Install]
+WantedBy=timers.target

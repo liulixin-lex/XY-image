@@ -40,6 +40,7 @@ export function createAgentRunMetadataService(options: {
 
     async updateRun(input) {
       const patch = {
+        ...(input.model ? { model: input.model } : {}),
         ...(input.completedAt ? { completed_at: input.completedAt } : {}),
         ...(input.errorCode ? { error_code: input.errorCode } : {}),
         ...(input.errorMessage ? { error_message: input.errorMessage } : {}),

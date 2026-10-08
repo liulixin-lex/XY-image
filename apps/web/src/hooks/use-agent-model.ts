@@ -2,9 +2,12 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "loomic:agent-model";
+const STORAGE_KEY = "xy:agent-model";
 
-type AgentModel = string | null; // null = auto (workspace default)
+// A model id exactly as /api/models lists it (`openai:<model>` or
+// `custom:<providerId>:<model>`, see lib/chat-models.ts); null = the default
+// from Settings. Only the id is stored, never anything about the provider.
+type AgentModel = string | null;
 
 // Listeners for cross-component reactivity
 const listeners = new Set<() => void>();

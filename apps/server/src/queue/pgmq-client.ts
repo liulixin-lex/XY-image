@@ -38,7 +38,7 @@ export function createPgmqClient(databaseUrl: string): PgmqClient {
 
   // Prevent unhandled pool errors from crashing the process on transient DB blips
   pool.on("error", (err) => {
-    console.error("[pgmq-client] Pool error (non-fatal):", err.message);
+    console.error("[pgmq-client] Idle database connection failed");
   });
 
   return {

@@ -18,6 +18,8 @@ export type ServerEnv = {
   ssoEmailDomain: string;
   imageModelsJson?: string;
   chatModels: string[];
+  chatProviderAllowHttp: boolean;
+  chatProviderAllowedHosts: string[];
   maxConcurrentJobs: number;
   maxImagesPerRun: number;
   sessionRevalidateMinutes: number;
@@ -48,6 +50,8 @@ export type ServerEnv = {
   supabaseProjectId?: string;
   supabaseServiceRoleKey?: string;
   supabaseUrl?: string;
+  supabaseInternalUrl?: string;
+  supabaseJwtIssuer?: string;
   version: string;
   volcesApiKey?: string;
   volcesBaseUrl?: string;
@@ -147,6 +151,8 @@ export function loadServerEnv(
     agentFilesRoot: source.LOOMIC_AGENT_FILES_ROOT,
     googleFontsApiKey: source.GOOGLE_FONTS_API_KEY,
     supabaseUrl: source.SUPABASE_URL,
+    supabaseInternalUrl: source.SUPABASE_INTERNAL_URL,
+    supabaseJwtIssuer: source.SUPABASE_JWT_ISSUER,
     supabaseAnonKey: source.SUPABASE_ANON_KEY,
     supabaseDbUrl: source.SUPABASE_DB_URL,
     supabaseJwtSecret: source.SUPABASE_JWT_SECRET,
@@ -207,6 +213,13 @@ export function loadServerEnv(
     ),
     trustProxy: source.LOOMIC_TRUST_PROXY === "true",
     embedLoginEnabled: false,
+    chatProviderAllowHttp:
+      source.NODE_ENV !== "production" &&
+      source.LOOMIC_CHAT_PROVIDER_ALLOW_HTTP === "true",
+    chatProviderAllowedHosts: (source.LOOMIC_CHAT_PROVIDER_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
     workerConcurrency: integer("WORKER_CONCURRENCY", 3),
     workerImageConcurrency: integer("WORKER_IMAGE_CONCURRENCY", 3),
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),

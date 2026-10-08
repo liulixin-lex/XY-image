@@ -6,6 +6,8 @@ import { createLinkedAuthenticator } from "./features/xy2api/linked-authenticato
 import { createXy2apiServices } from "./features/xy2api/services.js";
 import { registerAccountRoutes } from "./http/account.js";
 import { registerXy2apiAuthRoutes } from "./http/auth-xy2api.js";
+import { registerChatProviderRoutes } from "./http/chat-providers.js";
+import { createReadinessProbe } from "./supabase/readiness.js";
 
 import type { LoomicAgentFactory } from "./agent/deep-agent.js";
 import {
@@ -76,6 +78,7 @@ import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerViewerRoutes } from "./http/viewer.js";
+import { registerTaskDrain } from "./lifecycle/drain-tasks.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
@@ -144,6 +147,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       },
     });
   });
+  const taskDrain = registerTaskDrain(app);
   void app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
@@ -151,6 +155,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await instance.register(websocket);
     await registerWsRoute(instance, {
       agentRuns,
+      taskDrain,
       agentRunMetadataService,
       auth,
       chatService,
@@ -218,6 +223,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook("onClose", async () => {
     clearInterval(cleanupTimer);
     await pgmq?.shutdown();
+    await xy2api.providers.network.close();
   });
   const agentRuns = createAgentRunService({
     agentPersistenceService,
@@ -268,7 +274,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  void registerHealthRoutes(app, env);
+  const readiness = createReadinessProbe(env);
+  app.addHook("onClose", async () => readiness.close());
+  void registerHealthRoutes(app, env, readiness.check);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app);
   void registerRunRoutes(app, agentRuns, {
@@ -302,7 +310,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   void registerXy2apiAuthRoutes(app, { ...xy2api, env, auth });
   void registerAccountRoutes(app, { ...xy2api, env, auth });
-  void registerModelRoutes(app, { auth, keys: xy2api.keys });
+  void registerChatProviderRoutes(app, { auth, providers: xy2api.providers });
+  void registerModelRoutes(app, {
+    auth,
+    keys: xy2api.keys,
+    providers: xy2api.providers,
+  });
   void registerImageModelRoutes(app, { auth, keys: xy2api.keys });
   void registerChatRoutes(app, {
     auth,

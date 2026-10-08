@@ -31,7 +31,7 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   generate_image: { label: "\u751f\u6210\u56fe\u7247", icon: "image", showCard: true },
   generate_video: { label: "\u751f\u6210\u89c6\u9891", icon: "video", showCard: true },
   screenshot_canvas: { label: "\u622a\u53d6\u753b\u5e03", icon: "eye", showCard: true },
-  get_brand_kit: { label: "\u54c1\u724c\u5de5\u5177\u5305", icon: "palette", showCard: true },
+  get_brand_kit: { label: "读取品牌套件", icon: "palette", showCard: true },
   project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
 };
@@ -53,17 +53,53 @@ export function formatToolName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Format raw model ID to human-readable: "google/nano-banana-pro" -> "Nano Banana Pro" */
+/** Words that read as acronyms or brand marks rather than title case. */
+const MODEL_WORDS: Record<string, string> = {
+  gpt: "GPT",
+  ai: "AI",
+  hd: "HD",
+  xl: "XL",
+  sd: "SD",
+  dall: "DALL",
+  flux: "FLUX",
+};
+
+/**
+ * Format a raw model ID for display: "gpt-image-2" -> "GPT Image 2",
+ * "gemini-3-pro-image" -> "Gemini 3 Pro Image". Prefer catalog names when
+ * the caller has them.
+ */
 export function formatModelDisplayName(model: string): string {
   const slug = model.split("/").pop() ?? model;
+  if (/^dall-e/i.test(slug)) return slug.replace(/^dall-e-?/i, "DALL·E ").trim();
   return slug
     .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => MODEL_WORDS[w.toLowerCase()] ?? w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }
 
+/** Plain-language labels for the parameters our tools actually send. */
+const PARAM_LABELS: Record<string, string> = {
+  prompt: "提示词",
+  model: "模型",
+  aspectRatio: "比例",
+  aspect_ratio: "比例",
+  quality: "画质",
+  size: "尺寸",
+  n: "数量",
+  title: "标题",
+  name: "名称",
+  query: "关键词",
+  elements: "元素",
+  error: "原因",
+  width: "宽",
+  height: "高",
+};
+
 /** Convert camelCase/snake_case param name to readable lowercase */
 export function formatParamName(name: string): string {
+  const label = PARAM_LABELS[name];
+  if (label) return label;
   return name
     .replace(/([A-Z])/g, " $1")
     .replace(/_/g, " ")
@@ -76,10 +112,10 @@ export function formatParamValue(value: unknown): string {
   if (value === null || value === undefined) return "\u2014";
   if (typeof value === "string")
     return value.length > 200 ? `${value.slice(0, 197)}...` : value;
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "boolean") return value ? "是" : "否";
   if (typeof value === "number") return String(value);
   if (Array.isArray(value))
-    return value.length === 0 ? "[]" : JSON.stringify(value);
+    return value.length === 0 ? "无" : JSON.stringify(value);
   return JSON.stringify(value);
 }
 
@@ -105,11 +141,11 @@ export function formatOutputPreview(
       formattedValue =
         value.length > 80 ? `${value.slice(0, 77)}...` : value;
     } else if (typeof value === "boolean") {
-      formattedValue = value ? "Yes" : "No";
+      formattedValue = value ? "是" : "否";
     } else if (typeof value === "number") {
       formattedValue = String(value);
     } else if (Array.isArray(value)) {
-      formattedValue = `[${value.length} items]`;
+      formattedValue = `${value.length} 项`;
     } else {
       formattedValue = "{...}";
     }

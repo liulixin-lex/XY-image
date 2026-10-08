@@ -9,6 +9,14 @@ import type {
   RunCreateRequest,
 } from "@loomic/shared";
 import { getServerBaseUrl } from "../lib/env";
+import { emitAuthExpired } from "../lib/server-api";
+
+/**
+ * The server closes with 4001 when the Supabase session is invalid or the
+ * main-site login expired. One retry covers a token that was mid-refresh;
+ * a second consecutive 4001 means the session is really gone.
+ */
+const MAX_AUTH_REJECTIONS = 2;
 
 type EventCallback = (event: StreamEvent) => void;
 type RPCHandler = (
@@ -49,6 +57,7 @@ export function useWebSocket(
   );
   const [connected, setConnected] = useState(false);
   const reconnectAttempt = useRef(0);
+  const authRejections = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposed = useRef(false);
 
@@ -90,6 +99,7 @@ export function useWebSocket(
       console.log("[ws] connected, connectionId:", connectionIdRef.current);
       setConnected(true);
       reconnectAttempt.current = 0;
+      authRejections.current = 0;
     };
 
     ws.onmessage = (event) => {
@@ -143,7 +153,13 @@ export function useWebSocket(
       wsRef.current = null;
 
       if (event.code === 4001) {
-        console.warn("[ws] Auth rejected, will retry with fresh token");
+        authRejections.current += 1;
+        if (authRejections.current >= MAX_AUTH_REJECTIONS) {
+          console.warn("[ws] auth rejected twice, treating session as expired");
+          emitAuthExpired("ws");
+          return;
+        }
+        console.warn("[ws] auth rejected, retrying once with a fresh token");
       }
 
       if (!disposed.current) {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
+import { ToastProvider } from "../src/components/toast";
 
 const {
   createSessionMock,
@@ -29,8 +30,30 @@ vi.mock("../src/lib/server-api", () => ({
   deleteSession: deleteSessionMock,
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
+  fetchWorkspaceSkills: vi.fn(async () => ({ skills: [] })),
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
+}));
+
+const { reportCodeMock, notifyGenerationSettledMock } = vi.hoisted(() => ({
+  reportCodeMock: vi.fn(),
+  notifyGenerationSettledMock: vi.fn(),
+}));
+
+vi.mock("../src/components/issues/issue-provider", () => ({
+  useIssues: () => ({ report: vi.fn(), reportCode: reportCodeMock }),
+}));
+
+vi.mock("../src/lib/account-context", () => ({
+  useAccount: () => ({
+    account: { data: null, loading: false, error: null },
+    notifyGenerationSettled: notifyGenerationSettledMock,
+    refreshImageModels: vi.fn(),
+    refreshChatModels: vi.fn(),
+    imageModels: { data: [], loading: false, error: null },
+  }),
+  useImageModels: () => ({ data: [], loading: false, error: null, refresh: vi.fn() }),
+  useChatModels: () => ({ data: [], loading: false, error: null, xy2apiError: null, refresh: vi.fn() }),
 }));
 
 function createMockWs(): WebSocketHandle {
@@ -47,6 +70,7 @@ function createMockWs(): WebSocketHandle {
     cancelRun: vi.fn(),
     onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
+    resumeCanvas: vi.fn(),
   };
 }
 
@@ -95,18 +119,18 @@ describe("ChatSidebar", () => {
 
   it("starts runs via WebSocket with the active real session id", async () => {
     render(
-      <ChatSidebar
-        accessToken="token_abc"
-        canvasId="canvas-1"
-        open
-        onToggle={() => {}}
-        ws={mockWs}
-      />,
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(
-      /start with an idea/i,
-    );
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>

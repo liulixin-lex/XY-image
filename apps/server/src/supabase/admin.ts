@@ -1,4 +1,6 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
+
+import { createSupabaseFetch } from "./transport.js";
 
 import type { Database } from "@loomic/shared";
 
@@ -7,7 +9,10 @@ import type { ServerEnv } from "../config/env.js";
 export type AdminSupabaseClient = SupabaseClient<Database>;
 
 export function createAdminSupabaseClient(
-  env: Pick<ServerEnv, "supabaseServiceRoleKey" | "supabaseUrl">,
+  env: Pick<
+    ServerEnv,
+    "supabaseServiceRoleKey" | "supabaseUrl" | "supabaseInternalUrl"
+  >,
 ): AdminSupabaseClient {
   if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
     throw new Error(
@@ -16,6 +21,7 @@ export function createAdminSupabaseClient(
   }
 
   return createClient<Database>(env.supabaseUrl, env.supabaseServiceRoleKey, {
+    global: { fetch: createSupabaseFetch(env) },
     auth: {
       autoRefreshToken: false,
       persistSession: false,

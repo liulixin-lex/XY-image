@@ -42,13 +42,6 @@ const LockIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const EyeIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-);
-
 const CloseIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" fill="none" className={className}>
     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -56,15 +49,28 @@ const CloseIcon = ({ className }: { className?: string }) => (
 );
 
 /* -- Element helpers -- */
+const TYPE_LABEL: Record<string, string> = {
+  rectangle: "矩形",
+  ellipse: "椭圆",
+  diamond: "菱形",
+  line: "线条",
+  arrow: "箭头",
+  freedraw: "手绘",
+  frame: "画框",
+  magicframe: "画框",
+  embeddable: "嵌入",
+  iframe: "嵌入",
+};
+
 function elLabel(el: ExcalidrawEl): string {
   if (el.customData?.type === "image-generator") {
-    return el.customData?.title?.slice(0, 20) || "Image Generator";
+    return el.customData?.title?.slice(0, 20) || "生成框";
   }
-  if (el.type === "text") return (el.text as string)?.slice(0, 20) || "Text";
+  if (el.type === "text") return (el.text as string)?.slice(0, 20) || "文字";
   if (el.type === "image") {
-    return el.customData?.title?.slice(0, 20) || "Image";
+    return el.customData?.title?.slice(0, 20) || "图片";
   }
-  return el.type.charAt(0).toUpperCase() + el.type.slice(1);
+  return TYPE_LABEL[el.type as string] ?? "图形";
 }
 
 function elThumbnailIcon(el: ExcalidrawEl): string {
@@ -119,47 +125,50 @@ const LayerRow = memo(function LayerRow({
   files,
   selected,
   onSelect,
+  onToggleLock,
 }: {
   el: ExcalidrawEl;
   files: Record<string, any>;
   selected: boolean;
   onSelect: (id: string) => void;
+  onToggleLock: (id: string) => void;
 }) {
   const handleClick = useCallback(() => onSelect(el.id), [onSelect, el.id]);
+  const handleLock = useCallback(() => onToggleLock(el.id), [onToggleLock, el.id]);
+  const locked = Boolean(el.locked);
+  const label = elLabel(el);
 
+  // Row and lock are sibling buttons: nesting interactive elements is invalid
+  // HTML and breaks keyboard focus order.
   return (
-    <div style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}>
+    <div
+      className={`group/layer flex h-11 items-center gap-1 rounded-md pr-1 transition-colors ${
+        selected ? "bg-muted" : "hover:bg-muted"
+      }`}
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
+    >
       <button
         type="button"
-        className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-          selected
-            ? "bg-muted"
-            : "hover:bg-muted"
-        }`}
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={handleClick}
+        aria-current={selected ? "true" : undefined}
       >
         <LayerThumbnail el={el} files={files} />
-        <span className="flex-1 truncate text-[11px] text-foreground min-w-0">
-          {elLabel(el)}
-        </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            aria-label="Lock layer"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <LockIcon className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            aria-label="Toggle layer visibility"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <EyeIcon className="h-4 w-4" />
-          </button>
-        </div>
+        <span className="min-w-0 flex-1 truncate text-xs text-foreground">{label}</span>
+      </button>
+      <button
+        type="button"
+        className={`flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none transition-colors hover:bg-panel hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${
+          locked
+            ? "text-fg"
+            : "invisible text-muted-foreground group-hover/layer:visible focus-visible:visible"
+        }`}
+        aria-label={locked ? `解锁 ${label}` : `锁定 ${label}`}
+        aria-pressed={locked}
+        title={locked ? "已锁定，点击解锁" : "锁定后不能被拖动或选中修改"}
+        onClick={handleLock}
+      >
+        <LockIcon className="h-4 w-4" />
       </button>
     </div>
   );
@@ -218,6 +227,27 @@ export function CanvasLayersPanel({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [open, onClose]);
 
+  /* -- Lock / unlock (undoable, synced like any other element edit) -- */
+  const toggleLock = useCallback(
+    (id: string) => {
+      if (!excalidrawApi) return;
+      const next = (excalidrawApi.getSceneElementsIncludingDeleted() as ExcalidrawEl[]).map(
+        (el: ExcalidrawEl) =>
+          el.id === id
+            ? {
+                ...el,
+                locked: !el.locked,
+                version: el.version + 1,
+                versionNonce: Math.floor(Math.random() * 2 ** 31),
+                updated: Date.now(),
+              }
+            : el,
+      );
+      excalidrawApi.updateScene({ elements: next, captureUpdate: "IMMEDIATELY" });
+    },
+    [excalidrawApi],
+  );
+
   /* -- Select element on canvas -- */
   const selectElement = useCallback(
     (id: string) => {
@@ -244,7 +274,7 @@ export function CanvasLayersPanel({
           type="button"
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           onClick={onClose}
-          aria-label="Close layers panel"
+          aria-label="关闭图层"
         >
           <CloseIcon className="h-4 w-4" />
         </button>
@@ -257,7 +287,7 @@ export function CanvasLayersPanel({
       <div className="flex-1 overflow-y-auto px-1 py-1" style={{ contain: "layout style" }}>
         {elements.length === 0 ? (
           <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-            画布为空
+            画布上还没有内容
           </p>
         ) : (
           elements.map((el: ExcalidrawEl) => (
@@ -267,6 +297,7 @@ export function CanvasLayersPanel({
               files={files}
               selected={!!selectedIds[el.id]}
               onSelect={selectElement}
+              onToggleLock={toggleLock}
             />
           ))
         )}

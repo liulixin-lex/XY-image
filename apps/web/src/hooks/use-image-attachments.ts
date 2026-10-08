@@ -32,10 +32,18 @@ export type ReadyAttachment = {
   name?: string;
 };
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MiB, the API's per-image limit
+// Generation accepts PNG / JPEG / WebP references only (no GIF).
+const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+export const ATTACHMENT_ACCEPT = "image/png,image/jpeg,image/webp";
 
-export function useImageAttachments(accessToken: string, projectId?: string) {
+export function useImageAttachments(
+  accessToken: string,
+  projectId?: string,
+  options?: { onReject?: (message: string) => void },
+) {
+  const onRejectRef = useRef(options?.onReject);
+  onRejectRef.current = options?.onReject;
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
@@ -64,6 +72,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
       for (const file of files) {
         if (!ALLOWED_TYPES.has(file.type)) {
           console.warn("[image-attachments] Rejected file type:", file.type);
+          onRejectRef.current?.("只支持 PNG、JPEG、WebP 格式的图片");
           continue;
         }
         if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -73,7 +82,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
             file,
             preview: "",
             uploading: false,
-            error: "File exceeds 10MB limit",
+            error: "图片超过 10 MB",
             mimeType: file.type,
             source: "upload",
           });
@@ -108,7 +117,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
             setAttachments((prev) =>
               prev.map((a) =>
                 a.id === id
-                  ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                  ? { ...a, uploading: false, error: "上传失败，点击重试" }
                   : a,
               ),
             );
@@ -171,7 +180,7 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
           setAttachments((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                ? { ...a, uploading: false, error: "上传失败，点击重试" }
                 : a,
             ),
           );

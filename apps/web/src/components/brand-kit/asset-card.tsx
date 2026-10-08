@@ -18,7 +18,7 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative group">
-        <div className="w-[150px] h-[113px] rounded-xl border bg-muted/30 flex items-center justify-center overflow-hidden">
+        <div className="w-[150px] h-[113px] rounded-frame border bg-muted/30 flex items-center justify-center overflow-hidden">
           {asset.file_url ? (
             <img
               src={asset.file_url}
@@ -72,7 +72,7 @@ export function AddAssetCard({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          "w-[150px] h-[113px] rounded-xl border-2 border-dashed border-muted-foreground/30",
+          "w-[150px] h-[113px] rounded-frame border-2 border-dashed border-muted-foreground/30",
           "flex items-center justify-center transition-colors",
           disabled
             ? "opacity-40 cursor-not-allowed"

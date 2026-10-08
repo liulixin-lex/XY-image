@@ -286,7 +286,7 @@ export function SkillDetailDialog({
         </DialogFooter>
 
         {/* Created date small note */}
-        <p className="text-center text-[10px] text-muted-foreground">
+        <p className="text-center text-[11px] text-muted-foreground">
           创建于 {createdDate}
         </p>
       </DialogContent>

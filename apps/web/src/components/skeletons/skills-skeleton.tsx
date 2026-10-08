@@ -16,14 +16,14 @@ export function SkillsSkeleton() {
       </div>
 
       {/* Banner card */}
-      <Skeleton className="mb-4 h-20 w-full rounded-xl sm:mb-6 sm:h-28" />
+      <Skeleton className="mb-4 h-20 w-full rounded-lg sm:mb-6 sm:h-28" />
 
       {/* Card grid */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="space-y-3 rounded-xl border border-border p-4"
+            className="space-y-3 rounded-lg border border-border p-4"
           >
             <div className="flex items-center justify-between">
               <Skeleton className="h-5 w-32" />

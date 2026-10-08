@@ -93,7 +93,7 @@ export function ColorPickerPopover({
     <div
       ref={containerRef}
       className={cn(
-        "absolute z-50 w-[260px] rounded-2xl border bg-popover p-3 shadow-lg",
+        "absolute z-50 w-[260px] rounded-lg border bg-popover p-3 shadow-lg",
         "flex flex-col gap-2.5",
       )}
     >
@@ -102,7 +102,7 @@ export function ColorPickerPopover({
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="Color name"
+        placeholder="颜色名称"
         className="w-full rounded-lg border bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-muted-foreground/60"
       />
 
@@ -143,7 +143,7 @@ export function ColorPickerPopover({
           onClick={handleSave}
           className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
-          {mode === "create" ? "Add" : "Save"}
+          {mode === "create" ? "添加" : "保存"}
         </button>
       </div>
     </div>

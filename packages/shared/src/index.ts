@@ -9,3 +9,5 @@ export * from "./brand-kit-contracts.js";
 export * from "./job-contracts.js";
 export * from "./skill-contracts.js";
 export * from "./ws-protocol.js";
+
+export * from "./chat-models.js";

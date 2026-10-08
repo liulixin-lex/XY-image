@@ -118,7 +118,7 @@ export function ImportPanel({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="rounded-xl border border-border bg-card p-6"
+        className="rounded-lg border border-border bg-card p-6"
       >
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">

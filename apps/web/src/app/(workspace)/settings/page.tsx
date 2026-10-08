@@ -1,165 +1,121 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+/**
+ * Settings: account and balance, keys, default models, generation records.
+ * Deep links use `?tab=` (keys is linked from the issue center, account
+ * chip and key gate).
+ */
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useRef } from "react";
 
-import { AgentSection } from "@/components/agent-section";
-import { BillingSection } from "@/components/billing-section";
-import { CreditUsageHistory } from "@/components/credits/credit-usage-history";
-import { ProfileSection } from "@/components/profile-section";
-import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
-import { useAuth } from "@/lib/auth-context";
-import {
-  ApiAuthError,
-  fetchModels,
-  fetchViewer,
-  fetchWorkspaceSettings,
-  updateProfile,
-  updateWorkspaceSettings,
-} from "@/lib/server-api";
+import { PageHeader } from "@/components/page-header";
+import { AccountTab } from "@/components/settings/account-tab";
+import { KeysTab } from "@/components/settings/keys-tab";
+import { ModelsTab } from "@/components/settings/models-tab";
+import { RecordsTab } from "@/components/settings/records-tab";
+import { cn } from "@/lib/utils";
 
-type SettingsTab = "profile" | "agent" | "billing" | "usage";
+const TABS = [
+  { id: "account", label: "账户" },
+  { id: "keys", label: "Key" },
+  { id: "models", label: "模型" },
+  { id: "records", label: "生成记录" },
+] as const;
 
-const tabs: Array<{ id: SettingsTab; label: string }> = [
-  { id: "profile", label: "Profile" },
-  { id: "agent", label: "Agent" },
-  { id: "billing", label: "Billing" },
-  { id: "usage", label: "Usage" },
-];
+type TabId = (typeof TABS)[number]["id"];
 
-export default function SettingsPage() {
-  const { session } = useAuth();
-  const searchParams = useSearchParams();
+function isTab(value: string | null): value is TabId {
+  return TABS.some((t) => t.id === value);
+}
 
-  const initialTab = (searchParams.get("tab") as SettingsTab) ?? "profile";
-  const [activeTab, setActiveTab] = useState<SettingsTab>(
-    tabs.some((t) => t.id === initialTab) ? initialTab : "profile",
-  );
-  const [profile, setProfile] = useState<{
-    displayName: string;
-    email: string;
-  } | null>(null);
-  const [defaultModel, setDefaultModel] = useState<string>("gpt-5.4-mini");
-  const [pageLoading, setPageLoading] = useState(true);
+function SettingsView() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const raw = params.get("tab");
+  const active: TabId = isTab(raw) ? raw : "account";
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  // Ref pattern: prevent token refresh from cascading through dependency arrays
-  const accessTokenRef = useRef(session?.access_token);
-  accessTokenRef.current = session?.access_token;
-  const hasInitialized = useRef(false);
-
-  const getToken = useCallback(() => accessTokenRef.current, []);
-
-  const loadData = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-    setPageLoading(true);
-
-    try {
-      const [viewer, settings] = await Promise.all([
-        fetchViewer(token),
-        fetchWorkspaceSettings(token),
-      ]);
-
-      setProfile({
-        displayName: viewer.profile.displayName,
-        email: viewer.profile.email,
-      });
-      setDefaultModel(settings.settings.defaultModel);
-    } catch (err) {
-      if (err instanceof ApiAuthError) {
-        // Workspace layout handles auth redirect
-        return;
-      }
-    } finally {
-      setPageLoading(false);
-    }
-  }, [getToken]);
-
-  useEffect(() => {
-    if (hasInitialized.current) return;
-    if (!session?.access_token) return;
-    hasInitialized.current = true;
-    loadData();
-  }, [session?.access_token, loadData]);
-
-  const handleProfileSave = useCallback(
-    async (displayName: string) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateProfile(token, { displayName });
-      setProfile({
-        displayName: result.profile.displayName,
-        email: result.profile.email,
-      });
+  const select = useCallback(
+    (id: TabId) => {
+      router.replace(`${pathname}?tab=${id}`, { scroll: false });
     },
-    [getToken],
+    [router, pathname],
   );
 
-  const handleAgentSave = useCallback(
-    async (model: string) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateWorkspaceSettings(token, {
-        defaultModel: model,
-      });
-      setDefaultModel(result.settings.defaultModel);
-    },
-    [getToken],
-  );
-
-  const stableFetchModels = useCallback(() => fetchModels(), []);
-
-  if (pageLoading) {
-    return <SettingsSkeleton />;
-  }
-
-  if (!profile) return null;
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const index = TABS.findIndex((t) => t.id === active);
+    const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = TABS[(index + delta + TABS.length) % TABS.length]!;
+    select(next.id);
+    tabRefs.current[next.id]?.focus();
+  };
 
   return (
-    <div className="px-4 py-6 sm:px-6 md:p-8">
-      <h1 className="mb-4 text-base font-semibold sm:mb-6 sm:text-lg">
-        Settings
-      </h1>
+    <div className="pb-20">
+      <PageHeader title="设置" className="pb-5" />
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
+        <div
+          role="tablist"
+          aria-label="设置分类"
+          onKeyDown={onKeyDown}
+          className="glass inline-flex max-w-full gap-1 overflow-x-auto rounded-[14px] p-[5px] scrollbar-hidden"
+        >
+          {TABS.map((tab) => {
+            const selected = tab.id === active;
+            return (
+              <button
+                key={tab.id}
+                ref={(el) => {
+                  tabRefs.current[tab.id] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={selected}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => select(tab.id)}
+                className={cn(
+                  "relative h-9 shrink-0 rounded-[10px] px-4 text-[14px] font-medium whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb",
+                  selected
+                    ? "bg-white/[0.1] text-fg"
+                    : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                )}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Tab bar -- scrollable on small screens, 44px min touch target */}
-      <div className="mb-6 overflow-x-auto sm:mb-8">
-        <div className="inline-flex gap-1 rounded-lg bg-muted p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[44px] whitespace-nowrap rounded-md px-4 py-1.5 text-sm transition-colors sm:min-h-0 sm:px-3 ${
-                activeTab === tab.id
-                  ? "bg-card font-medium text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div
+          role="tabpanel"
+          id={`panel-${active}`}
+          aria-labelledby={`tab-${active}`}
+          className="pt-8"
+        >
+          {active === "account" ? (
+            <AccountTab />
+          ) : active === "keys" ? (
+            <KeysTab />
+          ) : active === "models" ? (
+            <ModelsTab />
+          ) : (
+            <RecordsTab />
+          )}
         </div>
       </div>
-
-      <div className="max-w-xl">
-        {activeTab === "profile" ? (
-          <ProfileSection
-            displayName={profile.displayName}
-            email={profile.email}
-            onSave={handleProfileSave}
-          />
-        ) : activeTab === "agent" ? (
-          <AgentSection
-            defaultModel={defaultModel}
-            onSave={handleAgentSave}
-            fetchModels={stableFetchModels}
-          />
-        ) : activeTab === "usage" ? (
-          <CreditUsageHistory />
-        ) : (
-          <BillingSection />
-        )}
-      </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsView />
+    </Suspense>
   );
 }

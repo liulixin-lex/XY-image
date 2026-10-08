@@ -1,0 +1,72 @@
+# Place inside nginx http{}. Install certificates before enabling this file.
+# Public Supabase only exposes client endpoints; Studio/meta/admin stay on loopback.
+log_format xy_safe '$remote_addr $request_method $uri $status $body_bytes_sent $request_time';
+map $http_upgrade $xy_connection_upgrade { default upgrade; '' close; }
+# Shadow users authenticate through XY API. Public Auth cannot set passwords,
+# request new email links, create users, or use password/PKCE/OAuth grants.
+# Match the full query string so duplicate grant_type arguments cannot bypass it.
+map "$request_method:$uri:$args" $xy_auth_allowed {
+    default 0;
+    ~^OPTIONS:/auth/v1/(verify|logout|user|token): 1;
+    "POST:/auth/v1/verify:" 1;
+    "GET:/auth/v1/user:" 1;
+    "POST:/auth/v1/logout:" 1;
+    ~^POST:/auth/v1/logout:scope=(global|local|others)$ 1;
+    "POST:/auth/v1/token:grant_type=refresh_token" 1;
+}
+
+server {
+    listen 443 ssl;
+    server_name __API_HOST__;
+    ssl_certificate /etc/letsencrypt/live/__API_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__API_HOST__/privkey.pem;
+    access_log /var/log/nginx/xy-api.access.log xy_safe;
+    error_log /var/log/nginx/xy-api.error.log crit;
+    client_max_body_size 20m;
+    location = /api/ready { return 404; }
+    location / {
+        proxy_pass http://127.0.0.1:3101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $xy_connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 660s;
+        proxy_send_timeout 660s;
+        proxy_next_upstream off;
+    }
+}
+server {
+    listen 443 ssl;
+    server_name __SUPABASE_HOST__;
+    ssl_certificate /etc/letsencrypt/live/__SUPABASE_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__SUPABASE_HOST__/privkey.pem;
+    access_log /var/log/nginx/xy-supabase.access.log xy_safe;
+    error_log /var/log/nginx/xy-supabase.error.log crit;
+    client_max_body_size 20m;
+    location ~ ^/auth/v1/(verify|logout|user|token)$ {
+        if ($xy_auth_allowed = 0) { return 404; }
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 30s;
+        proxy_next_upstream off;
+    }
+    location ~ ^/(rest/v1|storage/v1|realtime/v1)/ {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $xy_connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 660s;
+        proxy_next_upstream off;
+    }
+    location / { return 404; }
+}

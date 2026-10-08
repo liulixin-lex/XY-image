@@ -5,7 +5,7 @@ import type {
   BrandKitDetail,
   BrandKitAssetType,
 } from "@loomic/shared";
-import { Copy, Ellipsis, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Ellipsis, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -133,25 +133,26 @@ export function BrandKitEditor({
   );
 
   return (
-    <div className="flex flex-1 flex-col min-w-0">
+    <div className="glass flex min-h-[60dvh] min-w-0 flex-1 flex-col overflow-hidden rounded-[20px]">
       {/* Header */}
-      <header className="flex min-h-[64px] shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6 md:h-[96px] md:flex-nowrap md:py-0">
+      <header className="flex min-h-[64px] shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 md:h-[88px] md:flex-nowrap md:py-0">
         <InlineInput
           value={kit.name}
           onCommit={handleNameCommit}
-          placeholder="Kit name"
-          inputClassName="text-2xl font-semibold text-foreground"
+          placeholder="套件名称"
+          inputClassName="font-display text-[30px] font-normal text-foreground"
         />
 
         <div className="flex items-center gap-3 shrink-0 ml-4">
           {/* Apply to new projects toggle */}
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
+          <span id="brand-kit-default-label" className="text-sm text-muted-foreground whitespace-nowrap">
             应用到新项目
           </span>
           <button
             type="button"
             role="switch"
             aria-checked={kit.is_default}
+            aria-labelledby="brand-kit-default-label"
             onClick={handleToggleDefault}
             className={cn(
               "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer",
@@ -160,7 +161,7 @@ export function BrandKitEditor({
           >
             <span
               className={cn(
-                "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
+                "inline-block h-4 w-4 rounded-full bg-panel shadow-sm transition-transform",
                 kit.is_default ? "translate-x-6" : "translate-x-1",
               )}
             />
@@ -180,16 +181,8 @@ export function BrandKitEditor({
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-[80px] xl:px-[160px]">
         <div className="flex flex-col gap-8 max-w-[960px] mx-auto">
-          {/* Extract from URL — disabled Phase 1 */}
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center gap-2 self-start rounded-xl border border-dashed px-4 py-2.5 text-sm text-muted-foreground opacity-50 cursor-not-allowed"
-          >
-            <Sparkles className="h-4 w-4" />
-            Extract from URL
-          </button>
-
+          {/* TODO(brand-kit): "从网址提取品牌" was a disabled placeholder upstream;
+              add it back only once the server can fetch and parse a site. */}
           <GuidanceSection
             value={kit.guidance_text}
             onSave={handleGuidanceSave}
@@ -257,21 +250,22 @@ function MoreMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-        aria-label="More actions"
+        className="cursor-pointer rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted"
+        aria-label="更多操作"
+        aria-expanded={open}
       >
         <Ellipsis className="h-5 w-5" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-[140px] rounded-xl border bg-popover p-1.5 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 w-[140px] rounded-lg border border-line bg-popover p-1.5 shadow-float">
           <button
             type="button"
             onClick={() => {
               onDuplicate();
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
           >
             <Copy className="h-4 w-4 text-muted-foreground" />
             复制
@@ -282,10 +276,10 @@ function MoreMenu({
               onDelete();
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm text-destructive transition-colors hover:bg-alert-wash"
           >
             <Trash2 className="h-4 w-4" />
-            删除
+            删除套件
           </button>
         </div>
       )}

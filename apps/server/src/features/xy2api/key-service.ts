@@ -1,5 +1,6 @@
 import type { ServerEnv } from "../../config/env.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { ChatProviderService } from "../chat-providers/service.js";
 import type { AccountService } from "./account-service.js";
 import {
   type ImageModel,
@@ -46,6 +47,7 @@ export class KeyService {
     private readonly box: SecretBox,
     readonly catalog: ImageModel[],
     private readonly env: Pick<ServerEnv, "chatModels">,
+    private readonly providers?: ChatProviderService,
   ) {}
   private db() {
     return integrationClient(this.getAdmin());
@@ -66,15 +68,16 @@ export class KeyService {
       .eq("user_id", userId)
       .maybeSingle();
     checkStoreError(error);
-    return (
-      data ?? {
+    return {
+      ...(data ?? {
         user_id: userId,
         image_key_id: null,
         chat_key_id: null,
         default_image_model: null,
         default_chat_model: null,
-      }
-    );
+      }),
+      default_chat_provider_id: data?.default_chat_provider_id ?? null,
+    };
   }
   syncKeys(userId: string): Promise<void> {
     const pending = this.syncs.get(userId);
@@ -143,11 +146,11 @@ export class KeyService {
       )
         ? prefs.default_image_model
         : (image?.image_models[0] ?? null),
-      default_chat_model: chat?.chat_models.includes(
-        prefs.default_chat_model ?? "",
-      )
+      default_chat_model: prefs.default_chat_provider_id
         ? prefs.default_chat_model
-        : (chat?.chat_models[0] ?? null),
+        : chat?.chat_models.includes(prefs.default_chat_model ?? "")
+          ? prefs.default_chat_model
+          : (chat?.chat_models[0] ?? null),
     });
   }
   private async syncRow(userId: string, key: RemoteKey): Promise<KeyRow> {
@@ -301,6 +304,7 @@ export class KeyService {
       chatKeyId?: number | undefined;
       defaultImageModel?: string | undefined;
       defaultChatModel?: string | undefined;
+      defaultChatProviderId?: string | null | undefined;
     },
   ) {
     const prefs = await this.preferences(userId);
@@ -328,20 +332,47 @@ export class KeyService {
       prefs.image_key_id = row.key_id;
       prefs.default_image_model = model;
     }
-    if (input.chatKeyId !== undefined || input.defaultChatModel !== undefined) {
-      const row = await this.selected(
-        userId,
-        input.chatKeyId ?? prefs.chat_key_id,
-      );
-      const model =
-        input.defaultChatModel ??
-        (row.chat_models.includes(prefs.default_chat_model ?? "")
-          ? prefs.default_chat_model
-          : row.chat_models[0]);
-      if (!model || !row.chat_models.includes(model))
+    if (input.chatKeyId !== undefined) {
+      const row = await this.selected(userId, input.chatKeyId);
+      if (!row.chat_models.length)
         throw new BillingGuardError("model_not_accessible", 403);
       prefs.chat_key_id = row.key_id;
-      prefs.default_chat_model = model;
+    }
+    if (
+      input.defaultChatProviderId !== undefined ||
+      input.defaultChatModel !== undefined ||
+      (input.chatKeyId !== undefined && !prefs.default_chat_provider_id)
+    ) {
+      const providerId =
+        input.defaultChatProviderId === undefined
+          ? prefs.default_chat_provider_id
+          : input.defaultChatProviderId;
+      if (providerId) {
+        if (!this.providers)
+          throw new BillingGuardError("model_not_accessible", 403);
+        const selected = await this.providers.validateModel(
+          userId,
+          providerId,
+          input.defaultChatModel ??
+            (prefs.default_chat_provider_id === providerId
+              ? prefs.default_chat_model
+              : null),
+        );
+        prefs.default_chat_provider_id = providerId;
+        prefs.default_chat_model = selected.model;
+      } else {
+        const row = await this.selected(userId, prefs.chat_key_id);
+        const model =
+          input.defaultChatModel ??
+          (!prefs.default_chat_provider_id &&
+          row.chat_models.includes(prefs.default_chat_model ?? "")
+            ? prefs.default_chat_model
+            : row.chat_models[0]);
+        if (!model || !row.chat_models.includes(model))
+          throw new BillingGuardError("model_not_accessible", 403);
+        prefs.default_chat_provider_id = null;
+        prefs.default_chat_model = model;
+      }
     }
     await this.savePreferences(prefs);
     return prefs;

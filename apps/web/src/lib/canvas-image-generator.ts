@@ -83,9 +83,11 @@ export function createImageGeneratorElement(
     type: "image-generator",
     status: "idle",
     prompt: "",
-    model: options?.model ?? "google/nano-banana-2",
+    // Empty = the panel picks the account default (or the first model the
+    // image key can reach). Never hard-code a model id here.
+    model: options?.model ?? "",
     aspectRatio,
-    quality: options?.quality ?? "hd",
+    quality: options?.quality ?? "standard",
   };
 
   const id = generateId();

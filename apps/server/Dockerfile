@@ -32,6 +32,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 COPY packages/shared/ packages/shared/
 COPY packages/config/ packages/config/
 COPY apps/server/ apps/server/
+COPY supabase/ supabase/
 
 # Build @loomic/shared (server depends on it)
 RUN pnpm --filter @loomic/shared build
@@ -59,6 +60,9 @@ COPY skills/ /opt/loomic/skills/
 
 # SERVICE_MODE: "api" (default) or "worker"
 ENV SERVICE_MODE=api
+
+# Runtime files remain immutable; temporary job data uses /tmp.
+USER node
 
 # Preflight scripts are included by COPY apps/server in the build stage.
 CMD ["sh", "-c", "if [ \"$SERVICE_MODE\" = \"worker\" ]; then exec node --import tsx src/worker.ts; else exec node --import tsx src/server.ts; fi"]

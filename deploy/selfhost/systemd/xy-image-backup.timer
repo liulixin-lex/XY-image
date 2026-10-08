@@ -1,0 +1,11 @@
+[Unit]
+Description=XY-IMAGE daily maintenance window (operator must approve time)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=false
+AccuracySec=1min
+Unit=xy-image-backup.service
+
+[Install]
+WantedBy=timers.target
