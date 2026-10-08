@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import { findChatProviderError } from "../features/chat-providers/errors.js";
+import {
+  type ResolvedChat,
+  resolveRunChatModel,
+} from "../features/chat-providers/model-resolver.js";
+import { chatRunError } from "../features/chat-providers/run-error.js";
 import { fetchReferenceImage } from "../generation/providers/xy2api-reference.js";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
@@ -24,21 +30,18 @@ import { insertImageElement } from "../features/canvas/canvas-element-writer.js"
 import type { JobService } from "../features/jobs/job-service.js";
 import { findImageModel } from "../features/xy2api/catalog.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
-import type { ChatCredential } from "../features/xy2api/key-service.js";
 import type { Xy2apiServices } from "../features/xy2api/services.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
 import type {
   AuthenticatedUser,
   UserSupabaseClient,
 } from "../supabase/user.js";
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type LoomicAgent,
   type LoomicAgentFactory,
-  createDefaultModelSpecifier,
   createLoomicDeepAgent,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
@@ -351,6 +354,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     ): RunCreateResponse {
       const runId = runIdFactory();
       const { accessToken: _ignoredAccessToken, ...runInput } = input;
+      const modelOverride = runOptions?.model ?? runInput.model;
 
       runs.set(runId, {
         ...runInput,
@@ -359,7 +363,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         consumed: false,
         controller: new AbortController(),
-        ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(modelOverride ? { modelOverride } : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -453,7 +457,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         return;
       }
 
-      let chatCredential: ChatCredential;
+      let chatSelection: ResolvedChat;
       let availableImageModels: AvailableModel[] = [];
       try {
         if (!run.userId)
@@ -469,9 +473,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           .maybeSingle();
         if (canvasError || !ownedCanvas)
           throw new BillingGuardError("invalid_input", 403);
-        chatCredential = await options.xy2api.keys.resolveChatCredential(
-          run.userId,
-        );
+        chatSelection = await resolveRunChatModel({
+          userId: run.userId,
+          ...(run.modelOverride ? { override: run.modelOverride } : {}),
+          keys: options.xy2api.keys,
+          providers: options.xy2api.providers,
+          env: options.env,
+        });
+        // Existing model column stores a non-secret source/provider/model reference.
+        if (run.threadId && options.agentRunMetadataService)
+          await options.agentRunMetadataService.updateRun({
+            runId,
+            status: "running",
+            model: chatSelection.ref,
+          });
         try {
           const imageCredential =
             await options.xy2api.keys.resolveImageCredential(run.userId);
@@ -493,6 +508,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           /* Chat remains available when no image key is selected. */
         }
       } catch (error) {
+        if (findChatProviderError(error)) {
+          run.status = "failed";
+          await updatePersistedRunFailure(
+            options.agentRunMetadataService,
+            run,
+            now,
+            error,
+          );
+          yield toFailedEvent(runId, now, error);
+          return;
+        }
         const code =
           error instanceof BillingGuardError ? error.code : "key_unavailable";
         run.status = "failed";
@@ -740,10 +766,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       try {
         let agent: LoomicAgent;
         try {
-          const preferred = (
-            run.modelOverride ?? options.env.agentModel
-          ).replace(/^openai:/, "");
-          const resolvedModel = `openai:${chatCredential.chatModels.includes(preferred) ? preferred : chatCredential.chatModels[0]}`;
+          const resolvedModel = chatSelection.ref;
           // Build persistImage closure using the user's Supabase client.
           // Client creation is deferred into the closure so it only runs
           // when an image is actually generated (avoids throwing in tests
@@ -893,20 +916,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(submitImageJob ? { submitImageJob } : {}),
             imageModels: availableImageModels,
-            credentials: {
-              apiKey: chatCredential.apiKey,
-              baseUrl: options.env.xy2apiBaseUrl,
-            },
+            ...(chatSelection.source === "custom"
+              ? { customChat: chatSelection.customChat }
+              : { credentials: chatSelection.credentials }),
             ...(persistence ? { store: persistence.store } : {}),
             ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
           });
           rlog.lap("agent_factory_done");
         } catch (error) {
-          const failedEvent = toFailedEvent(
-            runId,
-            now,
-            new Error("对话执行失败，请稍后再试"),
-          );
+          const failedEvent = toFailedEvent(runId, now, error);
           run.status = "failed";
           await updatePersistedRunFailure(
             options.agentRunMetadataService,
@@ -1054,11 +1072,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           );
           rlog.lap("stream_call_returned");
         } catch (error) {
-          const failedEvent = toFailedEvent(
-            runId,
-            now,
-            new Error("对话执行失败，请稍后再试"),
-          );
+          const failedEvent = toFailedEvent(runId, now, error);
           run.status = "failed";
           await updatePersistedRunFailure(
             options.agentRunMetadataService,
@@ -1078,6 +1092,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             sessionId: run.sessionId,
             signal: run.controller.signal,
             stream,
+            customChat: chatSelection.source === "custom",
           })) {
             run.status = mapEventToStatus(event);
             try {
@@ -1177,10 +1192,7 @@ function toFailedEvent(
   console.error(`[runtime] Agent run failed for run ${runId}`);
 
   return {
-    error: {
-      code: "run_failed",
-      message: sanitizeErrorForClient(error),
-    },
+    error: chatRunError(error),
     runId,
     timestamp: now(),
     type: "run.failed",
@@ -1218,8 +1230,8 @@ async function updatePersistedRunFailure(
 
   await agentRunMetadataService.updateRun({
     completedAt: now(),
-    errorCode: "run_failed",
-    errorMessage: sanitizeErrorForClient(error),
+    errorCode: chatRunError(error).code,
+    errorMessage: chatRunError(error).message,
     runId: run.runId,
     status: "failed",
   });
@@ -1239,11 +1251,14 @@ async function syncPersistedRunFromEvent(
   }
 
   if (event.type === "run.failed") {
-    await updatePersistedRunFailure(
-      agentRunMetadataService,
-      run,
-      now,
-      new Error(event.error.message),
-    );
+    if (agentRunMetadataService && run.threadId) {
+      await agentRunMetadataService.updateRun({
+        completedAt: now(),
+        errorCode: event.error.code,
+        errorMessage: event.error.message,
+        runId: run.runId,
+        status: "failed",
+      });
+    }
   }
 }

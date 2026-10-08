@@ -55,25 +55,8 @@ export async function registerRunRoutes(
             )
           : null;
 
-      // Resolve per-workspace model if auth context is available
-      let model: string | undefined;
-      if (
-        authenticatedUser &&
-        options.settingsService &&
-        options.viewerService
-      ) {
-        try {
-          const viewer =
-            await options.viewerService.ensureViewer(authenticatedUser);
-          const settings = await options.settingsService.getWorkspaceSettings(
-            authenticatedUser,
-            viewer.workspace.id,
-          );
-          model = settings.defaultModel;
-        } catch {
-          // Fall through to server default model if settings lookup fails
-        }
-      }
+      // Account preferences are resolved at execution time; never forward the stale workspace default.
+      const model = payload.model;
 
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {

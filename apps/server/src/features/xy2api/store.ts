@@ -1,6 +1,7 @@
 import type { Database, Json } from "@loomic/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { ChatProviderRow } from "../chat-providers/types.js";
 
 export type AccountRow = {
   user_id: string;
@@ -45,6 +46,7 @@ export type PreferencesRow = {
   chat_key_id: number | null;
   default_image_model: string | null;
   default_chat_model: string | null;
+  default_chat_provider_id: string | null;
 };
 type Table<Row> = {
   Row: Row;
@@ -69,6 +71,7 @@ type IntegrationDatabase = {
           billing_status: string;
         }
       >;
+      user_chat_providers: Table<ChatProviderRow>;
       xy2api_accounts: Table<AccountRow>;
       xy2api_api_keys: Table<KeyRow>;
       xy2api_preferences: Table<PreferencesRow>;

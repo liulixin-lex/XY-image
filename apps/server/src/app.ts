@@ -6,6 +6,7 @@ import { createLinkedAuthenticator } from "./features/xy2api/linked-authenticato
 import { createXy2apiServices } from "./features/xy2api/services.js";
 import { registerAccountRoutes } from "./http/account.js";
 import { registerXy2apiAuthRoutes } from "./http/auth-xy2api.js";
+import { registerChatProviderRoutes } from "./http/chat-providers.js";
 
 import type { LoomicAgentFactory } from "./agent/deep-agent.js";
 import {
@@ -218,6 +219,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook("onClose", async () => {
     clearInterval(cleanupTimer);
     await pgmq?.shutdown();
+    await xy2api.providers.network.close();
   });
   const agentRuns = createAgentRunService({
     agentPersistenceService,
@@ -302,7 +304,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   void registerXy2apiAuthRoutes(app, { ...xy2api, env, auth });
   void registerAccountRoutes(app, { ...xy2api, env, auth });
-  void registerModelRoutes(app, { auth, keys: xy2api.keys });
+  void registerChatProviderRoutes(app, { auth, providers: xy2api.providers });
+  void registerModelRoutes(app, {
+    auth,
+    keys: xy2api.keys,
+    providers: xy2api.providers,
+  });
   void registerImageModelRoutes(app, { auth, keys: xy2api.keys });
   void registerChatRoutes(app, {
     auth,

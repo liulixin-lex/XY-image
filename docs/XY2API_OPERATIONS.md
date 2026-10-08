@@ -1,11 +1,11 @@
 # xy2api 后端部署与验收
 
-本分支交付 API、Worker、数据库增量迁移和前端接口文档。生产放行仍要求前端 F1–F8、真实主站预检及原规范全部 P0 验收通过。不要将本地模拟测试或 `/api/health` 成功当成已打通真实计费。
+2026-10-08 更新：前端 F1–F8 已交付；agent03 新增字体代理和自定义对话服务商，详见 [后端增量交接](XY_IMAGE_BACKEND_AGENT03.md)。用户要求先开发，真实测试延后；Supabase 尚未创建。生产放行仍要求完整迁移、真实主站和服务商验收，离线测试不代表真实计费已打通。
 
 ## 配置与准备
 
 1. 使用已有 Loomic Supabase 项目；新项目先完整执行原有迁移，确保 Auth、Storage、PGMQ、Realtime 和 Agent 持久化表可用。
-2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。
+2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行 32 份迁移。
 3. Supabase 控制台关闭开放注册、匿名登录和 Google；本地 config.toml 已关闭前两项，但它不改变云端项目。保留服务端 Admin createUser/generateLink 能力。无需发送合成邮箱的邮件。
 4. 从根目录 `.env.example` 创建服务器私有环境文件，权限 `600`。设置 Supabase URL、anon key、service role、Postgres URL、xy2api API/Web URL、SSO_EMAIL_DOMAIN、LOOMIC_WEB_ORIGIN。用 `openssl rand -base64 32` 离线生成 LOOMIC_SECRET_KEY，API/Worker 完全一致。不要执行旧的种子账号脚本；普通 Supabase 用户不通过集成鉴权。
 5. 为主站 Key 分组启用图像能力，确认余额、Key 限额、模型、平台和出口 IP 白名单。主站设置或部署由负责人执行；本开发没有修改 xy2api 仓库。
@@ -20,7 +20,7 @@ LOOMIC_AGENT_BACKEND_MODE 仅接受 state。为防宿主机秘密被模型工具
 
 ## 本地开发与检查
 
-建议 Node 22、pnpm 10.26.2，使用已有 lockfile，不需要新增依赖。
+建议 Node 22、pnpm 10.26.2，使用已有 lockfile，不需要新增生产依赖。自定义服务商直接出站，不经 HTTPS_PROXY；可用 LOOMIC_CHAT_PROVIDER_ALLOWED_HOSTS 限定公网主机，详见增量交接。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -32,9 +32,9 @@ pnpm --filter @loomic/server test
 bash apps/server/scripts/check-xy2api-migrations.sh
 ```
 
-最后一项使用 Docker 建立独立、无暴露端口的 PostgreSQL 18 临时容器并自动删除，重复执行两份迁移，检查 RLS、零 policy、客户端权限及计费字段约束。它使用最小 Supabase 表结构夹具，不能代替真实 Supabase 项目的完整迁移验收。
+最后一项使用 Docker 建立独立、无暴露端口的 PostgreSQL 18 临时容器并自动删除，重复执行三份集成迁移，检查 RLS、零 policy、客户端权限、计费字段约束及服务商归属/删除/数量约束。它使用最小 Supabase 表结构夹具，不能代替真实 Supabase 项目的完整迁移验收。
 
-开发启动：根目录准备 `.env.local`，然后 `pnpm --filter @loomic/server dev`，会同时启动 API 与 Worker。按用户要求，本次不启动/修改前端。由于 shared 是编译包，改动契约后先重新 build shared。
+开发启动：根目录准备 `.env.local`，然后 `pnpm --filter @loomic/server dev`，会同时启动 API 与 Worker。前端协作以工作区交接文档认领表为准。由于 shared 是编译包，改动契约后先重新 build shared。
 
 ## 构建和预发
 

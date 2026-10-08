@@ -324,45 +324,22 @@ async function handleRunCommand(
   });
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
-  // Resolve thread + model in parallel
-  const [threadId, model] = await Promise.all([
-    (async (): Promise<string | undefined> => {
-      if (!services.threadService) return undefined;
-      try {
-        const sessionThread =
-          await services.threadService.resolveOwnedSessionThread(
-            authenticatedUser,
-            payload.sessionId,
-          );
-        return sessionThread.threadId;
-      } catch (error) {
-        log.warn("thread_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-    (async (): Promise<string | undefined> => {
-      if (!services.settingsService || !services.viewerService)
-        return undefined;
-      try {
-        const viewer =
-          await services.viewerService.ensureViewer(authenticatedUser);
-        const settings = await services.settingsService.getWorkspaceSettings(
-          authenticatedUser,
-          viewer.workspace.id,
-        );
-        return settings.defaultModel;
-      } catch (error) {
-        log.warn("model_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-  ]);
-  // Client-provided model takes priority over workspace default
-  const resolvedModel = payload.model ?? model;
+  // Resolve the owned thread; account model selection happens inside the runtime.
+  const threadId = await (async (): Promise<string | undefined> => {
+    if (!services.threadService) return undefined;
+    try {
+      const session = await services.threadService.resolveOwnedSessionThread(
+        authenticatedUser,
+        payload.sessionId,
+      );
+      return session.threadId;
+    } catch {
+      log.warn("thread_resolve_failed");
+      return undefined;
+    }
+  })();
+  // Only an explicit per-run model overrides account preferences.
+  const resolvedModel = payload.model;
   log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
 
   const response = agentRuns.createRun(payload, {

@@ -8,11 +8,11 @@ import {
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
+import { chatRunError } from "../features/chat-providers/run-error.js";
 
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
 
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -28,6 +28,7 @@ type LangChainStreamEvent = {
 
 type AdaptDeepAgentStreamOptions = {
   conversationId: string;
+  customChat?: boolean;
   now?: () => string;
   runId: string;
   sessionId: string;
@@ -268,17 +269,15 @@ export async function* adaptDeepAgentStream(
       return;
     }
 
-    // Log full error detail server-side
-    console.error(
-      `[stream-adapter] Stream error for run ${options.runId}:`,
-      error,
-    );
+    // Upstream SDK exceptions may contain credentials or response bodies.
+    const failure = chatRunError(error, options.customChat);
+    console.error("[stream-adapter] Stream failed", {
+      runId: options.runId,
+      code: failure.code,
+    });
 
     yield {
-      error: {
-        code: "run_failed",
-        message: sanitizeErrorForClient(error),
-      },
+      error: failure,
       runId: options.runId,
       timestamp: now(),
       type: "run.failed",

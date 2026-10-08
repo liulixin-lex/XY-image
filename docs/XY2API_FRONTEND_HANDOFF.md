@@ -1,6 +1,6 @@
 # xy2api 后端接口交接：供前端开发接续
 
-依据 2026-10-07 交接规范及用户追加指示：本分支仅实现后端，`apps/web` 没有改动。现有页面尚未适配，不能作为完整生图站发布。前端请按原规范 F1–F8 实施，以下以已实现后端为准。
+2026-10-08 更新：前端已完成，agent03 后端增量包含字体代理、自定义对话服务商、账户默认模型解析。新增接口及精确错误/刷新/删除语义见 [后端增量交接](XY_IMAGE_BACKEND_AGENT03.md)，与工作区方案 6.4.1 一致。真实联调依用户要求延后。
 
 ## 连接与会话
 
@@ -61,7 +61,8 @@ GET `/api/account`：
     "image_key_id": 12,
     "chat_key_id": 12,
     "default_image_model": "gpt-image-2",
-    "default_chat_model": "gpt-5.4"
+    "default_chat_model": "gpt-5.4",
+    "default_chat_provider_id": null
   },
   "links": {
     "recharge": "https://api.example.com/purchase",
@@ -89,13 +90,13 @@ type KeyMetadata = {
 `pricing` 是主站元数据，P0 不用它算账单或展示预估价。Key 的 IP 限制提示使用 auth/config 的 `egressIp`；值为空则提示联系管理员确认出口 IP。空列表提供「去主站创建」链接。
 
 - POST `/api/account/keys/sync` 无 body，返回 `{ ok: true }`；随后重取账户、Key 列表及两类模型。同步失败保留当前选择，401 要重新登录。
-- PUT `/api/account/preferences` 请求 `{ imageKeyId?, chatKeyId?, defaultImageModel?, defaultChatModel? }`，返回 `{ preferences }`。ID 为正整数，不接受 null。只发送发生变化的字段。对话模型偏好填写裸 ID（如 `gpt-5.4`），不加 `openai:`。
+- PUT `/api/account/preferences` 请求 `{ imageKeyId?, chatKeyId?, defaultImageModel?, defaultChatModel?, defaultChatProviderId? }`，返回 `{ preferences }`。Key ID 为正整数，不接受 null；defaultChatProviderId 为服务商 UUID 或 null（主站）。只发送发生变化的字段。对话模型偏好填写裸 ID（如 `gpt-5.4`），不加 `openai:`。
 - 切换生图 Key 后重取 `/api/image-models`；切换对话 Key 后重取 `/api/models`。不允许选择其他用户的 Key 或不可用模型。
 - P1 `/api/account/keys/create` 尚未实现，不展示该按钮。
 
 ## 模型和生图
 
-GET `/api/models`：`{ models: [{ id: "openai:gpt-5.4", name: "gpt-5.4", provider: "openai" }] }`。
+GET `/api/models` 合并主站及启用的个人服务商模型，增加 source/billing/providerId/providerName 与顶层 xy2api.available/error。主站 Key 不可用时仍返回个人服务商。格式见增量交接。
 
 GET `/api/image-models`：
 
@@ -110,7 +111,7 @@ GET `/api/image-models`：
 }
 ```
 
-两个接口都需要令牌，仅返回当前 Key 能力；没有可用 Key 会报错，不回退到平台模型。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
+两个接口都需要令牌。生图模型只返回当前主站 Key 能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
 
 画质只显示 `standard`「1K 标准」和 `hd`「2K 高清」。`maxQuality=standard` 时禁用 2K。提交 `ultra` 会失败；超出模型能力的 hd 会降为 standard。默认目录：
 
@@ -141,7 +142,7 @@ GET `/api/image-models`：
 
 `POST /api/agent/runs` 必须登录；WebSocket 仍用 `/api/ws?token=<Supabase access_token>`。只可运行或恢复自己有权访问的画布。每次 `agent.run` 可以带最新 Supabase `accessToken`；连接每 30 秒复核，关闭码 4001 应触发会话过期处理。反向代理日志也应只记录路径，不能记录查询串。
 
-保留原事件流、任务轮询/Realtime 和 `canvas.sync`。`billing.error` 新增错误码及可选 `balance`、`rechargeUrl`；这两个字段可能不存在，可从 `/api/account` 补全。Agent 无可用对话 Key 时发出 billing.error 并停止。模型从工作区选择与当前 Key 能力中解析；不能恢复平台公用 Key。
+保留原事件流、任务轮询/Realtime 和 `canvas.sync`。`billing.error` 新增错误码及可选 `balance`、`rechargeUrl`；这两个字段可能不存在，可从 `/api/account` 补全。Agent 用个人服务商时不要求主站对话 Key。明确的本次模型选择优先，否则读账户偏好，再选主站 Key 第一个模型。服务商错误走 run.failed 的 provider_* 安全码；主站 Key 错误沿用 billing.error。工作区 defaultModel 的双写可由前端移除。
 
 | error.code | 前端处理 |
 | --- | --- |
@@ -160,7 +161,9 @@ GET `/api/image-models`：
 
 请按 code 分流，不只按 HTTP 状态码：网关类错误通过安全映射后可能使用 502。登录与账户管理的暂时故障使用 503。HTTP 错误、`billing.error`、任务 `error_code` 都要接到错误 UI。
 
-## F1–F8 待办与联调门槛
+## F1–F8 历史清单与真实联调门槛
+
+前端实现已完成，下列清单保留作为真实验收依据。
 
 1. 实现上述 API 客户端、授权参数和会话过期事件。
 2. 替换登录表单，覆盖普通登录、TOTP、Turnstile、错误密码和限流。

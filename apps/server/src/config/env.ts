@@ -18,6 +18,8 @@ export type ServerEnv = {
   ssoEmailDomain: string;
   imageModelsJson?: string;
   chatModels: string[];
+  chatProviderAllowHttp: boolean;
+  chatProviderAllowedHosts: string[];
   maxConcurrentJobs: number;
   maxImagesPerRun: number;
   sessionRevalidateMinutes: number;
@@ -207,6 +209,13 @@ export function loadServerEnv(
     ),
     trustProxy: source.LOOMIC_TRUST_PROXY === "true",
     embedLoginEnabled: false,
+    chatProviderAllowHttp:
+      source.NODE_ENV !== "production" &&
+      source.LOOMIC_CHAT_PROVIDER_ALLOW_HTTP === "true",
+    chatProviderAllowedHosts: (source.LOOMIC_CHAT_PROVIDER_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
     workerConcurrency: integer("WORKER_CONCURRENCY", 3),
     workerImageConcurrency: integer("WORKER_IMAGE_CONCURRENCY", 3),
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),

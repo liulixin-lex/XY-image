@@ -4,10 +4,10 @@ export function createSecretBox(encodedKey: string) {
   const key = Buffer.from(encodedKey, "base64");
   if (key.length !== 32) throw new Error("Invalid LOOMIC_SECRET_KEY");
   return {
-    sealSecret(plain: string): string {
+    sealSecret(plain: string, aad = "loomic:xy2api:v1"): string {
       const iv = randomBytes(12);
       const cipher = createCipheriv("aes-256-gcm", key, iv);
-      cipher.setAAD(Buffer.from("loomic:xy2api:v1"));
+      cipher.setAAD(Buffer.from(aad));
       const encrypted = Buffer.concat([
         cipher.update(plain, "utf8"),
         cipher.final(),
@@ -19,7 +19,7 @@ export function createSecretBox(encodedKey: string) {
         encrypted.toString("base64url"),
       ].join(".");
     },
-    openSecret(sealed: string): string {
+    openSecret(sealed: string, aad = "loomic:xy2api:v1"): string {
       try {
         const parts = sealed.split(".");
         if (parts.length !== 4 || parts[0] !== "v1") throw new Error();
@@ -32,7 +32,7 @@ export function createSecretBox(encodedKey: string) {
         const tag = decode(parts[2] ?? "");
         if (iv.length !== 12 || tag.length !== 16) throw new Error();
         const cipher = createDecipheriv("aes-256-gcm", key, iv);
-        cipher.setAAD(Buffer.from("loomic:xy2api:v1"));
+        cipher.setAAD(Buffer.from(aad));
         cipher.setAuthTag(tag);
         return Buffer.concat([
           cipher.update(decode(parts[3] ?? "")),

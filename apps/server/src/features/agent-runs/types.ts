@@ -12,6 +12,7 @@ export type CreateAcceptedAgentRunInput = {
 };
 
 export type UpdateAgentRunInput = {
+  model?: string;
   completedAt?: string;
   errorCode?: string;
   errorMessage?: string;

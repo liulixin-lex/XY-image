@@ -1,5 +1,8 @@
 import type { ServerEnv } from "../../config/env.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import { createProviderNetwork } from "../chat-providers/network.js";
+import { ChatProviderService } from "../chat-providers/service.js";
+import { createChatProviderStore } from "../chat-providers/store.js";
 import { AccountService } from "./account-service.js";
 import { BillingGuard } from "./billing-guard.js";
 import { loadImageCatalog } from "./catalog.js";
@@ -14,6 +17,20 @@ export function createXy2apiServices(
 ) {
   const client = new Xy2apiClient(env.xy2apiBaseUrl);
   const box = createSecretBox(env.secretKey);
+  const providers = new ChatProviderService(
+    createChatProviderStore(getAdmin),
+    box,
+    createProviderNetwork({
+      allowHttp: env.chatProviderAllowHttp,
+      allowedHosts: env.chatProviderAllowedHosts,
+      forbiddenUrls: [
+        env.xy2apiBaseUrl,
+        env.xy2apiWebUrl,
+        env.webOrigin,
+        env.supabaseUrl ?? "",
+      ],
+    }),
+  );
   const accounts = new AccountService(
     createAccountStore(getAdmin),
     client,
@@ -27,9 +44,10 @@ export function createXy2apiServices(
     box,
     loadImageCatalog(env.imageModelsJson),
     env,
+    providers,
   );
   accounts.syncKeys = (userId) => keys.syncKeys(userId);
   const billing = new BillingGuard(keys, client, getAdmin, env);
-  return { client, box, accounts, keys, billing };
+  return { client, box, accounts, keys, billing, providers };
 }
 export type Xy2apiServices = ReturnType<typeof createXy2apiServices>;

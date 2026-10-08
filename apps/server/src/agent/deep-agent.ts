@@ -5,6 +5,7 @@ import type {
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
+import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
 import { GatewayError, mapGatewayError } from "../features/xy2api/errors.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 
@@ -43,6 +44,7 @@ export type LoomicAgentFactory = (options: {
   submitImageJob?: SubmitImageJobFn;
   imageModels?: AvailableModel[];
   credentials?: { apiKey: string; baseUrl: string };
+  customChat?: Parameters<typeof createCustomChatModel>[0];
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
@@ -61,6 +63,7 @@ export function createLoomicDeepAgent(options: {
   submitImageJob?: SubmitImageJobFn;
   imageModels?: AvailableModel[];
   credentials?: { apiKey: string; baseUrl: string };
+  customChat?: Parameters<typeof createCustomChatModel>[0];
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): LoomicAgent {
@@ -68,8 +71,9 @@ export function createLoomicDeepAgent(options: {
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
 
   const modelSpec = options.model ?? createDefaultModelSpecifier(options.env);
-  const resolvedModel =
-    typeof modelSpec === "string"
+  const resolvedModel = options.customChat
+    ? createCustomChatModel(options.customChat)
+    : typeof modelSpec === "string"
       ? createStreamingChatModel(modelSpec, options.credentials)
       : modelSpec;
 

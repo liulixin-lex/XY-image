@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
+import { ChatProviderError } from "../features/chat-providers/errors.js";
 import type { AccountService } from "../features/xy2api/account-service.js";
 import type { Usage, Xy2apiClient } from "../features/xy2api/client.js";
 import { BillingGuardError, Xy2apiError } from "../features/xy2api/errors.js";
@@ -8,7 +9,7 @@ import type { KeyService } from "../features/xy2api/key-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
 export function sendAccountError(reply: FastifyReply, error: unknown) {
-  if (error instanceof BillingGuardError)
+  if (error instanceof BillingGuardError || error instanceof ChatProviderError)
     return reply
       .code(error.statusCode)
       .send({ error: { code: error.code, message: error.message } });
@@ -50,6 +51,7 @@ export function registerAccountRoutes(
       chatKeyId: z.number().int().positive().optional(),
       defaultImageModel: z.string().max(200).optional(),
       defaultChatModel: z.string().max(200).optional(),
+      defaultChatProviderId: z.uuid().nullable().optional(),
     })
     .strict();
   const links = {
@@ -151,6 +153,16 @@ export function registerAccountRoutes(
       await options.keys.syncKeys(user.id);
       balances.delete(user.id);
       return { ok: true };
+    } catch (error) {
+      return sendAccountError(reply, error);
+    }
+  });
+  app.get("/api/account/preferences", async (request, reply) => {
+    try {
+      reply.header("Cache-Control", "no-store");
+      const user = await options.auth.authenticate(request);
+      if (!user) throw new BillingGuardError("xy2api_reauth_required", 401);
+      return { preferences: await options.keys.preferences(user.id) };
     } catch (error) {
       return sendAccountError(reply, error);
     }
