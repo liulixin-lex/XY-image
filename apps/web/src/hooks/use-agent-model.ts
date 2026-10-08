@@ -4,7 +4,9 @@ import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "xy:agent-model";
 
-// `openai:<id>` as returned by /api/models; null = workspace default.
+// A model id exactly as /api/models lists it (`openai:<model>` or
+// `custom:<providerId>:<model>`, see lib/chat-models.ts); null = the default
+// from Settings. Only the id is stored, never anything about the provider.
 type AgentModel = string | null;
 
 // Listeners for cross-component reactivity

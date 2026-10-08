@@ -9,10 +9,10 @@
  * - account/balance: on sign-in, when the tab becomes visible again, and
  *   after each generation settles (immediately, then once more after the
  *   server's 15 s balance cache expires);
- * - models: lazily on first use, and again after the selected key changes;
+ * - models: lazily on first use, and again after the selected key changes
+ *   (chat models also after the user's own providers change);
  * - keys: on demand (settings) and after a sync.
  */
-import type { ModelInfo } from "@loomic/shared";
 import {
   createContext,
   useCallback,
@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { useAuth } from "./auth-context";
+import type { ChatModel } from "./chat-models";
 import { issueCodeOf } from "./generation-errors";
 import {
   type ImageModelInfo,
@@ -53,11 +54,20 @@ type Slot<T> = {
 
 const empty = <T,>(): Slot<T> => ({ data: null, loading: false, error: null });
 
+/**
+ * `error` = the whole list failed (older servers fail without a chat key).
+ * `xy2apiError` = main-site models are missing but the user's own
+ * providers are still listed (newer servers, plan §6.4).
+ */
+type ChatModelsSlot = Slot<ChatModel[]> & { xy2apiError: string | null };
+
+const emptyChat = (): ChatModelsSlot => ({ ...empty<ChatModel[]>(), xy2apiError: null });
+
 interface AccountContextValue {
   account: Slot<AccountResponse>;
   keys: Slot<KeyMetadata[]>;
   imageModels: Slot<ImageModelInfo[]>;
-  chatModels: Slot<ModelInfo[]>;
+  chatModels: ChatModelsSlot;
   config: AuthConfig | null;
   refreshAccount: (options?: { force?: boolean }) => Promise<void>;
   refreshKeys: () => Promise<void>;
@@ -90,7 +100,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Slot<AccountResponse>>(empty);
   const [keys, setKeys] = useState<Slot<KeyMetadata[]>>(empty);
   const [imageModels, setImageModels] = useState<Slot<ImageModelInfo[]>>(empty);
-  const [chatModels, setChatModels] = useState<Slot<ModelInfo[]>>(empty);
+  const [chatModels, setChatModels] = useState<ChatModelsSlot>(emptyChat);
   const [config, setConfig] = useState<AuthConfig | null>(null);
 
   const lastAccountFetch = useRef(0);
@@ -103,7 +113,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setAccount(empty());
     setKeys(empty());
     setImageModels(empty());
-    setChatModels(empty());
+    setChatModels(emptyChat());
     imageModelsRequested.current = false;
     chatModelsRequested.current = false;
     lastAccountFetch.current = 0;
@@ -169,9 +179,16 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setChatModels((prev) => ({ ...prev, loading: true }));
     try {
       const data = await fetchModels(current);
-      setChatModels({ data: data.models, loading: false, error: null });
+      if (data.xy2api.error)
+        console.info("[account] main-site chat models unavailable", data.xy2api.error);
+      setChatModels({
+        data: data.models,
+        loading: false,
+        error: null,
+        xy2apiError: data.xy2api.available ? null : (data.xy2api.error ?? "key_unavailable"),
+      });
     } catch (error) {
-      setChatModels({ data: [], loading: false, error: issueCodeOf(error) });
+      setChatModels({ data: [], loading: false, error: issueCodeOf(error), xy2apiError: null });
     }
   }, []);
 
@@ -315,7 +332,10 @@ export function useImageModels() {
   return { ...imageModels, refresh: refreshImageModels };
 }
 
-/** Chat models for the selected chat key, loaded on first use. */
+/**
+ * Chat models (main-site chat key + the user's own providers), loaded on
+ * first use. Call `refresh` after changing a provider.
+ */
 export function useChatModels() {
   const { chatModels, ensureChatModels, refreshChatModels } = useAccount();
   useEffect(() => {

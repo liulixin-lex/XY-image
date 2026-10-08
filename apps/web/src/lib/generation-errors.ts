@@ -17,6 +17,7 @@ export type IssueAction =
   | "usage" // open main-site usage page to reconcile
   | "relogin" // local sign-out, back to /login
   | "reload_models" // re-read the model list for the current key
+  | "providers" // go to /settings?tab=models (the user's own chat providers)
   | "none";
 
 /** How loudly to surface the issue. */
@@ -140,6 +141,68 @@ const CATALOG: Record<string, IssueSpec> = {
   xy2api_unavailable: {
     title: "主站暂时不可用",
     message: "暂时连不上主站，请稍后再试。",
+    action: "none",
+    weight: "toast",
+    maybeCharged: false,
+  },
+
+  // The user's own chat providers (plan §6.5). They never touch the main-site
+  // balance, so maybeCharged stays false; whatever the provider bills is
+  // between the user and that provider, and the copy makes no claim about it.
+  // Settings problems open a dialog that leads to the provider settings;
+  // passing ones are toasts.
+  provider_auth_failed: {
+    title: "服务商拒绝了 API Key",
+    message: "这次对话没有完成。到设置里重新填写这个服务商的 API Key，或换回主站模型。",
+    action: "providers",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_model_not_found: {
+    title: "服务商找不到这个模型",
+    message: "模型可能已下线或改名。到设置里刷新这个服务商的模型列表，再重新选择。",
+    action: "providers",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_tools_unsupported: {
+    title: "这个模型不支持工具调用",
+    message: "设计助手要用工具来读画布和生图。换一个支持工具调用的模型再试。",
+    action: "none",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_unreachable: {
+    title: "连不上服务商",
+    message: "检查这个服务商的接口地址是否填对，或稍后再试。",
+    action: "providers",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_blocked_address: {
+    title: "这个接口地址不能用",
+    message: "只支持 https 的公网地址，不能是内网或本机地址。到设置里改一下接口地址。",
+    action: "providers",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_models_unavailable: {
+    title: "读不到服务商的模型列表",
+    message: "到设置里把这个服务商改成手动填写模型名。",
+    action: "providers",
+    weight: "dialog",
+    maybeCharged: false,
+  },
+  provider_rate_limited: {
+    title: "服务商限制了请求频率",
+    message: "稍等片刻再发送，或换一个模型。",
+    action: "none",
+    weight: "toast",
+    maybeCharged: false,
+  },
+  provider_unavailable: {
+    title: "服务商暂时没有响应",
+    message: "这次对话没有完成。稍后再发送一次，或换一个模型。",
     action: "none",
     weight: "toast",
     maybeCharged: false,

@@ -9,7 +9,6 @@ import type {
   MarketplaceSearchResponse,
   MessageCreateResponse,
   MessageListResponse,
-  ModelListResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -29,6 +28,11 @@ import type {
   WorkspaceSkillListResponse,
 } from "@loomic/shared";
 
+import {
+  type ChatModelList,
+  type RawChatModelList,
+  normalizeChatModelList,
+} from "./chat-models";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 
@@ -335,19 +339,23 @@ export async function updateWorkspaceSettings(
 // --- Models (scoped to the user's selected xy2api keys) ---
 
 /**
- * Chat models available to the selected chat key. Ids are `openai:<model>`.
- * Fails with `key_unavailable` when no usable chat key is selected; there is
- * no platform fallback.
+ * Chat models for the design agent: the selected main-site chat key's models
+ * (`openai:<model>`) plus the user's own providers (`custom:<id>:<model>`).
+ *
+ * Older servers return main-site models only and fail with `key_unavailable`
+ * when no usable chat key is selected; newer ones still list the user's
+ * providers and report the key problem in `xy2api.error` (plan §6.4).
+ * `normalizeChatModelList` accepts both.
  */
 export async function fetchModels(
   accessToken: string,
-): Promise<ModelListResponse> {
+): Promise<ChatModelList> {
   return dedupeRequest(`models:${accessToken.slice(-12)}`, async () => {
     const response = await fetch(`${getServerBaseUrl()}/api/models`, {
       headers: authHeaders(accessToken),
     });
     if (!response.ok) return handleErrorResponse(response);
-    return (await response.json()) as ModelListResponse;
+    return normalizeChatModelList((await response.json()) as RawChatModelList);
   });
 }
 

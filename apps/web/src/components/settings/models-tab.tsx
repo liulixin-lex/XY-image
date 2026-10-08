@@ -1,29 +1,38 @@
 "use client";
 
 /**
- * Default models. Both lists depend on the selected keys' groups.
+ * Default models, plus the user's own chat providers. The image list depends
+ * on the selected image key; the chat list merges the chat key's models with
+ * the user's providers (lib/chat-models.ts).
  *
  * The default chat model is written to two places on purpose: account
- * preferences (bare id, the main-site record) and workspace settings
- * (`openai:<id>`), because the agent runtime currently reads only the
- * workspace setting. TODO(xy-server): have the runtime read
- * `default_chat_model` and drop the workspace write.
+ * preferences (bare model + provider id; null = main site) and workspace
+ * settings (the full id, `openai:<model>` or `custom:<provider>:<model>`),
+ * because the agent runtime currently reads only the workspace setting.
+ * TODO(agent03): once the runtime resolves the default from account
+ * preferences (plan §6.5), drop the workspace write and `workspaceModel`.
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAccount, useChatModels, useImageModels } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
+import {
+  type ChatModel,
+  chatBillingNote,
+  chatPreferencePatch,
+  groupChatModels,
+  preferredChatModelId,
+} from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import { fetchWorkspaceSettings, updateWorkspaceSettings } from "@/lib/server-api";
 
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
-import { Picker } from "../ui/select";
+import { type PickerOption, Picker } from "../ui/select";
+import { ChatProvidersSection } from "./chat-providers-section";
 import { SettingsSection } from "./section";
-
-const bare = (id: string) => id.replace(/^openai:/, "");
 
 export function ModelsTab() {
   const { session } = useAuth();
@@ -49,10 +58,11 @@ export function ModelsTab() {
   const imageModels = useMemo(() => image.data ?? [], [image.data]);
   const chatModels = useMemo(() => chat.data ?? [], [chat.data]);
 
-  const currentChat =
-    prefs?.default_chat_model ?? (workspaceModel ? bare(workspaceModel) : null);
-  const chatValue =
-    currentChat && chatModels.some((m) => bare(m.id) === currentChat) ? currentChat : null;
+  // Preferences first; the workspace setting covers defaults saved before
+  // preferences existed.
+  const currentChat = preferredChatModelId(prefs) ?? workspaceModel;
+  const chatSelected = chatModels.find((m) => m.id === currentChat) ?? null;
+  const chatOptions = useMemo(() => chatPickerOptions(chatModels), [chatModels]);
   const imageValue =
     prefs?.default_image_model && imageModels.some((m) => m.id === prefs.default_image_model)
       ? prefs.default_image_model
@@ -72,11 +82,16 @@ export function ModelsTab() {
 
   const saveChat = async (id: string) => {
     const token = tokenRef.current;
+    const patch = chatPreferencePatch(id, prefs);
+    if (!patch) {
+      console.warn("[settings] unrecognised chat model id", id);
+      return;
+    }
     setSaving("chat");
     try {
-      await updatePreferences({ defaultChatModel: id });
+      await updatePreferences(patch);
       if (token) {
-        const res = await updateWorkspaceSettings(token, { defaultModel: `openai:${id}` });
+        const res = await updateWorkspaceSettings(token, { defaultModel: id });
         setWorkspaceModel(res.settings.defaultModel);
       }
       success("默认对话模型已保存");
@@ -135,24 +150,66 @@ export function ModelsTab() {
         description="设计助手默认使用的对话模型。画布里可以按会话临时更换。"
       >
         <ModelPickerBlock
-          error={chat.error}
+          // Older servers fail the whole list without a chat key; newer ones
+          // still list the user's providers and only flag the main site.
+          error={chat.error ?? (chatModels.length === 0 ? chat.xy2apiError : null)}
           loading={chat.loading && chatModels.length === 0}
           empty={chatModels.length === 0}
           emptyText="当前对话 Key 没有可用的对话模型。"
         >
+          {chat.xy2apiError ? (
+            <p className="mb-3 max-w-xl text-[13px] leading-relaxed text-fg-soft">
+              主站的对话模型暂时用不了（{describeIssue(chat.xy2apiError, null).title}），下面只列出你自己的服务商。
+              <Link href="/settings?tab=keys" className="ml-0.5 text-fg underline underline-offset-4">
+                检查对话 Key
+              </Link>
+            </p>
+          ) : null}
           <Picker
-            value={chatValue}
+            value={chatSelected?.id ?? null}
             onValueChange={(v) => void saveChat(v)}
-            options={chatModels.map((m) => ({ value: bare(m.id), text: m.name, label: m.name }))}
+            options={chatOptions}
             ariaLabel="默认对话模型"
             placeholder="未设置（使用列表第一个）"
             disabled={saving === "chat"}
             className="h-10 w-full max-w-sm"
-            popupClassName="w-[300px]"
+            popupClassName="w-[320px]"
           />
+          {chatSelected ? (
+            <p className="mt-2 text-[12px] text-fg-muted">{chatBillingNote(chatSelected)}。</p>
+          ) : null}
         </ModelPickerBlock>
       </SettingsSection>
+
+      <ChatProvidersSection defaultProviderId={prefs?.default_chat_provider_id ?? null} />
     </div>
+  );
+}
+
+/**
+ * Flat list when everything is from the main site (as before); grouped by
+ * source with the billing side named once the user has providers.
+ */
+function chatPickerOptions(models: ChatModel[]): PickerOption[] {
+  const groups = groupChatModels(models);
+  const grouped = groups.some((group) => group.source === "custom");
+  return groups.flatMap((group) =>
+    group.models.map((m) => ({
+      value: m.id,
+      text: m.name,
+      label: m.name,
+      ...(grouped
+        ? {
+            group: {
+              key: group.key,
+              label:
+                group.source === "custom"
+                  ? `${group.label} · 由服务商收费`
+                  : "主站 · 从主站余额扣",
+            },
+          }
+        : {}),
+    })),
   );
 }
 

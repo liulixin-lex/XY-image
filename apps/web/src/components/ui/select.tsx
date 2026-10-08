@@ -13,7 +13,26 @@ export type PickerOption = {
   text: string;
   description?: ReactNode;
   disabled?: boolean;
+  /**
+   * Options sharing a group key render under one labelled group, in the
+   * order given. Ungrouped options render as plain items.
+   */
+  group?: { key: string; label: ReactNode };
 };
+
+type PickerSection = { key: string; label: ReactNode | null; options: PickerOption[] };
+
+/** Consecutive options with the same group key form one section. */
+function sectionsOf(options: PickerOption[]): PickerSection[] {
+  const sections: PickerSection[] = [];
+  for (const option of options) {
+    const key = option.group?.key ?? "";
+    const last = sections.at(-1);
+    if (last && last.key === key) last.options.push(option);
+    else sections.push({ key, label: option.group?.label ?? null, options: [option] });
+  }
+  return sections;
+}
 
 /**
  * Compact keyboard-accessible select used for model / quality / ratio /
@@ -83,33 +102,49 @@ export function Picker({
             )}
           >
             <SelectPrimitive.List>
-              {options.map((option) => (
-                <SelectPrimitive.Item
-                  key={option.value}
-                  value={option.value}
-                  disabled={option.disabled}
-                  className="grid cursor-default grid-cols-[1fr_auto] items-center gap-x-3 rounded-lg px-2.5 py-2 text-[13px] text-fg outline-none select-none data-disabled:text-fg-muted data-highlighted:bg-white/[0.08]"
-                >
-                  <span className="min-w-0">
-                    <SelectPrimitive.ItemText className="block truncate font-medium">
-                      {option.label}
-                    </SelectPrimitive.ItemText>
-                    {option.description ? (
-                      <span className="mt-0.5 block text-xs text-fg-muted">
-                        {option.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  <SelectPrimitive.ItemIndicator>
-                    <CheckIcon className="size-3.5 text-amb" strokeWidth={2.25} />
-                  </SelectPrimitive.ItemIndicator>
-                </SelectPrimitive.Item>
-              ))}
+              {sectionsOf(options).map((section, index) =>
+                section.label === null ? (
+                  section.options.map(renderItem)
+                ) : (
+                  <SelectPrimitive.Group
+                    key={`group:${section.key}`}
+                    className={cn(index > 0 && "mt-1 border-t border-line pt-1")}
+                  >
+                    <SelectPrimitive.GroupLabel className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium text-fg-muted">
+                      {section.label}
+                    </SelectPrimitive.GroupLabel>
+                    {section.options.map(renderItem)}
+                  </SelectPrimitive.Group>
+                ),
+              )}
             </SelectPrimitive.List>
           </SelectPrimitive.Popup>
         </SelectPrimitive.Positioner>
       </SelectPrimitive.Portal>
     </SelectPrimitive.Root>
+  );
+}
+
+function renderItem(option: PickerOption) {
+  return (
+    <SelectPrimitive.Item
+      key={option.value}
+      value={option.value}
+      disabled={option.disabled}
+      className="grid cursor-default grid-cols-[1fr_auto] items-center gap-x-3 rounded-lg px-2.5 py-2 text-[13px] text-fg outline-none select-none data-disabled:text-fg-muted data-highlighted:bg-white/[0.08]"
+    >
+      <span className="min-w-0">
+        <SelectPrimitive.ItemText className="block truncate font-medium">
+          {option.label}
+        </SelectPrimitive.ItemText>
+        {option.description ? (
+          <span className="mt-0.5 block text-xs text-fg-muted">{option.description}</span>
+        ) : null}
+      </span>
+      <SelectPrimitive.ItemIndicator>
+        <CheckIcon className="size-3.5 text-amb" strokeWidth={2.25} />
+      </SelectPrimitive.ItemIndicator>
+    </SelectPrimitive.Item>
   );
 }
 

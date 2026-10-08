@@ -46,12 +46,14 @@ vi.mock("../src/components/issues/issue-provider", () => ({
 
 vi.mock("../src/lib/account-context", () => ({
   useAccount: () => ({
+    account: { data: null, loading: false, error: null },
     notifyGenerationSettled: notifyGenerationSettledMock,
     refreshImageModels: vi.fn(),
+    refreshChatModels: vi.fn(),
     imageModels: { data: [], loading: false, error: null },
   }),
   useImageModels: () => ({ data: [], loading: false, error: null, refresh: vi.fn() }),
-  useChatModels: () => ({ data: [], loading: false, error: null, refresh: vi.fn() }),
+  useChatModels: () => ({ data: [], loading: false, error: null, xy2apiError: null, refresh: vi.fn() }),
 }));
 
 function createMockWs(): WebSocketHandle {

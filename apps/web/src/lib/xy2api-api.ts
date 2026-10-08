@@ -51,7 +51,14 @@ export type AccountPreferences = {
   image_key_id: number | null;
   chat_key_id: number | null;
   default_image_model: string | null;
+  /** Bare model name; which provider it belongs to is the field below. */
   default_chat_model: string | null;
+  /**
+   * The user's own chat provider for the default chat model; null = main
+   * site. Missing on servers without custom providers (plan §6.4), which also
+   * reject it in updates.
+   */
+  default_chat_provider_id?: string | null;
 };
 
 export type AccountLinks = {
@@ -99,6 +106,11 @@ export type PreferencesPatch = {
   defaultImageModel?: string;
   /** Bare id such as `gpt-5.4`, never `openai:gpt-5.4`. */
   defaultChatModel?: string;
+  /**
+   * Provider of `defaultChatModel`; null = main site. Only send it when the
+   * server lists `default_chat_provider_id` (older servers reject the field).
+   */
+  defaultChatProviderId?: string | null;
 };
 
 // ---------------------------------------------------------------------------

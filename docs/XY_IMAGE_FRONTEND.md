@@ -19,7 +19,7 @@
 | `/studio` | 生图：左边写描述（`composer.tsx`）和处理队列（`job-queue.tsx`），右边是氛围屏上的当前作品和信息卡（`result-stage.tsx`），下方是按天分组的全部作品（`history-grid.tsx`） | `app/(workspace)/studio/page.tsx`、`hooks/use-studio-jobs.ts`、`components/studio/*` |
 | `/projects` | 画布项目列表 | `app/(workspace)/projects/page.tsx` |
 | `/canvas?id=` | Excalidraw 画布、设计助手侧栏、画布内生图面板 | `app/canvas/page.tsx` |
-| `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型、生成记录（计费核对） | `components/settings/*` |
+| `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对） | `components/settings/*` |
 | `/brand-kit`、`/skills` | 上游功能，已汉化并接入统一的错误处理 | `components/brand-kit/*`、`app/(workspace)/skills/page.tsx` |
 
 ## 状态与数据流
@@ -28,15 +28,32 @@
 - **账户**：`lib/account-context.tsx` 统一提供账户、余额、Key、图像模型和对话模型。生成结束后调用 `notifyGenerationSettled()` 刷新余额。`balance === null` 表示读不到，界面要显示「暂不可读」或「未选择 Key」，不能显示 `$0`。
 - **错误**：`lib/generation-errors.ts` 是错误码目录，`components/issues/issue-provider.tsx` 负责路由。余额不足、Key 不可用、「可能已扣费」这类阻断性问题弹对话框，并只给一个能解决问题的动作（充值、去设置、去主站用量页）；临时性问题用 toast。调用方只需 `report(error)` 或 `reportCode(code, message)`，不要自己写这类文案。
 - **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中表示「结算中」，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。
-- **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 `openai:<id>`，为空表示用工作区默认。
+- **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 id（主站 `openai:<model>`，自己的服务商 `custom:<providerId>:<model>`），为空表示用设置里的默认；列表里已经没有的 id（换了 Key、服务商停用或删除）会自动回到默认。
 
 ## 计费安全规则（改代码前必读）
 
 1. **生成请求只发一次。** 无论失败、组件卸载还是重新挂载，都不自动重发。生图室提交时有防连点锁；画布生图面板用模块级的 `inFlight` 集合记录进行中的请求，关闭面板不会中止请求，已扣费的结果仍会放回画布。`test/studio-jobs.test.tsx` 覆盖了这几点。
 2. **未知不等于没扣费。** `upstream_unknown`、网络中断或状态不明的任务一律标「待核对」，并给出主站请求 ID 和用量页链接。画布上残留的「生成中」占位如果已经没有对应的请求，就显示「结果未知」，不会重新发送。
-3. **主站的秘密不进浏览器存储。** 密码、TOTP challenge、tokenHash、主站 JWT 和 API Key 都不写入 storage，也不打印到日志（`test/login.test.tsx` 有断言）。Supabase 影子用户的 `user.email` 是合成地址，不要展示；真实邮箱从 `useAccount()` 取。
+3. **主站的秘密不进浏览器存储。** 密码、TOTP challenge、tokenHash、主站 JWT 和 API Key 都不写入 storage，也不打印到日志（`test/login.test.tsx` 有断言）。Supabase 影子用户的 `user.email` 是合成地址，不要展示；真实邮箱从 `useAccount()` 取。用户自己服务商的 API Key 只写不读：只在添加 / 编辑弹窗的表单状态里存在，保存或关闭后丢弃，接口只返回末 4 位 `keyHint`，日志只记服务商 id 和路径（`test/chat-providers-api.test.ts` 有断言）。
 4. **规格只有两档：** 1K（`standard`）和 2K（`hd`），由模型的 `maxQuality` 决定能否选 2K。没有 4K、视频、积分和支付入口。
-5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸 id（例如 `gpt-5.4`）；同时写入工作区设置时用 `openai:<id>`（原因见下文「后端缺口」）。
+5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）；同时写入工作区设置时用完整 id（`openai:<model>` 或 `custom:<providerId>:<model>`，原因见下文「后端缺口」）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
+6. **自己的服务商不走主站计费。** 用自定义服务商对话时费用由服务商收取，不从主站余额扣，界面要写明；`provider_*` 错误码一律 `maybeCharged: false`，文案不对服务商那边的扣费下任何结论。生图（生图页、画布生图、助手的生图工具）仍然只走主站。
+
+## 自定义对话模型服务商（前端已完成，等后端）
+
+用户 10-08 的需求：「对话模型可以用户自定义配置模型提供商」。按方案文档（`/workspace/XY-IMAGE-AGENT03-PLAN.md` 第 6 节）的默认决定 D1–D5：每个用户配自己的；只用于设计助手对话；第一版只支持 OpenAI 兼容接口；费用由服务商收；只允许 https 公网地址。接口细节以方案文档 6.4 与 6.4.1 为准。
+
+| 部分 | 文件 | 说明 |
+| --- | --- | --- |
+| 模型 id 与列表 | `lib/chat-models.ts` | `parseChatModelRef` / `formatChatModelRef`（只按前两个 `:` 切，模型名可含 `:` 和 `/`）；`normalizeChatModelList` 同时接受旧的 `{ models }` 和新的合并列表（`source`、`billing`、`xy2api.available/error`）；`groupChatModels` 按「主站 / 各服务商」分组；`chatBillingNote` 计费说明；`preferredChatModelId`、`chatPreferencePatch` 处理偏好 |
+| 接口客户端 | `lib/chat-providers-api.ts` | `/api/chat-providers` 增删改查与 `refresh-models`；`isEndpointMissing` 用 Fastify 默认 404（没有 `error.code`）识别还没上线这批接口的旧服务器 |
+| 表单逻辑 | `lib/chat-provider-form.ts` | 地址规范化（https、不带账号密码 / 查询参数 / `#`、去掉末尾 `/`）、长度和数量上限、改地址必须重填 Key、只发改动的字段、服务端错误码落到对应输入框 |
+| 设置页 | `components/settings/chat-providers-section.tsx`、`chat-provider-dialog.tsx`、`models-tab.tsx` | 列表（名称、地址、Key 末 4 位、模型数、状态）、添加 / 编辑弹窗、刷新模型、启用开关、删除二次确认；默认对话模型选择器按来源分组并显示计费说明；停用默认模型所在的服务商时提示换默认；旧服务器显示「服务器暂时还不支持」，不报错 |
+| 画布选择器 | `components/agent-model-selector.tsx` | 有自己的服务商时按来源分组；选中服务商模型时图标换成插头，读屏文字带计费说明 |
+| 错误 | `lib/generation-errors.ts`、`issues/issue-provider.tsx`、`chat-sidebar.tsx` | 8 个 `provider_*` 码有文案；设置类问题弹窗并给「检查服务商设置」（跳 `/settings?tab=models#chat-providers`）；`run.failed` 带 `provider_*` 码时进问题中心，`provider_model_not_found` 顺带刷新模型列表 |
+| 通用组件 | `ui/select.tsx`（选项分组）、`ui/switch.tsx`、`settings/section.tsx`（`Tag`、锚点 `id`） | — |
+
+测试：`test/chat-models.test.ts`、`chat-provider-form.test.ts`、`chat-providers-api.test.ts`、`chat-providers.test.tsx`、`chat-providers-section.test.tsx`。预览假接口在 `/workspace/xy-preview/server.mjs`（`PROVIDERS=off` 模拟旧服务器；地址里含 `badkey` 返回 `provider_auth_failed`，含 `nolist` 返回 `provider_models_unavailable`（手动填了模型则按手动保存），含 `localhost`、`10.0.`、`192.168.` 返回 `provider_blocked_address`）。
 
 ## 视觉系统
 
@@ -60,11 +77,11 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 16 个文件，82 个用例
+npx vitest run                     # 21 个文件，127 个用例
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 
-`test/setup.ts` 为 jsdom 补了 `matchMedia`。日志统一用 `[模块]` 前缀，例如 `[image-gen]`、`[studio]`、`[landing]`、`[ambient]`、`[auth]`、`[brand-kit]`、`[skills]`、`[canvas]`，线上排查时可以按前缀过滤控制台。
+`test/setup.ts` 为 jsdom 补了 `matchMedia`。日志统一用 `[模块]` 前缀，例如 `[image-gen]`、`[studio]`、`[landing]`、`[ambient]`、`[auth]`、`[brand-kit]`、`[skills]`、`[canvas]`、`[chat-provider]`、`[settings]`、`[account]`、`[fonts]`，线上排查时可以按前缀过滤控制台。
 
 ## 已移除的上游内容
 
@@ -76,7 +93,8 @@ cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 
 | 事项 | 现状 | 建议 |
 | --- | --- | --- |
-| 默认对话模型 | 后端 Agent 运行时读的是工作区设置里的 `defaultModel`，不读账户偏好 `default_chat_model` | 前端两边都写（`components/settings/models-tab.tsx`）。建议后端改为读账户偏好，然后删掉前端的双写 |
+| 默认对话模型 | 后端 Agent 运行时读的是工作区设置里的 `defaultModel`，不读账户偏好 `default_chat_model` | 前端两边都写（`components/settings/models-tab.tsx`，工作区里存完整 id）。agent03 在方案 4-H 里改为读账户偏好（6.5），之后删掉前端双写和 `workspaceModel` |
+| 自定义对话模型服务商 | 前端已按方案 6.4 / 6.4.1 完成；后端接口、表、加密、SSRF 防护、运行时都还没做 | agent03 实现方案第 6 节；`provider_*` 错误码要加进 `@loomic/shared` 的 `errorCodeValues`，`run.failed` 才能带出来；`parseChatModelRef` 进 shared 后前端改为复用（`lib/chat-models.ts` 有 TODO） |
 | Key 额度单位 | `quota` 和 `quotaUsed` 按美元显示，`quota <= 0` 显示为「额度不限」 | 和主站确认单位（`keys-tab.tsx` 里有 TODO） |
 | 示例图版权 | `public/images/showcase/` 中 3/8/9/12 已换成 Unsplash License 图片（出处见 `components/landing/showcase.ts`）；其余 8 张继承自上游，来源未核实 | 上线前把其余 8 张换成本站生成或有授权的图 |
 | Google Fonts | 前端已改为先走后端代理 `GET {API}/api/fonts/css2?family=&text=`（`lib/font-api.ts` 的 `loadFontStylesheet`），代理样式表加载失败时回退直连 `fonts.googleapis.com`；代理在本页成功过一次之后，单个字体失败只回退这一个。字体库预览只取字体名用到的字形（`text=`），品牌字体卡片加载完整字体；同一字体加载过完整版后不再追加子集（子集的 @font-face 没有 unicode-range，会盖住完整版）。**后端代理还没做**（agent03，方案文档第 5 节），上线前国内网络仍会走回退 | 后端实现 `/api/fonts/css2` 与 `/api/fonts/files/*`；字体文件跨域加载需要 CORS 头 |

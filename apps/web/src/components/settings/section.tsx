@@ -7,11 +7,14 @@ import { cn } from "@/lib/utils";
  * stacked on narrow ones. Groups are separated by a hairline, not cards.
  */
 export function SettingsSection({
+  id,
   title,
   description,
   children,
   className,
 }: {
+  /** Anchor for deep links such as `/settings?tab=models#chat-providers`. */
+  id?: string;
   title: string;
   description?: ReactNode;
   children: ReactNode;
@@ -19,7 +22,9 @@ export function SettingsSection({
 }) {
   return (
     <section
+      id={id}
       className={cn(
+        "scroll-mt-24",
         "grid gap-x-12 gap-y-4 border-t border-line py-8 first:border-t-0 first:pt-2 lg:grid-cols-[240px_minmax(0,1fr)]",
         className,
       )}
@@ -48,5 +53,27 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
       <dt className="text-fg-muted">{label}</dt>
       <dd className="min-w-0 text-fg">{children}</dd>
     </>
+  );
+}
+
+/** Small status tag in settings lists. ink = in use; marker = a problem; quiet = off. */
+export function Tag({
+  tone,
+  children,
+}: {
+  tone: "ink" | "marker" | "quiet";
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center rounded-sm px-1.5 text-[11px] font-medium leading-none",
+        tone === "ink" && "bg-fg text-ground",
+        tone === "marker" && "border border-alert text-alert",
+        tone === "quiet" && "border border-line-strong text-fg-soft",
+      )}
+    >
+      {children}
+    </span>
   );
 }

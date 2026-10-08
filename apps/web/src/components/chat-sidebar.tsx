@@ -166,7 +166,21 @@ export function ChatSidebar({
   agentModelRef.current = agentModel;
 
   const { reportCode } = useIssues();
-  const { notifyGenerationSettled, refreshImageModels } = useAccount();
+  const { notifyGenerationSettled, refreshImageModels, refreshChatModels } = useAccount();
+
+  // Errors from the user's own chat provider (plan §6.5) arrive as
+  // `run.failed` with a `provider_*` code; the issue center has copy and a
+  // way to the provider settings. Other run failures keep the inline note.
+  // TODO(agent03): add the provider_* codes to errorCodeValues in
+  // @loomic/shared so `run.failed` can carry them.
+  const reportProviderFailure = useCallback(
+    (code: string, message: string) => {
+      if (!code.startsWith("provider_")) return;
+      reportCode(code, message);
+      if (code === "provider_model_not_found") void refreshChatModels();
+    },
+    [reportCode, refreshChatModels],
+  );
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -530,6 +544,7 @@ export function ChatSidebar({
 
           // Preview model hint: suggest switching when run fails
           if (event.type === "run.failed") {
+            reportProviderFailure(event.error.code, event.error.message);
             const currentModel = agentModelRef.current ?? "";
             if (currentModel.includes("preview")) {
               showToast(
@@ -628,6 +643,7 @@ export function ChatSidebar({
       onStreamEvent,
       readyAttachments,
       reportCode,
+      reportProviderFailure,
       refreshImageModels,
       notifyGenerationSettled,
       showToast,
@@ -836,6 +852,7 @@ export function ChatSidebar({
               }
             }
             if (evt.type === "billing.error") reportCode(evt.code, evt.message);
+            if (evt.type === "run.failed") reportProviderFailure(evt.error.code, evt.error.message);
 
             if (evt.type === "canvas.sync" && onCanvasSync) {
               onCanvasSync();
@@ -866,6 +883,7 @@ export function ChatSidebar({
     activeSessionIdRef,
     reloadMessages,
     reportCode,
+    reportProviderFailure,
     notifyGenerationSettled,
     updateSessionMessages,
     setStreaming,

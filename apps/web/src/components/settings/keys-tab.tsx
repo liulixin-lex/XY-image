@@ -16,7 +16,7 @@ import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
 import { Button, buttonVariants } from "../ui/button";
 import { Picker } from "../ui/select";
-import { SettingsSection } from "./section";
+import { SettingsSection, Tag } from "./section";
 
 /** Mirrors the server's isKeyUsable(); the server stays the authority. */
 export function keyProblem(key: KeyMetadata): string | null {
@@ -304,18 +304,5 @@ function KeyRow({
         {item.hasIpRestriction ? <span>有 IP 限制</span> : null}
       </div>
     </li>
-  );
-}
-
-function Tag({ tone, children }: { tone: "ink" | "marker"; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-sm px-1.5 text-[11px] font-medium leading-none",
-        tone === "ink" ? "bg-fg text-ground" : "border border-alert text-alert",
-      )}
-    >
-      {children}
-    </span>
   );
 }

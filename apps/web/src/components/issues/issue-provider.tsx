@@ -163,6 +163,11 @@ function IssueDialog({
             router.replace("/login");
           },
         };
+      case "providers":
+        return {
+          label: "检查服务商设置",
+          run: () => router.push("/settings?tab=models#chat-providers"),
+        };
       case "reload_models":
         return {
           label: "刷新模型列表",
