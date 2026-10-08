@@ -1,0 +1,27 @@
+{
+  "deployDir": "/srv/xy-image/deployment",
+  "backupRoot": "/srv/xy-image/backup-staging",
+  "stateDir": "/srv/xy-image/operations-state",
+  "resticEnvFile": "/etc/xy-image/restic.env",
+  "alertFile": "/etc/xy-image/alert.json",
+  "host": "xy-image-production",
+  "tag": "xy-image-complete",
+  "offsiteConfirmed": false,
+  "keepDaily": 7,
+  "keepWeekly": 4,
+  "keepMonthly": 6,
+  "maxBackupAgeHours": 30,
+  "minFreeGiB": 10,
+  "reminderMinutes": 60,
+  "readyUrl": "http://127.0.0.1:3101/api/ready",
+  "requiredServices": [
+    "db",
+    "auth",
+    "rest",
+    "storage",
+    "realtime",
+    "api-gw",
+    "xy-api",
+    "xy-worker"
+  ]
+}

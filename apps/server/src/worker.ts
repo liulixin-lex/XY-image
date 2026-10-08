@@ -10,30 +10,24 @@ if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
 }
 
 import { randomUUID } from "node:crypto";
+import { unlink, writeFile } from "node:fs/promises";
 import { loadServerEnv } from "./config/env.js";
-import {
-  type ExecutorContext,
-  getExecutor,
-} from "./features/jobs/job-executor.js";
+import { validateProductionEnv } from "./config/production.js";
+import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
-import { BillingGuardError } from "./features/xy2api/errors.js";
-import { type PgmqMessage, createPgmqClient } from "./queue/pgmq-client.js";
+import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
+import { closeSupabaseTransport } from "./supabase/transport.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
+import { processMessage } from "./worker-message.js";
 
 // Import executors to trigger registration via side effects
 import "./features/jobs/executors/image-generation.js";
-
-import type { BackgroundJobType } from "@loomic/shared";
 
 // Register only xy2api image providers, matching the API process.
 import { registerAllProviders } from "./generation/providers/register-all.js";
 
 const QUEUES = ["image_generation_jobs"] as const;
-
-const QUEUE_TO_TYPE: Record<string, BackgroundJobType> = {
-  image_generation_jobs: "image_generation",
-};
 
 const VT_BY_QUEUE: Record<string, number> = {
   image_generation_jobs: 120,
@@ -41,6 +35,7 @@ const VT_BY_QUEUE: Record<string, number> = {
 
 async function main() {
   const env = loadServerEnv();
+  validateProductionEnv(env);
 
   if (!env.supabaseDbUrl) {
     console.error("SUPABASE_DB_URL is required for worker process.");
@@ -93,6 +88,18 @@ async function main() {
 
   let running = true;
   let shuttingDown = false;
+  let failures = 0;
+  let lastHeartbeat = 0;
+  const heartbeatFile = process.env.WORKER_HEARTBEAT_FILE;
+  const heartbeat = async () => {
+    if (!heartbeatFile || Date.now() - lastHeartbeat < 5000) return;
+    await writeFile(
+      heartbeatFile,
+      JSON.stringify({ at: Date.now(), workerId }),
+      { mode: 0o600 },
+    );
+    lastHeartbeat = Date.now();
+  };
 
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {
@@ -106,16 +113,27 @@ async function main() {
       `${tag} Shutting down, waiting for ${totalInFlight} in-flight jobs...`,
     );
     running = false;
+    if (heartbeatFile) await unlink(heartbeatFile).catch(() => {});
+    // Leave enough time for one already-sent paid request to finish and persist.
+    const deadline = setTimeout(() => process.exit(1), 700_000);
+    deadline.unref();
     const allTasks = [...inFlightByQueue.values()].flatMap((s) => [...s]);
     if (allTasks.length > 0) {
       await Promise.allSettled(allTasks);
     }
     await pgmq.shutdown();
+    await closeSupabaseTransport();
     console.log(`${tag} Shutdown complete.`);
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  const handleShutdown = () => {
+    void shutdown().catch(() => {
+      console.error(`${tag} Shutdown failed`);
+      process.exit(1);
+    });
+  };
+  process.once("SIGINT", handleShutdown);
+  process.once("SIGTERM", handleShutdown);
 
   const concurrencyDesc = QUEUES.map(
     (q) => `${q}=${CONCURRENCY_BY_QUEUE[q] ?? 1}`,
@@ -131,17 +149,29 @@ async function main() {
         if (!inFlight) continue;
         const cap = CONCURRENCY_BY_QUEUE[queue] ?? 1;
         const available = cap - inFlight.size;
-        if (available <= 0) continue;
+        if (available <= 0) {
+          await heartbeat();
+          await sleep(250); // Prevent a busy loop while all slots are occupied.
+          continue;
+        }
 
         const vt = VT_BY_QUEUE[queue] ?? 120;
         const messages = await pgmq.readWithPoll(
           queue,
           vt,
-          available,
+          Math.min(available, env.workerMaxBatchSize ?? available),
           pollTimeoutSeconds,
           500,
         );
 
+        if (!running) break; // A pending poll can return after SIGTERM.
+        failures = 0;
+        await heartbeat();
+        // SIGTERM may arrive while the heartbeat write is pending.
+        if (!running) {
+          if (heartbeatFile) await unlink(heartbeatFile).catch(() => {});
+          break;
+        }
         for (const msg of messages) {
           const ctx: ExecutorContext = {
             ...baseCtx,
@@ -151,7 +181,7 @@ async function main() {
               try {
                 await pgmq.setVt(queue, msg.msg_id, vtSeconds);
               } catch (e) {
-                console.warn(`[renewVt] failed for msg ${msg.msg_id}:`, e);
+                console.warn(`[renewVt] failed for msg ${msg.msg_id}`);
               }
             },
           };
@@ -161,80 +191,13 @@ async function main() {
           inFlight.add(task);
         }
       } catch (err) {
-        console.error(`${tag} Error polling ${queue}:`, err);
+        if (!running) break;
+        failures += 1;
+        const delay = Math.min(30_000, 500 * 2 ** Math.min(failures, 6));
+        console.error(`${tag} Queue unavailable; retrying poll in ${delay}ms`);
+        await sleep(delay); // Only polling retries. Image submissions never retry.
       }
     }
-  }
-}
-
-async function processMessage(
-  queue: string,
-  msg: PgmqMessage,
-  ctx: ExecutorContext,
-  tag: string,
-) {
-  const jobId = msg.message.job_id as string;
-  const jobType =
-    (msg.message.job_type as BackgroundJobType) ?? QUEUE_TO_TYPE[queue];
-
-  if (!jobId || !jobType) {
-    console.error(`${tag} Invalid queue message`);
-    await ctx.pgmq.archive(queue, msg.msg_id);
-    return;
-  }
-
-  // Extract traceability context from PGMQ message (if present)
-  const sessionShort =
-    typeof msg.message.session_id === "string"
-      ? msg.message.session_id.slice(0, 8)
-      : undefined;
-  const startTime = Date.now();
-  console.log(
-    `${tag} Processing job ${jobId} (${jobType})${sessionShort ? ` session:${sessionShort}` : ""}`,
-  );
-
-  const executor = getExecutor(jobType);
-  if (!executor) {
-    console.error(`${tag} No executor for job type: ${jobType}`);
-    await ctx.jobService.markFailed(
-      jobId,
-      "no_executor",
-      `No executor registered for ${jobType}`,
-    );
-    await ctx.pgmq.archive(queue, msg.msg_id);
-    return;
-  }
-
-  const current = await ctx.jobService.getJobAdmin(jobId);
-  if (["succeeded", "dead_letter", "canceled"].includes(current.status)) {
-    await ctx.pgmq.archive(queue, msg.msg_id);
-    return;
-  }
-  // Increment attempt count
-  await ctx.jobService.incrementAttempt(jobId);
-
-  // Mark running
-  await ctx.jobService.markRunning(jobId);
-
-  try {
-    const result = await executor(
-      jobId,
-      msg.message as Record<string, unknown>,
-      ctx,
-    );
-    await ctx.jobService.markSucceeded(jobId, result);
-    await ctx.pgmq.deleteMsg(queue, msg.msg_id);
-    console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
-  } catch (err) {
-    const errorCode =
-      err instanceof BillingGuardError ? err.code : "upstream_unknown";
-    const errorMessage =
-      err instanceof BillingGuardError
-        ? err.message
-        : "请求状态未知，请到主站核对用量";
-    await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
-    await ctx.pgmq.archive(queue, msg.msg_id);
-    console.error(`${tag} Job ${jobId} failed: ${errorCode}`);
   }
 }
 
@@ -243,6 +206,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[worker] Fatal error:", err);
+  console.error("[worker] Fatal startup or lifecycle error");
   process.exit(1);
 });

@@ -35,14 +35,19 @@ export async function executeImageJob(
   )
     throw new BillingGuardError("invalid_input");
   if (["pending", "charged", "unknown"].includes(row.billing_status)) {
-    checkStoreError(
-      (
-        await db
-          .from("background_jobs")
-          .update({ billing_status: "unknown" })
-          .eq("id", jobId)
-      ).error,
-    );
+    // Preserve confirmed billing after a crash during storage/result persistence.
+    // Only a still-pending dispatch has an uncertain outcome.
+    if (row.billing_status === "pending") {
+      checkStoreError(
+        (
+          await db
+            .from("background_jobs")
+            .update({ billing_status: "unknown" })
+            .eq("id", jobId)
+            .eq("billing_status", "pending")
+        ).error,
+      );
+    }
     throw new GatewayError(mapGatewayError({}));
   }
   const parsed = imagePayloadSchema.safeParse(row.payload);

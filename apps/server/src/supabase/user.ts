@@ -1,13 +1,12 @@
+import { createHash } from "node:crypto";
+import type { Database } from "@loomic/shared";
 import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 import type { FastifyRequest } from "fastify";
-import { importJWK, jwtVerify } from "jose";
-
-import type { Database } from "@loomic/shared";
-
+import { decodeJwt, importJWK, jwtVerify } from "jose";
 import type { ServerEnv } from "../config/env.js";
+import { createSupabaseFetch } from "./transport.js";
 
 export type UserSupabaseClient = SupabaseClient<Database>;
-
 export type AuthenticatedUser = {
   accessToken: string;
   email: string;
@@ -15,182 +14,156 @@ export type AuthenticatedUser = {
   userMetadata: Record<string, unknown>;
   appMetadata?: Record<string, unknown>;
 };
-
 export type RequestAuthenticator = {
   authenticate(
     request: Pick<FastifyRequest, "headers">,
   ): Promise<AuthenticatedUser | null>;
 };
-
-// --- In-memory auth cache (keyed by token, TTL 5 min) ---
-
-const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
-
-type CachedAuth = { user: AuthenticatedUser; expiresAt: number };
-const authCache = new Map<string, CachedAuth>();
-
-function getCachedAuth(token: string): AuthenticatedUser | null {
-  const entry = authCache.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    authCache.delete(token);
-    return null;
-  }
-  return entry.user;
-}
-
-function setCachedAuth(token: string, user: AuthenticatedUser): void {
-  authCache.set(token, { user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
-
-  // Lazy eviction: remove expired entries when cache grows large
-  if (authCache.size > 500) {
-    const now = Date.now();
-    for (const [key, val] of authCache) {
-      if (now > val.expiresAt) authCache.delete(key);
-    }
-  }
-}
-
-// --- Authenticator factory ---
-
-// Parse JWK JSON string into a CryptoKey at startup (async init)
-let jwtPublicKeyPromise: Promise<
-  Awaited<ReturnType<typeof importJWK>> | Uint8Array
-> | null = null;
-
-function initJwtKey(
-  env: Pick<ServerEnv, "supabaseJwtSecret">,
-): Promise<Awaited<ReturnType<typeof importJWK>> | Uint8Array> | null {
-  if (!env.supabaseJwtSecret) return null;
-
-  try {
-    const jwk = JSON.parse(env.supabaseJwtSecret);
-    return importJWK(jwk, jwk.alg ?? "ES256");
-  } catch {
-    // Not a JWK JSON — treat as HMAC symmetric secret
-    return Promise.resolve(new TextEncoder().encode(env.supabaseJwtSecret));
-  }
-}
+type AuthEnv = Pick<
+  ServerEnv,
+  | "supabaseAnonKey"
+  | "supabaseJwtSecret"
+  | "supabaseUrl"
+  | "supabaseInternalUrl"
+  | "supabaseJwtIssuer"
+>;
 
 export function createSupabaseRequestAuthenticator(
-  env: Pick<ServerEnv, "supabaseAnonKey" | "supabaseJwtSecret" | "supabaseUrl">,
+  env: AuthEnv,
+  options: {
+    now?: () => number;
+    createUserClient?: (token: string) => UserSupabaseClient;
+  } = {},
 ): RequestAuthenticator {
-  jwtPublicKeyPromise = initJwtKey(env);
-
-  // Fallback: remote verification when JWT key is not configured
-  const createUserClient = jwtPublicKeyPromise
-    ? null
-    : createUserSupabaseClientFactory(env);
-
+  const now = options.now ?? Date.now;
+  // Keys and cache must belong to this instance: multiple projects/tests cannot share trust.
+  const issuer =
+    env.supabaseJwtIssuer ??
+    (env.supabaseUrl
+      ? `${env.supabaseUrl.replace(/\/$/, "")}/auth/v1`
+      : undefined);
+  let key:
+    | Promise<Awaited<ReturnType<typeof importJWK>> | Uint8Array>
+    | undefined;
+  let algorithm: string | undefined;
+  if (env.supabaseJwtSecret) {
+    if (env.supabaseJwtSecret.trimStart().startsWith("{")) {
+      let jwk: Record<string, string>;
+      try {
+        jwk = JSON.parse(env.supabaseJwtSecret);
+      } catch {
+        throw new Error("Invalid SUPABASE_JWT_SECRET JWK");
+      }
+      algorithm = jwk.alg ?? (jwk.kty === "EC" ? "ES256" : "RS256");
+      if (!["ES256", "RS256"].includes(algorithm ?? ""))
+        throw new Error("Invalid SUPABASE_JWT_SECRET algorithm");
+      key = importJWK(jwk, algorithm);
+      void key.catch(() => {});
+    } else {
+      algorithm = "HS256";
+      key = Promise.resolve(new TextEncoder().encode(env.supabaseJwtSecret));
+    }
+  }
+  const createUserClient =
+    options.createUserClient ?? createUserSupabaseClientFactory(env);
+  const cache = new Map<string, { user: AuthenticatedUser; until: number }>();
   return {
     async authenticate(request) {
-      const accessToken = readBearerToken(request.headers.authorization);
-      if (!accessToken) return null;
-
-      // 1. Check cache first
-      const cached = getCachedAuth(accessToken);
-      if (cached) return cached;
-
-      // 2. Local JWT verification (preferred)
-      if (jwtPublicKeyPromise) {
-        try {
-          const key = await jwtPublicKeyPromise;
-          const { payload } = await jwtVerify(accessToken, key, {
-            audience: "authenticated",
-          });
-
-          const userId = payload.sub;
-          const email =
-            typeof payload.email === "string" ? payload.email : null;
-
-          if (!userId || !email) return null;
-
-          const user: AuthenticatedUser = {
-            accessToken,
-            email,
-            id: userId,
-            appMetadata: isRecord(payload.app_metadata)
-              ? payload.app_metadata
+      const token = readBearerToken(request.headers.authorization);
+      if (!token) return null;
+      try {
+        const claims = key
+          ? (
+              await jwtVerify(token, await key, {
+                audience: "authenticated",
+                ...(issuer ? { issuer } : {}),
+                algorithms: [algorithm ?? "HS256"],
+                requiredClaims: ["exp", "sub", "iat", "role"],
+                currentDate: new Date(now()),
+              })
+            ).payload
+          : decodeJwt(token);
+        if (typeof claims.exp !== "number" || claims.exp * 1000 <= now())
+          return null;
+        if (key) {
+          if (
+            claims.role !== "authenticated" ||
+            !claims.sub ||
+            typeof claims.email !== "string" ||
+            !claims.email
+          )
+            return null;
+          return {
+            accessToken: token,
+            id: claims.sub,
+            email: claims.email,
+            appMetadata: isRecord(claims.app_metadata)
+              ? claims.app_metadata
               : {},
-            userMetadata: isRecord(payload.user_metadata)
-              ? (payload.user_metadata as Record<string, unknown>)
+            userMetadata: isRecord(claims.user_metadata)
+              ? claims.user_metadata
               : {},
           };
-
-          setCachedAuth(accessToken, user);
-          return user;
-        } catch {
-          // Invalid / expired token
-          return null;
         }
-      }
-
-      // 3. Fallback: remote auth.getUser()
-      if (createUserClient) {
-        const client = createUserClient(accessToken);
-        const { data, error } = await client.auth.getUser();
-
-        if (error || !data.user || !data.user.email) return null;
-
+        // Unverified claims only bound the cache; trust comes from Auth.getUser().
+        const hash = createHash("sha256").update(token).digest("hex");
+        const hit = cache.get(hash);
+        if (hit && hit.until > now()) return hit.user;
+        cache.delete(hash);
+        const { data, error } = await createUserClient(token).auth.getUser();
+        if (error || !data.user?.email || claims.exp * 1000 <= now())
+          return null;
         const user: AuthenticatedUser = {
-          accessToken,
-          email: data.user.email,
+          accessToken: token,
           id: data.user.id,
+          email: data.user.email,
           appMetadata: data.user.app_metadata ?? {},
           userMetadata: isRecord(data.user.user_metadata)
             ? data.user.user_metadata
             : {},
         };
-
-        setCachedAuth(accessToken, user);
+        // Hard cap: remove oldest, never let a valid token outlive its expiry.
+        if (cache.size >= 1000) {
+          const oldest = cache.keys().next().value;
+          if (oldest) cache.delete(oldest);
+        }
+        cache.set(hash, {
+          user,
+          until: Math.min(now() + 60_000, claims.exp * 1000),
+        });
         return user;
+      } catch {
+        return null; // No token or upstream error contents in logs.
       }
-
-      return null;
     },
   };
 }
 
 export function createUserSupabaseClientFactory(
-  env: Pick<ServerEnv, "supabaseAnonKey" | "supabaseUrl">,
+  env: Pick<
+    ServerEnv,
+    "supabaseAnonKey" | "supabaseUrl" | "supabaseInternalUrl"
+  >,
 ) {
   return (accessToken: string): UserSupabaseClient => {
-    if (!env.supabaseUrl || !env.supabaseAnonKey) {
+    if (!env.supabaseUrl || !env.supabaseAnonKey)
       throw new Error(
         "SUPABASE_URL and SUPABASE_ANON_KEY are required for user-scoped Supabase access.",
       );
-    }
-
     return createClient<Database>(env.supabaseUrl, env.supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+      auth: { autoRefreshToken: false, persistSession: false },
       global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        fetch: createSupabaseFetch(env),
+        headers: { Authorization: `Bearer ${accessToken}` },
       },
     });
   };
 }
-
-function readBearerToken(
-  authorizationHeader: string | string[] | undefined,
-): string | null {
-  if (typeof authorizationHeader !== "string") {
-    return null;
-  }
-
-  const [scheme, token] = authorizationHeader.trim().split(/\s+/, 2);
-
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  return token;
+function readBearerToken(value: string | string[] | undefined): string | null {
+  if (typeof value !== "string" || value.length > 16_384) return null;
+  const match = /^Bearer\s+(\S+)$/i.exec(value.trim());
+  return match?.[1] ?? null;
 }
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

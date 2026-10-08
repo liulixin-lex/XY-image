@@ -28,6 +28,7 @@ export function createXy2apiServices(
         env.xy2apiWebUrl,
         env.webOrigin,
         env.supabaseUrl ?? "",
+        env.supabaseInternalUrl ?? "",
       ],
     }),
   );

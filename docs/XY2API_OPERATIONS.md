@@ -1,12 +1,13 @@
 # xy2api 后端部署与验收
 
+2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共34份应用迁移，真实联调仍未执行。运维自动化见 [监控与异地备份](XY_IMAGE_OPERATIONS_AUTOMATION.md)，上线放行记录见 [发布验收表](XY_IMAGE_RELEASE.md)。
 2026-10-08 更新：前端 F1–F8 已交付；agent03 新增字体代理和自定义对话服务商，详见 [后端增量交接](XY_IMAGE_BACKEND_AGENT03.md)。用户要求先开发，真实测试延后；Supabase 尚未创建。生产放行仍要求完整迁移、真实主站和服务商验收，离线测试不代表真实计费已打通。
 
 ## 配置与准备
 
-1. 使用已有 Loomic Supabase 项目；新项目先完整执行原有迁移，确保 Auth、Storage、PGMQ、Realtime 和 Agent 持久化表可用。
-2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行 32 份迁移。
-3. Supabase 控制台关闭开放注册、匿名登录和 Google；本地 config.toml 已关闭前两项，但它不改变云端项目。保留服务端 Admin createUser/generateLink 能力。无需发送合成邮箱的邮件。
+1. 按自建运行手册准备官方固定版本Supabase容器栈；先完整执行应用迁移，确保Auth、Storage、PGMQ、Realtime和Agent持久化表可用。
+2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行34份迁移；新增 `20261009000002` 和 `20261009000003` 必须在本轮API前执行。
+3. 自建Auth环境关闭开放注册、匿名/电话/Google登录；保留email provider和Admin createUser/generateLink/verifyOtp能力。使用生成器的配置，本地config.toml不会自动配置自建容器。无需发送合成邮箱邮件。
 4. 从根目录 `.env.example` 创建服务器私有环境文件，权限 `600`。设置 Supabase URL、anon key、service role、Postgres URL、xy2api API/Web URL、SSO_EMAIL_DOMAIN、LOOMIC_WEB_ORIGIN。用 `openssl rand -base64 32` 离线生成 LOOMIC_SECRET_KEY，API/Worker 完全一致。不要执行旧的种子账号脚本；普通 Supabase 用户不通过集成鉴权。
 5. 为主站 Key 分组启用图像能力，确认余额、Key 限额、模型、平台和出口 IP 白名单。主站设置或部署由负责人执行；本开发没有修改 xy2api 仓库。
 
@@ -32,32 +33,19 @@ pnpm --filter @loomic/server test
 bash apps/server/scripts/check-xy2api-migrations.sh
 ```
 
-最后一项使用 Docker 建立独立、无暴露端口的 PostgreSQL 18 临时容器并自动删除，重复执行三份集成迁移，检查 RLS、零 policy、客户端权限、计费字段约束及服务商归属/删除/数量约束。它使用最小 Supabase 表结构夹具，不能代替真实 Supabase 项目的完整迁移验收。
+最后一项使用 Docker 建立独立、无暴露端口的 PostgreSQL 18 临时容器并自动删除，重复执行五份集成/自建增量迁移，检查 RLS、零 policy、客户端权限、计费字段约束、服务商归属/删除/数量约束以及就绪/旧RPC权限漂移。它使用最小 Supabase 表结构夹具，不能代替真实 Supabase 项目的完整迁移验收。
 
 开发启动：根目录准备 `.env.local`，然后 `pnpm --filter @loomic/server dev`，会同时启动 API 与 Worker。前端协作以工作区交接文档认领表为准。由于 shared 是编译包，改动契约后先重新 build shared。
 
 ## 构建和预发
 
-```bash
-docker build -f apps/server/Dockerfile -t loomic-server:<release-tag> .
-docker run -d --name loomic-api --restart unless-stopped \
-  --env-file /opt/loomic/.env -e SERVICE_MODE=api \
-  -e LOOMIC_SKILLS_ROOT=/opt/loomic/skills \
-  -p 127.0.0.1:3001:3001 loomic-server:<release-tag>
-docker run -d --name loomic-worker --restart unless-stopped \
-  --env-file /opt/loomic/.env -e SERVICE_MODE=worker -e WORKER_ID=w1 \
-  -e LOOMIC_SKILLS_ROOT=/opt/loomic/skills loomic-server:<release-tag>
-```
+统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、34份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
 
-构建中强制 shared build 和 server typecheck；.dockerignore 排除真实 env、凭据目录及前端。SERVICE_MODE 区分同一镜像的 API/Worker。`GET /api/health` 只验证进程，不探测外部服务。
+构建强制 shared build 和 server typecheck；`.dockerignore` 排除真实 env、凭据目录及前端。SERVICE_MODE 区分同一镜像的 API/Worker；非root、只读根文件系统、tmpfs临时文件。API固定单实例。`GET /api/health` 只验证进程，内部 `/api/ready` 验证依赖且由公网反代隐藏。
 
-反向代理需 TLS、WebSocket upgrade、20m 请求体和至少 660 秒读取/发送超时；浏览器也不能对生图请求自动重试。原规范 Nginx 示例的 600 秒应覆盖提供商调用加上传时间，可提高至 660 秒。API 访问日志只记 `$uri`，不要记录包含 Supabase WebSocket token 的 `$request_uri` 或 `$request`。例如在 http 级别定义：
+反向代理使用生成的 Nginx 模板：TLS、WebSocket upgrade、20m请求体、至少660秒API/Realtime读取超时、禁用上游自动重试、只记录不含查询的路径。Supabase公开Auth仅允许一次性verify、会话refresh、GET user、logout及其预检；不允许设置本地密码、password/PKCE grant或自行发登录邮件。内部Admin操作仍经私网。前端现存的旧PKCE callback不是主站登录流程，不开放对应grant。
 
-```nginx
-log_format loomic_api '$remote_addr $request_method $uri $status $request_time';
-```
-
-再在 API server 中使用 `access_log /var/log/nginx/loomic-api.log loomic_api;`。API 内置 CORS 仅允许 LOOMIC_WEB_ORIGIN，不必加宽泛跨域配置。
+API收到停止信号后排空已接收WebSocket Agent及最终消息持久化；Worker停止接单并等待在途任务，ACK失败保留已成功结果，重投不会再生图。Docker停止宽限720秒仍须真实环境验证，不承诺SIGKILL可优雅退出。
 
 ## 真实付费预检
 
@@ -69,11 +57,12 @@ log_format loomic_api '$remote_addr $request_method $uri $status $request_time';
 node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
 ```
 
-容器方式使用同一镜像启动一次性任务；私有文件包含服务端配置及 PREFLIGHT_API_KEY：
+容器方式使用同一 Compose 网络和镜像启动一次性任务；私有文件包含服务端配置及 PREFLIGHT_API_KEY。此命令只在真实付费预检获准后执行：
 
 ```bash
-docker run --rm --env-file /opt/loomic/preflight.env \
-  loomic-server:<release-tag> node --import tsx scripts/xy2api-preflight.ts
+./deploy/selfhost/compose.sh --profile tools run --rm \
+  -v /workspace/xy-env/preflight.env:/run/xy-preflight.env:ro xy-migrate \
+  node --env-file=/run/xy-preflight.env --import tsx scripts/xy2api-preflight.ts
 ```
 
 脚本先读 models/usage，逐模型 standard/hd 各调用一次，再对话；输出模型数量、余额、耗时、字节数、MIME、请求 ID，不打印 Key 或模型回答。`requestedQuality` 与 `effectiveQuality` 区分请求与降级：只支持 standard 的模型两次都会生成 standard。失败退出码非零。

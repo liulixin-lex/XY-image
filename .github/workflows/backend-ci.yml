@@ -2,7 +2,7 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +17,7 @@ jobs:
   backend:
     name: Backend checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -40,3 +40,26 @@ jobs:
         run: pnpm --filter @loomic/server typecheck
       - name: Test server
         run: pnpm --filter @loomic/server test
+      - name: Check workspace contracts
+        run: pnpm test:workspace
+      - name: Install local proxy test runtime
+        run: sudo apt-get update && sudo apt-get install --yes nginx
+      - name: Test self-hosted deployment tooling
+        env:
+          XY_NGINX_BINARY: /usr/sbin/nginx
+        run: pnpm test:selfhost
+      - name: Check isolated migration permissions
+        run: bash apps/server/scripts/check-xy2api-migrations.sh
+      - name: Build production backend image
+        run: docker build -f apps/server/Dockerfile -t xy-image-backend:ci .
+      - name: Check non-root runtime dependencies
+        run: |
+          docker run --rm --network none --read-only --tmpfs /tmp xy-image-backend:ci \
+            node --import tsx --input-type=module -e '
+              import sharp from "sharp";
+              import { runCreateRequestSchema } from "@loomic/shared";
+              if (process.getuid() === 0) throw new Error("Runtime must be non-root");
+              if (!runCreateRequestSchema) throw new Error("Shared contracts unavailable");
+              await sharp({ create: { width: 1, height: 1, channels: 3, background: "black" } }).png().toBuffer();
+              console.log("Non-root runtime imports and native image processing passed");
+            '

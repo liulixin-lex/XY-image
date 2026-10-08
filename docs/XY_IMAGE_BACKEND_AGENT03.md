@@ -1,6 +1,7 @@
 # agent03 后端增量交接（2026-10-08）
 
-执行目录 `/workspace/XY-image`，容器 `claude-module-02`，分支 `feat/server-agent03`，基于 `c7dcf6f`。没有提交或推送。
+2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共34份应用迁移，真实联调仍未执行。本文件保留首轮功能交付记录；自建收尾与发布状态见 [发布验收表](XY_IMAGE_RELEASE.md)。
+执行目录 `/workspace/XY-image`，容器 `claude-module-02`，分支 `feat/server-agent03`，基于 `c7dcf6f`。本文件首轮成果已提交 `6e67855`；用户现已授权全部无冲突改动提交、推送并合并，最终记录见发布验收表。
 
 用户最新指示：主站为 **gguuai.com**，主站镜像源码为 `https://github.com/liulixin-lex/xy2api`；Supabase 暂未创建，其它环境资料暂不提供；**先开发，开发完成后再做真实测试**。本轮只有离线单测、内存 PostgreSQL 迁移检查，未访问真实主站、使用真实凭据、执行付费调用或部署。
 
@@ -58,7 +59,7 @@ Key 使用现有 `LOOMIC_SECRET_KEY` 的 AES-256-GCM，加密 AAD 为 `loomic:ch
 
 ## 迁移、类型与部署准备
 
-新增 `supabase/migrations/20261009000001_user_chat_providers.sql`，现共 32 份迁移。真实项目创建后按文件名顺序执行全部；原 `20261007000001`、`20261007000002` 与此次新迁移都必须在新版 API 前执行。
+首轮新增 `supabase/migrations/20261009000001_user_chat_providers.sql`，后续自建增加 `20261009000002` 和 `20261009000003`，当前共34份。自建栈初始化后按文件名顺序执行全部，必须在新版API启动前完成。
 
 新表 RLS 开启，没有客户端 policy，撤销 anon/authenticated 全部表权限，仅 service_role 访问。加密主密钥 API / Worker 必须一致，不能发布时重新生成。
 
@@ -97,7 +98,7 @@ Key 使用现有 `LOOMIC_SECRET_KEY` 的 AES-256-GCM，加密 AAD 为 `loomic:ch
 
 ## 验证记录
 
-最终离线检查：后端 **22 文件 / 182 项通过**，前端 **21 文件 / 127 项通过**，根工作区 **10 项通过**；shared **42/43**，唯一失败为原有 `tracks official langgraph persistence schema typings`，按 4-D 等真实库迁移后生成。全仓类型检查 **5/5**，server/shared 构建 **3/3** 通过。显式改动文件 Biome 诊断由基线 9 项降至 8 项（剩余 5 lint / 3 format 均为既有位置），没有新增诊断；`git diff --check` 通过。
+首轮离线检查（2026-10-08 UTC，后续结果见发布验收表）：后端 **22 文件 / 182 项通过**，前端 **21 文件 / 127 项通过**，根工作区 **10 项通过**；shared **42/43**，唯一失败为原有 `tracks official langgraph persistence schema typings`，按 4-D 等真实库迁移后生成。全仓类型检查 **5/5**，server/shared 构建 **3/3** 通过。显式改动文件 Biome 诊断由基线 9 项降至 8 项（剩余 5 lint / 3 format 均为既有位置），没有新增诊断；`git diff --check` 通过。
 
 完整结果与后续变更以 `/workspace/XY-IMAGE-HANDOFF.md` 顶部和 agent03 的已完成记录为准。可复核日志均在 `/workspace/xy-ops/agent03/`；测试凭据为合成值，网络用 mock 或在打开 socket 前被拒绝的测试解析器，没有真实服务商对话。
 

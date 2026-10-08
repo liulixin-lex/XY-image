@@ -50,6 +50,8 @@ export type ServerEnv = {
   supabaseProjectId?: string;
   supabaseServiceRoleKey?: string;
   supabaseUrl?: string;
+  supabaseInternalUrl?: string;
+  supabaseJwtIssuer?: string;
   version: string;
   volcesApiKey?: string;
   volcesBaseUrl?: string;
@@ -149,6 +151,8 @@ export function loadServerEnv(
     agentFilesRoot: source.LOOMIC_AGENT_FILES_ROOT,
     googleFontsApiKey: source.GOOGLE_FONTS_API_KEY,
     supabaseUrl: source.SUPABASE_URL,
+    supabaseInternalUrl: source.SUPABASE_INTERNAL_URL,
+    supabaseJwtIssuer: source.SUPABASE_JWT_ISSUER,
     supabaseAnonKey: source.SUPABASE_ANON_KEY,
     supabaseDbUrl: source.SUPABASE_DB_URL,
     supabaseJwtSecret: source.SUPABASE_JWT_SECRET,

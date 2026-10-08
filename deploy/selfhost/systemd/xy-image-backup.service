@@ -1,0 +1,19 @@
+[Unit]
+Description=XY-IMAGE maintenance backup with encrypted offsite retention
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=xy-ops
+Group=xy-ops
+SupplementaryGroups=docker
+UMask=0077
+WorkingDirectory=/opt/xy-image
+ExecStart=/usr/bin/node /opt/xy-image/deploy/selfhost/operations.mjs backup /etc/xy-image/operations.json
+TimeoutStartSec=4h
+TimeoutStopSec=750
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/xy-image

@@ -114,7 +114,7 @@ describe("image billing lifecycle", () => {
       });
       expect(fixture.generate).not.toHaveBeenCalled();
       expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe(
-        "unknown",
+        billing === "charged" ? "charged" : "unknown",
       );
     },
   );

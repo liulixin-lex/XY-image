@@ -18,10 +18,15 @@ done
 if [[ "$ready" != true ]]; then echo 'Isolated PostgreSQL did not become ready' >&2; exit 1; fi
 sql() { docker exec -i "$container_name" psql -U postgres -v ON_ERROR_STOP=1; }
 sql < "$script_dir/fixtures/xy2api-migration-bootstrap.sql"
+sql < "$script_dir/fixtures/selfhost-runtime-bootstrap.sql"
 for _ in 1 2; do
   sql < "$repo_dir/supabase/migrations/20261007000001_xy2api_integration.sql"
   sql < "$repo_dir/supabase/migrations/20261007000002_xy2api_job_write_boundary.sql"
   sql < "$repo_dir/supabase/migrations/20261009000001_user_chat_providers.sql"
+  sql < "$repo_dir/supabase/migrations/20261009000002_selfhost_runtime_checks.sql"
+  sql < "$repo_dir/supabase/migrations/20261009000003_retired_rpc_permissions.sql"
 done
 sql < "$script_dir/fixtures/xy2api-migration-assert.sql"
 sql < "$script_dir/fixtures/chat-provider-migration-assert.sql"
+
+sql < "$script_dir/fixtures/selfhost-runtime-assert.sql"
