@@ -1,14 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { CheckIcon, CircleAlertIcon, InfoIcon } from "lucide-react";
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
+
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,14 +22,24 @@ type ToastVariant = "success" | "error" | "info";
 
 interface Toast {
   id: string;
+  title?: string | undefined;
   message: string;
   variant: ToastVariant;
+}
+
+export interface ToastOptions {
+  title?: string | undefined;
+  message: string;
+  variant?: ToastVariant;
+  /** Milliseconds. Errors default to 6 s so the text can be read. */
+  duration?: number;
 }
 
 interface ToastContextValue {
   toast: (message: string, variant?: ToastVariant) => void;
   success: (message: string) => void;
   error: (message: string) => void;
+  show: (options: ToastOptions) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -34,45 +48,60 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
-const TOAST_DURATION = 3000;
+const DURATION: Record<ToastVariant, number> = {
+  success: 3000,
+  info: 3600,
+  error: 6000,
+};
+const MAX_VISIBLE = 3;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const remove = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+    const timer = timers.current.get(id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(id);
   }, []);
 
-  const add = useCallback(
-    (message: string, variant: ToastVariant = "info") => {
-      // Use crypto.randomUUID() for collision-safe IDs across concurrent renders
+  const show = useCallback(
+    ({ title, message, variant = "info", duration }: ToastOptions) => {
       const id = crypto.randomUUID();
-      setToasts((prev) => [...prev, { id, message, variant }]);
-      setTimeout(() => remove(id), TOAST_DURATION);
+      setToasts((prev) => {
+        // Collapse exact duplicates (e.g. the same error from two listeners).
+        if (prev.some((t) => t.message === message && t.title === title))
+          return prev;
+        return [...prev, { id, title, message, variant }].slice(-MAX_VISIBLE);
+      });
+      timers.current.set(
+        id,
+        setTimeout(() => remove(id), duration ?? DURATION[variant]),
+      );
     },
     [remove],
   );
 
   const ctx = useMemo<ToastContextValue>(
     () => ({
-      toast: add,
-      success: (msg) => add(msg, "success"),
-      error: (msg) => add(msg, "error"),
+      toast: (message, variant = "info") => show({ message, variant }),
+      success: (message) => show({ message, variant: "success" }),
+      error: (message) => show({ message, variant: "error" }),
+      show,
     }),
-    [add],
+    [show],
   );
 
   return (
     <ToastContext.Provider value={ctx}>
       {children}
-
-      {/* Toast container — fixed bottom-center */}
-      <div className="fixed bottom-6 left-1/2 z-[9999] flex -translate-x-1/2 flex-col items-center gap-2">
-        <AnimatePresence>
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-5 z-[9999] flex flex-col items-center gap-2 px-4"
+        aria-live="polite"
+        aria-atomic="false"
+      >
+        <AnimatePresence initial={false}>
           {toasts.map((t) => (
             <ToastItem key={t.id} toast={t} onDismiss={() => remove(t.id)} />
           ))}
@@ -95,51 +124,39 @@ export function useToast(): ToastContextValue {
 }
 
 // ---------------------------------------------------------------------------
-// Toast item
+// Toast item: a glass slip with a status glyph. Click to dismiss.
 // ---------------------------------------------------------------------------
 
-const variantStyles: Record<ToastVariant, { bg: string; icon: ReactNode }> = {
-  success: {
-    bg: "bg-foreground text-background",
-    icon: (
-      <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 shrink-0 text-success">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
-      </svg>
-    ),
-  },
-  error: {
-    bg: "bg-foreground text-background",
-    icon: (
-      <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 shrink-0 text-destructive">
-        <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM7.25 4.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0v-3.5ZM8 11.5A.75.75 0 1 1 8 10a.75.75 0 0 1 0 1.5Z" />
-      </svg>
-    ),
-  },
-  info: {
-    bg: "bg-foreground text-background",
-    icon: (
-      <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 shrink-0 text-info">
-        <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM7.25 4.5a.75.75 0 0 1 1.5 0v.5a.75.75 0 0 1-1.5 0v-.5ZM6.75 7.75A.75.75 0 0 1 7.5 7h.25a.75.75 0 0 1 .75.75v3h.25a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1 0-1.5H7.5V8.5h-.25a.75.75 0 0 1-.75-.75Z" />
-      </svg>
-    ),
-  },
+const ICONS: Record<ToastVariant, ReactNode> = {
+  success: <CheckIcon className="size-4 text-ok" strokeWidth={2} />,
+  error: <CircleAlertIcon className="size-4 text-alert" strokeWidth={2} />,
+  info: <InfoIcon className="size-4 text-amb" strokeWidth={2} />,
 };
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
-  const { bg, icon } = variantStyles[toast.variant];
-
   return (
-    <motion.div
+    <motion.button
+      type="button"
       layout
-      initial={{ opacity: 0, y: 16, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -8, scale: 0.95 }}
-      transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+      role={toast.variant === "error" ? "alert" : "status"}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       onClick={onDismiss}
-      className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-sm ${bg}`}
+      className={cn(
+        "glass-strong pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl px-4 py-3 text-left text-sm text-fg",
+      )}
     >
-      {icon}
-      {toast.message}
-    </motion.div>
+      <span className="mt-0.5">{ICONS[toast.variant]}</span>
+      <span className="min-w-0">
+        {toast.title ? (
+          <span className="block font-semibold">{toast.title}</span>
+        ) : null}
+        <span className={cn("block", toast.title && "mt-0.5 text-fg-soft")}>
+          {toast.message}
+        </span>
+      </span>
+    </motion.button>
   );
 }

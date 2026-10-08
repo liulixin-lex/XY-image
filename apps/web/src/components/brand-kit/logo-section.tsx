@@ -39,7 +39,7 @@ export function LogoSection({
 
   return (
     <section>
-      <SectionHeader title="Logos" count={logos.length} />
+      <SectionHeader title="标志" count={logos.length} />
       <div className="flex flex-wrap gap-3">
         {logos.map((logo) => (
           <AssetCard
@@ -49,7 +49,7 @@ export function LogoSection({
             onUpdateLabel={onUpdateLabel}
           />
         ))}
-        <AddAssetCard label="Upload" onClick={handleClick} />
+        <AddAssetCard label="上传标志" onClick={handleClick} />
         <input
           ref={inputRef}
           type="file"

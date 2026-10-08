@@ -3,11 +3,11 @@
 import "@excalidraw/excalidraw/index.css";
 
 import dynamic from "next/dynamic";
-import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
+import { useCanvasTheme } from "../hooks/use-canvas-theme";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { isVideoUrl } from "../lib/canvas-elements";
@@ -78,7 +78,7 @@ export function CanvasEditor({
   leftPanelOpen,
   onSelectionChange,
 }: CanvasEditorProps) {
-  const { resolvedTheme } = useTheme();
+  const canvasTheme = useCanvasTheme();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accessTokenRef = useRef(accessToken);
@@ -562,7 +562,7 @@ export function CanvasEditor({
     >
       <div className="h-full w-full relative">
         <Excalidraw
-          theme={resolvedTheme === "dark" ? "dark" : "light"}
+          theme={canvasTheme}
           initialData={{
             elements: initialContent.elements as any,
             appState: initialContent.appState as any,

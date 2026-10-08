@@ -1,15 +1,16 @@
 "use client";
 
+import { ArrowUpIcon, BoxSelectIcon, ImageIcon, ImagePlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import type { MessageMention } from "@loomic/shared";
-import type { ImageAttachmentState } from "../hooks/use-image-attachments";
+import { ATTACHMENT_ACCEPT, type ImageAttachmentState } from "../hooks/use-image-attachments";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
+import { cn } from "../lib/utils";
 
 type ChatInputProps = {
   onSend: (message: string) => void;
@@ -47,7 +48,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { preference } = useImageModelPreference();
-  const { preference: videoPreference } = useVideoModelPreference();
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -186,38 +186,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const { selectionImageCount, selectionShapeCount, hasSelection } = selectionSummary;
 
   return (
-    <div className="px-2 pb-2">
+    <div className="px-3 pb-3">
       <div
-        className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
+        className="flex min-h-[120px] flex-col justify-between gap-2 rounded-lg glass p-2 shadow-subtle transition-[border-color,box-shadow] focus-within:border-white/25 focus-within:shadow-card"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
         {hasSelection && (
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-1.5 min-w-0">
-              {selectionImageCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <path d="m21 15-5-5L5 21" />
-                  </svg>
-                  {selectionImageCount} {selectionImageCount === 1 ? "image" : "images"}
-                </span>
-              )}
-              {selectionImageCount > 0 && selectionShapeCount > 0 && (
-                <span className="text-muted-foreground/40">&middot;</span>
-              )}
-              {selectionShapeCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                  </svg>
-                  {selectionShapeCount} {selectionShapeCount === 1 ? "shape" : "shapes"}
-                </span>
-              )}
-              <span className="text-[10px] text-muted-foreground/60">selected on canvas</span>
-            </div>
+          <div className="flex items-center gap-2 rounded-md bg-white/[0.05] px-2.5 py-1.5 text-xs text-fg-soft">
+            {selectionImageCount > 0 && (
+              <span className="flex items-center gap-1">
+                <ImageIcon className="size-3.5" strokeWidth={1.75} />
+                {selectionImageCount} 张图片
+              </span>
+            )}
+            {selectionShapeCount > 0 && (
+              <span className="flex items-center gap-1">
+                <BoxSelectIcon className="size-3.5" strokeWidth={1.75} />
+                {selectionShapeCount} 个图形
+              </span>
+            )}
+            <span className="text-fg-muted">已在画布选中，会一起发给助手</span>
           </div>
         )}
         {attachments && onRemoveAttachment && (
@@ -228,28 +217,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           />
         )}
         {mentions && mentions.length > 0 && onRemoveMention && (
-          <div className="flex flex-wrap items-center gap-1 px-2 py-1">
+          <div className="flex flex-wrap items-center gap-1 px-1 py-1">
             {mentions.map((mention) => (
               <button
                 key={`${mention.mentionType}:${mention.id}`}
                 type="button"
                 onClick={() => onRemoveMention(mention)}
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                title="Remove mention"
+                className="inline-flex items-center gap-1 rounded-sm border border-line bg-white/[0.05] px-2 py-1 text-[11.5px] text-fg transition-colors hover:border-line-strong"
+                title="移除引用"
               >
-                <span className="text-muted-foreground">@</span>
-                <span className="max-w-[180px] truncate">
-                  {mention.label}
-                </span>
-                <svg
-                  className="h-3 w-3 text-muted-foreground"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <span className="text-fg-muted">@</span>
+                <span className="max-w-[180px] truncate">{mention.label}</span>
+                <XIcon className="size-3 text-fg-muted" />
               </button>
             ))}
           </div>
@@ -261,20 +240,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder='Start with an idea, or type "@" to mention'
+          placeholder="说说你想做什么，输入 @ 引用画布图片或品牌素材"
           aria-label="输入消息"
           rows={1}
           style={{ scrollbarWidth: "none" }}
-          className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
+          className="min-h-[48px] max-h-60 resize-none bg-transparent px-1.5 pt-1 text-sm leading-[1.75] text-fg placeholder:text-fg-muted focus:outline-none [&::-webkit-scrollbar]:hidden"
         />
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
             {onAddFiles && (
               <>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  accept={ATTACHMENT_ACCEPT}
                   multiple
                   className="hidden"
                   onChange={handleFileChange}
@@ -282,37 +261,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Attach images"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-white/[0.06] hover:text-fg"
+                  title="添加图片"
+                  aria-label="添加图片"
                 >
-                  <svg
-                    className="h-[14px] w-[14px]"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M16 1.1A4.9 4.9 0 0 1 20.9 6a4.9 4.9 0 0 1-1.429 3.457h.001l-8.414 8.587-.007.006a2.9 2.9 0 0 1-3.887.193l-.213-.192a2.9 2.9 0 0 1-.007-4.095l8.414-8.586a.9.9 0 0 1 1.286 1.26L8.23 15.216l-.007.006a1.1 1.1 0 0 0 1.556 1.555l8.407-8.579.007-.007a3.1 3.1 0 0 0 .105-4.271l-.105-.112a3.1 3.1 0 0 0-4.384 0L5.4 12.387l-.007.006a5.1 5.1 0 0 0 7.214 7.213l7.749-7.934a.9.9 0 0 1 1.288 1.256l-7.753 7.938q-.005.007-.012.014a6.9 6.9 0 0 1-9.758-9.76l8.408-8.578.007-.007A4.9 4.9 0 0 1 16 1.1" />
-                  </svg>
+                  <ImagePlusIcon className="size-4" strokeWidth={1.75} />
                 </button>
               </>
             )}
-            {/* Agent model selector */}
             <AgentModelSelector compact />
-            {/* Model preference button */}
             <div className="relative">
               <button
                 ref={modelBtnRef}
                 type="button"
                 onClick={() => setModelPopoverOpen((prev) => !prev)}
-                title="Image model"
-                className={`flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
-                  preference.mode === "manual" || videoPreference.mode === "manual"
-                    ? "border-accent bg-accent/20 text-accent-foreground"
-                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                title="生图模型偏好"
+                aria-label="生图模型偏好"
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-md transition-colors",
+                  preference.mode === "manual"
+                    ? "bg-fg text-ground"
+                    : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                )}
               >
-                <svg className="h-[14px] w-[14px]" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
-                </svg>
+                <SlidersHorizontalIcon className="size-4" strokeWidth={1.75} />
               </button>
               <ImageModelPreferencePopover
                 open={modelPopoverOpen}
@@ -322,21 +294,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             </div>
           </div>
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={disabled || !hasContent || isUploading}
-            className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
+            aria-label="发送"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-line-strong"
           >
-            <svg
-              className="h-[14px] w-[14px]"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.6}
-              strokeLinecap="round"
-            >
-              <path d="M7 11.5V2.5" />
-              <path d="M3 6.5L7 2.5L11 6.5" />
-            </svg>
+            <ArrowUpIcon className="size-4" strokeWidth={2} />
           </button>
         </div>
       </div>

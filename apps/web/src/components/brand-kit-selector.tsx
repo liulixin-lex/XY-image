@@ -1,11 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, Palette, Settings2 } from "lucide-react";
 
 import type { BrandKitSummary } from "@loomic/shared";
+import { useToast } from "@/components/toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { fetchBrandKits } from "@/lib/brand-kit-api";
 import { updateProject } from "@/lib/server-api";
+
+/** Radio value for "no brand kit"; the API itself stores null. */
+const NONE = "__none__";
 
 interface BrandKitSelectorProps {
   accessToken: string;
@@ -14,16 +30,22 @@ interface BrandKitSelectorProps {
   onBrandKitChange: (kitId: string | null) => void;
 }
 
+/**
+ * Canvas top-bar brand-kit picker. Icon-only below sm so it fits next to the
+ * logo and project name on phones; the menu is positioned by Base UI and
+ * stays inside the viewport.
+ */
 export function BrandKitSelector({
   accessToken,
   projectId,
   currentBrandKitId,
   onBrandKitChange,
 }: BrandKitSelectorProps) {
+  const router = useRouter();
+  const { error: toastError } = useToast();
   const [kits, setKits] = useState<BrandKitSummary[]>([]);
-  const [open, setOpen] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Use a ref for accessToken to prevent tab-switch reload cascades.
   const accessTokenRef = useRef(accessToken);
@@ -36,106 +58,97 @@ export function BrandKitSelector({
       .then((res) => {
         if (!cancelled) setKits(res.brandKits);
       })
-      .catch(() => {
-        /* silently ignore – selector stays empty */
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("[brand-kit] list failed", err);
+        setLoadFailed(true);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
   const currentKit = kits.find((k) => k.id === currentBrandKitId);
-  const label = currentKit ? currentKit.name : "品牌套件: 无";
+  const label = currentKit ? currentKit.name : "品牌套件";
+  // A bound kit may not be in the list yet (still loading, or the list failed).
+  const status = currentKit
+    ? currentKit.name
+    : currentBrandKitId
+      ? "已选用"
+      : "未使用";
 
   const handleSelect = useCallback(
-    async (kitId: string | null) => {
-      if (kitId === currentBrandKitId) {
-        setOpen(false);
-        return;
-      }
+    async (value: string) => {
+      const kitId = value === NONE ? null : value;
+      if (kitId === currentBrandKitId) return;
       setUpdating(true);
       try {
         await updateProject(accessTokenRef.current, projectId, {
           brand_kit_id: kitId,
         });
         onBrandKitChange(kitId);
-      } catch {
-        /* keep current state on failure */
+      } catch (err) {
+        // Keep the current kit; the radio group is controlled by the parent.
+        console.warn("[brand-kit] project update failed", err);
+        toastError("品牌套件没有切换成功，请稍后再试");
       } finally {
         setUpdating(false);
-        setOpen(false);
       }
     },
-    [projectId, currentBrandKitId, onBrandKitChange],
+    [projectId, currentBrandKitId, onBrandKitChange, toastError],
   );
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
+    <DropdownMenu>
+      <DropdownMenuTrigger
         disabled={updating}
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-xl bg-card/80 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-sm transition-colors hover:bg-card/90 disabled:opacity-50"
+        aria-label={`品牌套件：${status}`}
+        className="flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line bg-panel/80 text-sm shadow-subtle backdrop-blur-xl transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-amb disabled:opacity-50 sm:w-auto sm:px-2.5"
       >
-        <span className="truncate max-w-[120px]">{label}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-      </button>
+        <Palette
+          aria-hidden
+          className={`size-4 shrink-0 ${currentBrandKitId ? "text-fg" : "text-fg-muted"}`}
+        />
+        <span className="hidden max-w-[120px] truncate sm:inline">{label}</span>
+        <ChevronDown
+          aria-hidden
+          className="hidden size-3.5 shrink-0 opacity-50 sm:block"
+        />
+      </DropdownMenuTrigger>
 
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1.5 min-w-[180px] rounded-xl border bg-popover shadow-lg p-1.5">
-          {/* Unbind option */}
-          <button
-            type="button"
-            onClick={() => handleSelect(null)}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors cursor-pointer"
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        className="w-auto min-w-48 max-w-[min(280px,calc(100vw-24px))]"
+      >
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>品牌套件</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={currentBrandKitId ?? NONE}
+            onValueChange={(value: string) => void handleSelect(value)}
+            disabled={updating}
           >
-            <span className="h-4 w-4 shrink-0">
-              {currentBrandKitId === null && (
-                <Check className="h-4 w-4" />
-              )}
-            </span>
-            <span>无</span>
-          </button>
-
-          {/* Kit list */}
-          {kits.map((kit) => (
-            <button
-              key={kit.id}
-              type="button"
-              onClick={() => handleSelect(kit.id)}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors cursor-pointer"
-            >
-              <span className="h-4 w-4 shrink-0">
-                {kit.id === currentBrandKitId && (
-                  <Check className="h-4 w-4" />
-                )}
-              </span>
-              <span className="truncate">{kit.name}</span>
-            </button>
-          ))}
-
+            <DropdownMenuRadioItem value={NONE} closeOnClick>
+              不使用
+            </DropdownMenuRadioItem>
+            {kits.map((kit) => (
+              <DropdownMenuRadioItem key={kit.id} value={kit.id} closeOnClick>
+                <span className="truncate">{kit.name}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
           {kits.length === 0 && (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
-              暂无品牌套件
+            <p className="px-1.5 py-1 text-sm text-muted-foreground">
+              {loadFailed ? "品牌套件没有加载出来" : "还没有品牌套件"}
             </p>
           )}
-        </div>
-      )}
-    </div>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => router.push("/brand-kit")}>
+          <Settings2 className="size-4" />
+          管理品牌套件
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

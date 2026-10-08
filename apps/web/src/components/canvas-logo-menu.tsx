@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Aperture,
   Copy,
   FolderOpen,
   Home,
@@ -12,9 +13,9 @@ import {
   Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
-import { LoomicLogo } from "@/components/icons/loomic-logo";
+import { BrandMark } from "@/components/brand/brand-mark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,11 +25,6 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  createExcalidrawImageElement,
-  getViewportCenter,
-  scaleToFit,
-} from "@/lib/canvas-elements";
 import { deleteProject } from "@/lib/server-api";
 import { useToast } from "@/components/toast";
 import { useCreateProject } from "@/hooks/use-create-project";
@@ -41,16 +37,25 @@ interface CanvasLogoMenuProps {
   excalidrawApi: any | null;
 }
 
+/**
+ * Excalidraw has no public undo/redo/duplicate API, so the menu replays the
+ * keyboard shortcut on its container (verified against 0.18: the React
+ * onKeyDown on `.excalidraw-container` handles synthetic events). Using the
+ * native actions keeps history, groups and bindings correct.
+ */
 function dispatchKeyToExcalidraw(
   key: string,
   opts: { metaKey?: boolean; shiftKey?: boolean } = {},
 ) {
   const el = document.querySelector(".excalidraw-container");
-  if (!el) return;
+  if (!el) {
+    console.warn("[canvas] excalidraw container missing; shortcut not sent", key);
+    return;
+  }
   el.dispatchEvent(
     new KeyboardEvent("keydown", {
       key,
-      code: `Key${key.toUpperCase()}`,
+      code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
       metaKey: opts.metaKey ?? false,
       ctrlKey: opts.metaKey ?? false,
       shiftKey: opts.shiftKey ?? false,
@@ -60,50 +65,39 @@ function dispatchKeyToExcalidraw(
   );
 }
 
-function generateFileId(): string {
-  return (
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  ).slice(0, 20);
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }
 
 export function CanvasLogoMenu({
   accessToken,
   projectId,
-  canvasId,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
   const router = useRouter();
   const { error: toastError } = useToast();
   const { create: createNewProject } = useCreateProject();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
+  const [apple] = useState(isApplePlatform);
 
-  const handleDuplicateElements = useCallback(() => {
-    if (!excalidrawApi) return;
-    const appState = excalidrawApi.getAppState();
-    const selectedIds: Record<string, boolean> =
-      appState.selectedElementIds ?? {};
-    const allElements = excalidrawApi.getSceneElements();
-    const selected = allElements.filter(
-      (el: any) => selectedIds[el.id] && !el.isDeleted,
-    );
+  const keys = apple
+    ? { undo: "⌘Z", redo: "⇧⌘Z", duplicate: "⌘D", fit: "⇧1" }
+    : { undo: "Ctrl+Z", redo: "Ctrl+Shift+Z", duplicate: "Ctrl+D", fit: "Shift+1" };
 
-    if (!selected.length) return;
-
-    const OFFSET = 10;
-    const newSelectedIds: Record<string, boolean> = {};
-    const clones = selected.map((el: any) => {
-      const newId = generateFileId();
-      newSelectedIds[newId] = true;
-      return { ...el, id: newId, x: el.x + OFFSET, y: el.y + OFFSET };
-    });
-
-    excalidrawApi.updateScene({
-      elements: [...allElements, ...clones],
-      appState: { selectedElementIds: newSelectedIds },
-      captureUpdate: "IMMEDIATELY",
-    });
-  }, [excalidrawApi]);
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setConfirmingDelete(false);
+        return;
+      }
+      const selected: Record<string, boolean> =
+        excalidrawApi?.getAppState().selectedElementIds ?? {};
+      setHasSelection(Object.values(selected).some(Boolean));
+    },
+    [excalidrawApi],
+  );
 
   const handleDeleteProject = useCallback(async () => {
     if (!confirmingDelete) {
@@ -112,168 +106,130 @@ export function CanvasLogoMenu({
     }
     try {
       await deleteProject(accessToken, projectId);
+      console.info("[canvas] project deleted from logo menu");
       router.push("/projects");
     } catch (err) {
-      console.warn("Failed to delete project:", err);
-      toastError("项目删除失败");
+      console.warn("[canvas] delete project failed", err);
+      toastError("项目删除失败，请稍后再试");
     } finally {
       setConfirmingDelete(false);
     }
   }, [accessToken, projectId, router, confirmingDelete, toastError]);
 
-  const handleFileImport = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !excalidrawApi) return;
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataURL = reader.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const fileId = generateFileId();
-
-          excalidrawApi.addFiles([
-            {
-              id: fileId,
-              dataURL,
-              mimeType: file.type || "image/png",
-              created: Date.now(),
-            },
-          ]);
-
-          const scaled = scaleToFit(img.width, img.height, 600);
-          const center = getViewportCenter(excalidrawApi.getAppState());
-          const x = center.x - scaled.width / 2;
-          const y = center.y - scaled.height / 2;
-
-          const element = createExcalidrawImageElement({
-            fileId,
-            x,
-            y,
-            width: scaled.width,
-            height: scaled.height,
-            title: file.name,
-          });
-
-          excalidrawApi.updateScene({
-            elements: [...excalidrawApi.getSceneElements(), element],
-            captureUpdate: "IMMEDIATELY",
-          });
-        };
-        img.src = dataURL;
-      };
-      reader.readAsDataURL(file);
-
-      // Reset input so the same file can be selected again
-      e.target.value = "";
-    },
-    [excalidrawApi],
-  );
-
   return (
-    <>
-      <DropdownMenu
-        onOpenChange={(open) => {
-          if (!open) setConfirmingDelete(false);
-        }}
+    <DropdownMenu onOpenChange={handleOpenChange}>
+      <DropdownMenuTrigger
+        className="flex size-9 cursor-pointer items-center justify-center rounded-md border border-line bg-panel/80 backdrop-blur-xl shadow-subtle transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-amb"
+        aria-label="菜单"
       >
-        <DropdownMenuTrigger
-          className="flex items-center justify-center size-8 rounded-xl bg-card/80 backdrop-blur-sm shadow-sm border border-border hover:bg-card transition-colors cursor-pointer outline-none"
-          aria-label="菜单"
-        >
-          <LoomicLogo className="size-5 text-foreground" />
-        </DropdownMenuTrigger>
+        <BrandMark className="size-6" aria-hidden title="" />
+      </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="start" sideOffset={6} className="w-56">
-          {/* Group 1 — Navigation */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => router.push("/home")}>
-              <Home className="size-4" />
-              主页
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/projects")}>
-              <FolderOpen className="size-4" />
-              项目库
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
+      <DropdownMenuContent align="start" sideOffset={6} className="w-56">
+        {/* Group 1 — Navigation */}
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => router.push("/home")}>
+            <Home className="size-4" />
+            首页
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/studio")}>
+            <Aperture className="size-4" />
+            生图
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/projects")}>
+            <FolderOpen className="size-4" />
+            画布项目
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-          <DropdownMenuSeparator />
+        <DropdownMenuSeparator />
 
-          {/* Group 2 — Project actions */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => createNewProject()}>
-              <Plus className="size-4" />
-              新建项目
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={handleDeleteProject}
-            >
-              <Trash2 className="size-4" />
-              {confirmingDelete ? "确认删除?" : "删除当前项目"}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
+        {/* Group 2 — Project actions */}
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => createNewProject()}>
+            <Plus className="size-4" />
+            新建画布
+          </DropdownMenuItem>
+          {/* Stays open on the first click so the confirm step is visible;
+              closing the menu resets it. */}
+          <DropdownMenuItem
+            variant="destructive"
+            closeOnClick={confirmingDelete}
+            onClick={handleDeleteProject}
+          >
+            <Trash2 className="size-4" />
+            {confirmingDelete ? "再点一次，确认删除" : "删除当前项目"}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-          <DropdownMenuSeparator />
+        <DropdownMenuSeparator />
 
-          {/* Group 3 — Canvas import */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-              <ImagePlus className="size-4" />
-              导入图片
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
+        {/* Group 3 — Canvas import: Excalidraw's own image flow (resizing,
+            size limit and error messages), placed at the viewport centre. */}
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            disabled={!excalidrawApi}
+            onClick={() =>
+              excalidrawApi?.setActiveTool({
+                type: "image",
+                insertOnCanvasDirectly: true,
+              })
+            }
+          >
+            <ImagePlus className="size-4" />
+            导入图片
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-          <DropdownMenuSeparator />
+        <DropdownMenuSeparator />
 
-          {/* Group 4 — Edit operations */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
-            >
-              <Undo2 className="size-4" />
-              撤销
-              <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                dispatchKeyToExcalidraw("z", {
-                  metaKey: true,
-                  shiftKey: true,
-                })
-              }
-            >
-              <Redo2 className="size-4" />
-              重做
-              <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDuplicateElements}>
-              <Copy className="size-4" />
-              复制对象
-              <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
+        {/* Group 4 — Edit operations */}
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
+          >
+            <Undo2 className="size-4" />
+            撤销
+            <DropdownMenuShortcut>{keys.undo}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              dispatchKeyToExcalidraw("z", { metaKey: true, shiftKey: true })
+            }
+          >
+            <Redo2 className="size-4" />
+            重做
+            <DropdownMenuShortcut>{keys.redo}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!hasSelection}
+            onClick={() => dispatchKeyToExcalidraw("d", { metaKey: true })}
+          >
+            <Copy className="size-4" />
+            复制选中内容
+            <DropdownMenuShortcut>{keys.duplicate}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-          <DropdownMenuSeparator />
+        <DropdownMenuSeparator />
 
-          {/* Group 5 — View controls */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => excalidrawApi?.scrollToContent()}>
-              <Maximize2 className="size-4" />
-              显示画布所有元素
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileImport}
-      />
-    </>
+        {/* Group 5 — View controls */}
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            disabled={!excalidrawApi}
+            onClick={() =>
+              excalidrawApi?.scrollToContent(undefined, {
+                fitToContent: true,
+                animate: true,
+              })
+            }
+          >
+            <Maximize2 className="size-4" />
+            显示全部内容
+            <DropdownMenuShortcut>{keys.fit}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

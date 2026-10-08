@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Comp B · 氛围屏</title>
+<link rel="stylesheet" href="comp.css" />
+<style>
+  :root { --amb: 236 92 74; --amb-2: 255 176 64; }
+  .stage { position: relative; width: 1440px; height: 900px; overflow: hidden; background: var(--night-1); }
+  .ambient img.a { left: 40%; top: 0%; width: 80%; height: 90%; opacity: 0.7; }
+
+  nav { position: absolute; z-index: 20; top: 26px; left: 64px; right: 64px; display: flex; align-items: center; justify-content: space-between; }
+  nav .links { display: flex; gap: 6px; padding: 5px; border-radius: 14px; }
+  nav .links span { font: 500 14px "NotoSC"; color: var(--fg-2); padding: 8px 14px; border-radius: 10px; }
+  nav .links span.on { background: rgb(255 255 255 / 0.08); color: var(--fg); }
+
+  /* The screen: one big image plane hanging in the room, lighting the floor. */
+  .room { position: absolute; inset: 0; perspective: 1600px; perspective-origin: 30% 40%; z-index: 4; }
+  .screen { position: absolute; left: 640px; top: 96px; width: 780px; height: 560px; border-radius: 22px; overflow: hidden;
+            transform: rotateY(-24deg) rotateX(2deg); transform-origin: left center;
+            box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14), 0 80px 140px -40px rgb(0 0 0 / 0.9), 0 0 160px -20px rgb(var(--amb) / 0.55);
+            -webkit-box-reflect: below 10px linear-gradient(transparent 62%, rgb(0 0 0 / 0.28)); }
+  .screen img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 35%; }
+  .floor { position: absolute; left: 0; right: 0; top: 690px; bottom: 0; z-index: 3;
+           background: linear-gradient(to bottom, rgb(var(--amb) / 0.10), transparent 70%); border-top: 1px solid rgb(255 255 255 / 0.06); }
+
+  .copy { position: absolute; z-index: 10; left: 64px; top: 168px; width: 660px; }
+  h1 { font: 400 112px/0.98 "Smiley", "NotoSC"; letter-spacing: -0.01em; }
+  h1 em { font-style: normal; color: rgb(255 214 200); }
+  .sub { margin-top: 26px; max-width: 26em; font: 400 18px/1.7 "NotoSC"; color: var(--fg-2); }
+
+  .composer { position: absolute; z-index: 12; left: 64px; top: 520px; width: 760px; border-radius: 20px; padding: 16px 16px 14px; }
+  .composer .input { font: 400 17px/1.6 "NotoSC"; color: var(--fg); height: 56px; padding: 2px 4px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; }
+  .composer .row .spacer { flex: 1; }
+
+  .playlist { position: absolute; z-index: 12; left: 920px; top: 700px; display: flex; gap: 12px; align-items: flex-end; }
+  .thumb { width: 72px; height: 96px; border-radius: 10px; overflow: hidden; opacity: 0.6; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1); }
+  .thumb.on { width: 88px; height: 118px; opacity: 1; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.9), 0 0 40px -6px rgb(var(--amb) / 0.8); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .pl-label { position: absolute; z-index: 12; left: 920px; top: 836px; font: 400 13px "NotoSC"; color: var(--fg-3); }
+  .tag { position: absolute; z-index: 12; left: 700px; top: 120px; border-radius: 999px; padding: 6px 12px 6px 8px; display: flex; gap: 8px; align-items: center; font: 500 12.5px "NotoSC"; transform: rotate(-2deg); }
+  .tag i { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--amb)); box-shadow: 0 0 10px rgb(var(--amb)); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="ambient"><img class="a" src="../../public/images/showcase/web/showcase-5.webp" alt="" /></div>
+  <div class="vignette" style="background: radial-gradient(90% 90% at 70% 35%, transparent, rgb(6 9 18 / 0.6) 60%, var(--night-0))"></div>
+  <div class="grain"></div>
+  <div class="floor"></div>
+
+  <nav>
+    <div class="wordmark"><span class="mark"></span>GGUU<span class="wm-sub">AI IMAGE</span></div>
+    <div class="links glass"><span class="on">首页</span><span>作品</span><span>模型</span><span>计费说明</span></div>
+    <span class="btn-ghost">登录</span>
+  </nav>
+
+  <div class="room">
+    <div class="screen"><img src="../../public/images/showcase/web/showcase-5.webp" alt="" /></div>
+  </div>
+  <div class="tag glass"><i></i>示例作品 · 跑道上的三个女孩，复古运动风，正午硬光</div>
+
+  <section class="copy">
+    <h1>想到什么，<br />就<em>生成</em>什么</h1>
+    <p class="sub">主站账号直接登录，按次从主站余额扣费。<br />每张图都带请求 ID，在主站账单里查得到。</p>
+  </section>
+
+  <div class="composer glass">
+    <div class="input">跑道上的三个女孩，复古运动风，正午硬光</div>
+    <div class="row">
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>参考图</span>
+      <span class="chip">GPT Image 2 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="chip">3:4</span><span class="chip">2K</span>
+      <span class="spacer"></span>
+      <span class="btn-primary">开始生成 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+  </div>
+
+  <div class="playlist">
+    <div class="thumb"><img src="../../public/images/showcase/web/showcase-1.webp" alt="" /></div>
+    <div class="thumb on"><img src="../../public/images/showcase/web/showcase-5.webp" alt="" /></div>
+    <div class="thumb"><img src="../../public/images/showcase/web/showcase-7.webp" alt="" /></div>
+    <div class="thumb"><img src="../../public/images/showcase/web/showcase-6.webp" alt="" /></div>
+    <div class="thumb"><img src="../../public/images/showcase/web/showcase-10.webp" alt="" /></div>
+  </div>
+  <div class="pl-label">点一张，整个页面换成它的光</div>
+</div>
+</body>
+</html>

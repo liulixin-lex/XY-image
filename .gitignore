@@ -69,3 +69,7 @@ docs/tech/replicate-models-pricing.md
 *.key
 *.p12
 *.pfx
+
+# Local design QA artefacts (screenshots, comp fonts); regenerate locally
+apps/web/.impeccable/review/
+apps/web/.impeccable/mocks/fonts/

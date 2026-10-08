@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { CircleAlert } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -131,6 +132,9 @@ function findSidebarRect(el: HTMLElement | null): DOMRect | null {
   return null;
 }
 
+/** Detail panel width; below this much free space it centres instead. */
+const DETAIL_PANEL_WIDTH = 520;
+
 /* ------------------------------------------------------------------ */
 /*  ToolBlockView — main card in chatbar + floating detail panel       */
 /* ------------------------------------------------------------------ */
@@ -141,7 +145,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   block: ToolBlock;
 }) {
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelRight, setPanelRight] = useState(416);
+  // null = centred (phones, narrow windows); a number = beside the sidebar.
+  const [panelRight, setPanelRight] = useState<number | null>(416);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const config = getToolConfig(block.toolName);
@@ -150,10 +155,10 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasDetails = hasOutput || hasInput;
 
+  const hasReadableSummary =
+    !!block.outputSummary && isHumanReadable(block.outputSummary);
   const cardTitle =
-    block.outputSummary && isHumanReadable(block.outputSummary)
-      ? block.outputSummary
-      : config.label;
+    hasReadableSummary && block.outputSummary ? block.outputSummary : config.label;
 
   const previewLines = hasOutput
     ? formatOutputPreview(block.output!)
@@ -179,10 +184,13 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     (inputData?.aspectRatio as string) ?? (isVideoTool ? "16:9" : "1:1");
 
   const handleOpenPanel = useCallback(() => {
+    // Beside the sidebar when the canvas has room for it; otherwise (phones,
+    // where the sidebar covers the canvas) centred in the viewport.
     const rect = findSidebarRect(containerRef.current);
-    if (rect) {
-      setPanelRight(window.innerWidth - rect.left + 12);
-    }
+    const right = rect ? window.innerWidth - rect.left + 12 : 416;
+    setPanelRight(
+      window.innerWidth - right >= DETAIL_PANEL_WIDTH + 12 ? right : null,
+    );
     setPanelOpen(true);
   }, []);
 
@@ -194,6 +202,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {block.status === "running" ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+        ) : mediaError ? (
+          <CircleAlert aria-hidden className="h-3.5 w-3.5 text-alert" />
         ) : (
           <svg
             className="h-3.5 w-3.5 text-muted-foreground"
@@ -236,8 +246,9 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           hasDetails={!!hasDetails}
           onOpenPanel={handleOpenPanel}
         />
-      ) : showCard ? (
-        /* Layer 2: Generic output card (non-image tools) */
+      ) : showCard && !mediaError ? (
+        /* Layer 2: Generic output card (non-image tools); failed media
+           generations already have their own error card above. */
         <div className="rounded-xl border-[0.5px] border-border p-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 shrink-0 rounded-lg bg-muted p-1.5 text-muted-foreground">
@@ -247,7 +258,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
               <div className="text-sm font-semibold text-foreground line-clamp-1">
                 {cardTitle}
               </div>
-              {previewLines.length > 0 && (
+              {/* Raw key/value lines only when there is no readable summary. */}
+              {!hasReadableSummary && previewLines.length > 0 && (
                 <div className="mt-0.5 space-y-px">
                   {previewLines.map((line, i) => (
                     <div
@@ -403,6 +415,18 @@ const MediaErrorCard = React.memo(function MediaErrorCard({
 /*  ImageArtifactCard                                                  */
 /* ------------------------------------------------------------------ */
 
+/** Keep tall and wide results recognisable without letting them take over the sidebar. */
+function previewAspect(width?: number, height?: number): number {
+  if (!width || !height) return 1;
+  return Math.min(16 / 9, Math.max(4 / 5, width / height));
+}
+
+function downloadExtension(mimeType?: string): string {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
 const ImageArtifactCard = React.memo(function ImageArtifactCard({
   artifact,
   cardTitle,
@@ -410,12 +434,21 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   hasDetails,
   onOpenPanel,
 }: {
-  artifact: { url: string; title?: string; type: string };
+  artifact: {
+    url: string;
+    title?: string | undefined;
+    type: string;
+    width?: number | undefined;
+    height?: number | undefined;
+    mimeType?: string | undefined;
+  };
   cardTitle: string;
   modelName: string | undefined;
   hasDetails: boolean;
   onOpenPanel: () => void;
 }) {
+  const title = artifact.title ?? cardTitle;
+
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -424,67 +457,71 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
         .then((blob) => {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = artifact.title ?? "generated-image.png";
+          a.download = `${artifact.title ?? "gguu-image"}.${downloadExtension(artifact.mimeType)}`;
           a.click();
           URL.revokeObjectURL(a.href);
         })
-        .catch(() => window.open(artifact.url, "_blank"));
+        .catch((err) => {
+          console.warn("[chat] image download failed, opening in a new tab", err);
+          window.open(artifact.url, "_blank", "noopener");
+        });
     },
-    [artifact.url, artifact.title],
+    [artifact.url, artifact.title, artifact.mimeType],
   );
 
+  // The card opens the detail panel; download is a sibling button (no
+  // nested interactive elements), shown on hover / focus and always on touch.
   return (
-    <div
-      className="group cursor-pointer rounded-xl border-[0.5px] border-border overflow-hidden transition-shadow hover:shadow-md"
-      onClick={onOpenPanel}
-    >
-      {/* Image preview */}
-      <div className="relative aspect-square max-h-[280px] w-full overflow-hidden bg-muted">
-        <img
-          src={artifact.url}
-          alt={artifact.title ?? "Generated image"}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          loading="lazy"
-        />
-        {/* Gradient overlay with download button */}
-        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors"
-            title="\u4e0b\u8f7d\u56fe\u7247"
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14ZM7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      {/* Title + model info */}
-      <div className="px-3 py-2.5">
-        <div className="text-sm font-semibold text-foreground line-clamp-1">
-          {artifact.title ?? cardTitle}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {modelName && (
-            <span className="truncate">
-              {formatModelDisplayName(modelName)}
-            </span>
-          )}
-          {hasDetails && (
-            <>
-              <span>&middot;</span>
-              <span className="hover:text-foreground transition-colors">
-                查看详情
+    <div className="group relative overflow-hidden rounded-xl border-[0.5px] border-border transition-shadow hover:shadow-md">
+      <button
+        type="button"
+        onClick={onOpenPanel}
+        aria-label={`查看「${title}」的详情`}
+        className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+      >
+        <span
+          className="relative block max-h-[320px] w-full overflow-hidden bg-muted"
+          style={{ aspectRatio: previewAspect(artifact.width, artifact.height) }}
+        >
+          <img
+            src={artifact.url}
+            alt={title}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+            loading="lazy"
+          />
+        </span>
+        <span className="block px-3 py-2.5">
+          <span className="block text-sm font-semibold text-foreground line-clamp-1">
+            {title}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            {modelName && (
+              <span className="truncate">
+                {formatModelDisplayName(modelName)}
               </span>
-            </>
-          )}
-        </div>
-      </div>
+            )}
+            {hasDetails && (
+              <>
+                {modelName && <span aria-hidden>&middot;</span>}
+                <span className="transition-colors group-hover:text-foreground">
+                  查看详情
+                </span>
+              </>
+            )}
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={handleDownload}
+        aria-label="下载图片"
+        title="下载图片"
+        className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/35 text-white opacity-0 backdrop-blur-sm transition-[opacity,background-color] group-hover:opacity-100 hover:bg-black/55 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-white [@media(hover:none)]:opacity-100"
+      >
+        <svg aria-hidden className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14ZM7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z" />
+        </svg>
+      </button>
     </div>
   );
 });
@@ -499,10 +536,11 @@ function ToolDetailPanel({
   onClose,
 }: {
   block: ToolBlock;
-  rightOffset: number;
+  rightOffset: number | null;
   onClose: () => void;
 }) {
   const [inputExpanded, setInputExpanded] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const config = getToolConfig(block.toolName);
 
@@ -515,12 +553,18 @@ function ToolDetailPanel({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  // Move focus into the dialog so Escape / Tab work from the keyboard.
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-[1000]"
+      // Centred mode covers the chat on phones; dim it so the panel reads as on top.
+      className={`fixed inset-0 z-[1000] ${rightOffset === null ? "bg-ground/50" : ""}`}
       onClick={onClose}
     >
       <motion.div
@@ -530,8 +574,16 @@ function ToolDetailPanel({
           duration: 0.25,
           ease: [0.25, 0.46, 0.45, 0.94],
         }}
-        className="fixed top-1/2 -translate-y-1/2 w-[520px] max-h-[640px] min-h-[240px] rounded-2xl bg-card shadow-lg overflow-hidden flex flex-col"
-        style={{ right: rightOffset }}
+        // biome-ignore lint/a11y/useSemanticElements: framer-motion panel in a portal overlay; native <dialog> top-layer would bypass the motion transforms
+        role="dialog"
+        aria-modal="true"
+        aria-label={config.label}
+        className="fixed top-1/2 flex max-h-[min(640px,calc(100dvh-32px))] min-h-[240px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-float"
+        style={
+          rightOffset === null
+            ? { left: 8, right: 8 }
+            : { right: rightOffset, width: DETAIL_PANEL_WIDTH }
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -546,9 +598,11 @@ function ToolDetailPanel({
             </h3>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+            aria-label="关闭"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-amb"
           >
             <svg
               className="h-4 w-4"
@@ -586,7 +640,7 @@ function ToolDetailPanel({
                 <div className="mt-2 space-y-1.5">
                   {Object.entries(block.input!).map(([key, value]) => (
                     <div key={key} className="rounded-lg bg-muted px-3 py-2">
-                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         {formatParamName(key)}
                       </div>
                       <div className="mt-0.5 text-xs text-foreground break-all whitespace-pre-wrap">
@@ -623,12 +677,12 @@ function ToolDetailPanel({
                 附件
               </div>
               <div className="flex flex-wrap gap-2">
-                {block.artifacts.map((artifact: { type: string; url: string; title?: string }) =>
+                {block.artifacts.map((artifact: { type: string; url: string; title?: string | undefined }) =>
                   artifact.type === "image" ? (
                     <ChatImage
                       key={artifact.url}
                       src={artifact.url}
-                      alt={artifact.title ?? "Generated image"}
+                      alt={artifact.title ?? "生成的图片"}
                       className="max-w-[200px] rounded-lg border border-border"
                     />
                   ) : null,
@@ -675,7 +729,7 @@ function ToolOutputRenderer({
         <div className="space-y-2">
           {entries.map(([key, value]) => (
             <div key={key} className="rounded-lg bg-muted px-3 py-2">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 {formatParamName(key)}
               </div>
               <div className="mt-0.5 text-sm text-foreground whitespace-pre-wrap break-words">
@@ -766,7 +820,7 @@ function BrandKitOutput({ data }: { data: BrandKitData }) {
                   className="h-16 w-16 rounded-xl border border-border shadow-sm"
                   style={{ backgroundColor: color.hex }}
                 />
-                <span className="text-[10px] font-medium text-muted-foreground">
+                <span className="text-[11px] font-medium text-muted-foreground">
                   {color.hex}
                 </span>
               </div>
@@ -784,7 +838,7 @@ function BrandKitOutput({ data }: { data: BrandKitData }) {
           <div className="grid grid-cols-2 gap-2">
             {fonts.map((font, i) => (
               <div key={i} className="rounded-xl bg-muted px-3 py-3">
-                <div className="text-[10px] text-muted-foreground mb-1">
+                <div className="text-[11px] text-muted-foreground mb-1">
                   {font.name}
                 </div>
                 <div
@@ -824,7 +878,7 @@ function BrandKitOutput({ data }: { data: BrandKitData }) {
                   loading="lazy"
                 />
                 {logo.name && (
-                  <div className="px-2 py-1.5 text-[10px] text-muted-foreground truncate">
+                  <div className="px-2 py-1.5 text-[11px] text-muted-foreground truncate">
                     {logo.name}
                   </div>
                 )}
@@ -842,7 +896,7 @@ function BrandKitOutput({ data }: { data: BrandKitData }) {
                   loading="lazy"
                 />
                 {img.name && (
-                  <div className="px-2 py-1.5 text-[10px] text-muted-foreground truncate">
+                  <div className="px-2 py-1.5 text-[11px] text-muted-foreground truncate">
                     {img.name}
                   </div>
                 )}

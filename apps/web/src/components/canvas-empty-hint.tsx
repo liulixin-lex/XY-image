@@ -82,8 +82,12 @@ export function CanvasEmptyHint({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-      <p className="text-base text-muted-foreground/50">
-        {"输入你的想法开始创作"}
+      <p className="flex items-center gap-2 text-sm text-fg-muted">
+        按
+        <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-frame glass px-1.5 font-mono text-xs text-fg-soft shadow-subtle">
+          C
+        </kbd>
+        把想法告诉助手，或用底部工具栏的「生成」直接出图
       </p>
     </div>
   );

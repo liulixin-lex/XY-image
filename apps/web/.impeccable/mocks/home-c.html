@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Comp C · 光之长廊</title>
+<link rel="stylesheet" href="comp.css" />
+<style>
+  :root { --amb: 120 150 255; --amb-2: 220 120 255; }
+  .stage { position: relative; width: 1440px; height: 900px; overflow: hidden; background: var(--night-0); }
+
+  nav { position: absolute; z-index: 20; top: 24px; left: 56px; right: 56px; display: flex; align-items: center; justify-content: space-between; }
+  nav .links { display: flex; gap: 28px; font: 500 14px "NotoSC"; color: var(--fg-2); }
+  nav .right { display: flex; gap: 10px; align-items: center; }
+
+  /* Corridor: each card is its own 3D layer under one perspective (no preserve-3d planes —
+     big preserve-3d planes hang Chromium's software compositor). Floor/ceiling edges are 2D SVG. */
+  .tunnel { position: absolute; inset: 0; z-index: 3; perspective: 760px; perspective-origin: 50% 50%; }
+  .ph { position: absolute; left: 50%; top: 50%; width: 400px; height: 300px; border-radius: 14px; background: center / cover no-repeat;
+        box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12); }
+  .ph.l { transform-origin: 0 50%; }
+  .ph.r { transform-origin: 100% 50%; }
+  .edges { position: absolute; inset: 0; z-index: 2; }
+  .end { position: absolute; z-index: 4; left: 50%; top: 50%; width: 560px; height: 380px; transform: translate(-50%, -50%);
+         background: radial-gradient(closest-side, rgb(var(--amb) / 0.55), rgb(var(--amb-2) / 0.18) 55%, transparent); filter: blur(30px); }
+
+  .center { position: absolute; z-index: 10; left: 50%; top: 214px; transform: translateX(-50%); width: 760px; text-align: center; }
+  h1 { font: 900 72px/1.08 "NotoSC"; letter-spacing: -0.035em; text-shadow: 0 8px 50px rgb(6 9 18 / 0.7); }
+  .sub { margin: 18px auto 0; font: 400 17px/1.7 "NotoSC"; color: var(--fg-2); }
+  .composer { margin: 36px auto 0; width: 720px; border-radius: 20px; padding: 16px 16px 14px; text-align: left;
+              box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 1px rgb(var(--amb) / 0.25), 0 30px 90px -20px rgb(var(--amb) / 0.45); }
+  .composer .input { font: 400 17px/1.6 "NotoSC"; color: var(--fg-3); height: 54px; padding: 2px 4px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; }
+  .composer .row .spacer { flex: 1; }
+  /* Blurred box-shadow on the CTA over the 3D corridor hangs Chromium's software compositor; glow is a gradient pseudo instead. */
+  .composer .btn-primary { position: relative; box-shadow: inset 0 -2px 0 rgb(10 15 30 / 0.12); }
+  .composer .btn-primary::before { content: ""; position: absolute; inset: -18px -24px -26px; z-index: -1; border-radius: 30px;
+    background: radial-gradient(closest-side, rgb(var(--amb) / 0.55), transparent); }
+  .examples { margin-top: 18px; display: flex; gap: 8px; justify-content: center; }
+  .examples span { font: 400 13px "NotoSC"; color: var(--fg-2); padding: 6px 12px; border-radius: 999px; background: rgb(255 255 255 / 0.05); border: 1px solid var(--line); }
+  .scroll { position: absolute; z-index: 10; left: 50%; bottom: 34px; transform: translateX(-50%); font: 400 13px "NotoSC"; color: var(--fg-3); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .scroll i { width: 1px; height: 36px; background: linear-gradient(to bottom, rgb(var(--amb)), transparent); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="grain"></div>
+
+  <nav>
+    <div class="wordmark"><span class="mark"></span>GGUU<span class="wm-sub">AI IMAGE</span></div>
+    <div class="links"><span>作品</span><span>模型</span><span>计费说明</span></div>
+    <div class="right"><span class="btn-ghost">登录</span></div>
+  </nav>
+
+  <svg class="edges" viewBox="0 0 1440 900" preserveAspectRatio="none" fill="none" stroke="rgb(255 255 255 / 0.07)" stroke-width="1"><path d="M0 900 L620 520"/><path d="M1440 900 L820 520"/><path d="M0 0 L620 380"/><path d="M1440 0 L820 380"/><path d="M360 900 L680 520"/><path d="M1080 900 L760 520"/></svg>
+  <div class="tunnel">
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-1.webp); transform:translate3d(-600px,-330px,380px) rotateY(80deg); filter:brightness(1.00)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-3.webp); transform:translate3d(-600px,30px,380px) rotateY(80deg); filter:brightness(1.00)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-5.webp); transform:translate3d(-600px,-330px,-90px) rotateY(80deg); filter:brightness(0.83)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-8.webp); transform:translate3d(-600px,30px,-90px) rotateY(80deg); filter:brightness(0.83)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-10.webp); transform:translate3d(-600px,-330px,-560px) rotateY(80deg); filter:brightness(0.66)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-12.webp); transform:translate3d(-600px,30px,-560px) rotateY(80deg); filter:brightness(0.66)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-7.webp); transform:translate3d(-600px,-330px,-1030px) rotateY(80deg); filter:brightness(0.49)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-2.webp); transform:translate3d(-600px,30px,-1030px) rotateY(80deg); filter:brightness(0.49)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-9.webp); transform:translate3d(-600px,-330px,-1500px) rotateY(80deg); filter:brightness(0.32)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-11.webp); transform:translate3d(-600px,30px,-1500px) rotateY(80deg); filter:brightness(0.32)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-4.webp); transform:translate3d(-600px,-330px,-1970px) rotateY(80deg); filter:brightness(0.18)"></div>
+      <div class="ph l" style="background-image:url(../../public/images/showcase/web/showcase-6.webp); transform:translate3d(-600px,30px,-1970px) rotateY(80deg); filter:brightness(0.18)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-6.webp); transform:translate3d(200px,-330px,380px) rotateY(-80deg); filter:brightness(1.00)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-11.webp); transform:translate3d(200px,30px,380px) rotateY(-80deg); filter:brightness(1.00)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-2.webp); transform:translate3d(200px,-330px,-90px) rotateY(-80deg); filter:brightness(0.83)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-9.webp); transform:translate3d(200px,30px,-90px) rotateY(-80deg); filter:brightness(0.83)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-4.webp); transform:translate3d(200px,-330px,-560px) rotateY(-80deg); filter:brightness(0.66)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-7.webp); transform:translate3d(200px,30px,-560px) rotateY(-80deg); filter:brightness(0.66)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-12.webp); transform:translate3d(200px,-330px,-1030px) rotateY(-80deg); filter:brightness(0.49)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-10.webp); transform:translate3d(200px,30px,-1030px) rotateY(-80deg); filter:brightness(0.49)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-8.webp); transform:translate3d(200px,-330px,-1500px) rotateY(-80deg); filter:brightness(0.32)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-3.webp); transform:translate3d(200px,30px,-1500px) rotateY(-80deg); filter:brightness(0.32)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-5.webp); transform:translate3d(200px,-330px,-1970px) rotateY(-80deg); filter:brightness(0.18)"></div>
+      <div class="ph r" style="background-image:url(../../public/images/showcase/web/showcase-1.webp); transform:translate3d(200px,30px,-1970px) rotateY(-80deg); filter:brightness(0.18)"></div>
+  </div>
+  <div class="end"></div>
+
+  <section class="center">
+    <h1>想到什么，<br />就生成什么</h1>
+    <p class="sub">主站账号直接登录 · 按次从主站余额扣费 · 每一笔都查得到</p>
+    <div class="composer glass">
+      <div class="input">描述你想要的画面，比如：清晨的海边小屋，窗台上有一只橘猫</div>
+      <div class="row">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>参考图</span>
+        <span class="chip">GPT Image 2 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg></span>
+        <span class="chip">1:1</span><span class="chip">2K</span>
+        <span class="spacer"></span>
+        <span class="btn-primary">开始生成 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </div>
+    </div>
+    <div class="examples"><span>产品白底图</span><span>小红书封面</span><span>头像重绘</span><span>海报主视觉</span></div>
+  </section>
+
+  <div class="scroll"><i></i>往下滚，走进作品墙</div>
+</div>
+</body>
+</html>

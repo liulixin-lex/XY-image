@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SKILL_CATEGORY_OPTIONS } from "./categories";
 
 // ---------------------------------------------------------------------------
 // SKILL.md boilerplate template
@@ -44,14 +45,7 @@ Agent: example response
 // Category options
 // ---------------------------------------------------------------------------
 
-const CATEGORY_OPTIONS: Array<{ value: SkillCategory; label: string }> = [
-  { value: "design", label: "Design" },
-  { value: "generation", label: "Generation" },
-  { value: "code", label: "Code" },
-  { value: "data", label: "Data" },
-  { value: "writing", label: "Writing" },
-  { value: "custom", label: "Custom" },
-];
+const CATEGORY_OPTIONS = SKILL_CATEGORY_OPTIONS;
 
 // ---------------------------------------------------------------------------
 // CreateSkillDialog
@@ -150,6 +144,8 @@ export function CreateSkillDialog({
           ...(validFiles.length > 0 ? { files: validFiles } : {}),
         });
         handleOpenChange(false);
+      } catch {
+        // The page already showed the error; keep the form open so nothing typed is lost.
       } finally {
         setSubmitting(false);
       }
@@ -178,7 +174,7 @@ export function CreateSkillDialog({
             <Label htmlFor="skill-name">名称</Label>
             <Input
               id="skill-name"
-              placeholder="e.g. UI Design Expert"
+              placeholder="比如：电商主图规范"
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={200}

@@ -1,25 +1,28 @@
 "use client";
 
+/**
+ * Which image models the design agent may pick from.
+ *
+ * `auto` lets the agent choose among whatever the selected image key can
+ * reach. `manual` restricts it to the listed ids. There is deliberately no
+ * hard-coded default model: availability depends on the user's key group,
+ * so an empty manual list collapses back to `auto`.
+ */
 import { useCallback, useSyncExternalStore } from "react";
 import type { ImageGenerationPreference } from "@loomic/shared";
 
-const STORAGE_KEY = "loomic:image-model-preference";
-const DEFAULT_MODEL = "google/nano-banana-2";
+const STORAGE_KEY = "xy:image-model-preference";
 
 export type ImageModelPreference = ImageGenerationPreference;
 
-const defaultPreference: ImageModelPreference = {
-  mode: "auto",
-  models: [DEFAULT_MODEL],
-};
+const defaultPreference: ImageModelPreference = { mode: "auto", models: [] };
 
-// Listeners for cross-component reactivity
 const listeners = new Set<() => void>();
 function emitChange() {
   for (const listener of listeners) listener();
 }
 
-// Cache parsed result — useSyncExternalStore requires stable references
+// useSyncExternalStore needs a stable reference per raw value.
 let cachedRaw: string | null = null;
 let cachedPreference: ImageModelPreference = defaultPreference;
 
@@ -29,7 +32,7 @@ function getSnapshot(): ImageModelPreference {
     if (raw !== cachedRaw) {
       cachedRaw = raw;
       cachedPreference = raw
-        ? normalizePreference(JSON.parse(raw) as Partial<ImageModelPreference> & { model?: string })
+        ? normalizePreference(JSON.parse(raw) as Partial<ImageModelPreference>)
         : defaultPreference;
     }
     return cachedPreference;
@@ -48,29 +51,38 @@ function subscribe(callback: () => void): () => void {
 }
 
 function normalizePreference(
-  preference?: Partial<ImageModelPreference> & { model?: string },
+  preference?: Partial<ImageModelPreference>,
 ): ImageModelPreference {
   if (!preference) return defaultPreference;
-
   const models = Array.isArray(preference.models)
     ? preference.models.filter(
         (model): model is string => typeof model === "string" && model.length > 0,
       )
-    : typeof preference.model === "string" && preference.model.length > 0
-      ? [preference.model]
-      : defaultPreference.models;
+    : [];
+  if (preference.mode !== "manual" || models.length === 0) return defaultPreference;
+  return { mode: "manual", models };
+}
 
-  return {
-    mode: preference.mode === "manual" ? "manual" : "auto",
-    models: models.length > 0 ? models : defaultPreference.models,
-  };
+/**
+ * Drop ids the current key can no longer reach. Returns undefined (= auto)
+ * when nothing usable is left, so the agent never receives a dead model.
+ */
+export function resolveImagePreference(
+  preference: ImageModelPreference,
+  availableIds: readonly string[] | null,
+): ImageModelPreference | undefined {
+  if (preference.mode !== "manual") return undefined;
+  const models = availableIds
+    ? preference.models.filter((id) => availableIds.includes(id))
+    : preference.models;
+  return models.length ? { mode: "manual", models } : undefined;
 }
 
 export function useImageModelPreference() {
   const preference = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const setPreference = useCallback((next: ImageModelPreference) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizePreference(next)));
     emitChange();
   }, []);
 
@@ -83,22 +95,13 @@ export function useImageModelPreference() {
 
   const toggleModel = useCallback(
     (model: string) => {
-      const isSelected = preference.models.includes(model);
-
-      if (isSelected && preference.models.length === 1) {
-        return;
-      }
-
-      const models = isSelected
-        ? preference.models.filter((item) => item !== model)
-        : [...preference.models, model];
-
-      setPreference({
-        mode: "manual",
-        models,
-      });
+      const current = preference.mode === "manual" ? preference.models : [];
+      const models = current.includes(model)
+        ? current.filter((item) => item !== model)
+        : [...current, model];
+      setPreference({ mode: models.length ? "manual" : "auto", models });
     },
-    [preference.models, setPreference],
+    [preference, setPreference],
   );
 
   const activeImageGenerationPreference =

@@ -38,7 +38,7 @@ export function ImageSection({
 
   return (
     <section>
-      <SectionHeader title="Images" count={images.length} />
+      <SectionHeader title="参考图片" count={images.length} />
       <div className="flex flex-wrap gap-3">
         {images.map((image) => (
           <AssetCard
@@ -48,7 +48,7 @@ export function ImageSection({
             onUpdateLabel={onUpdateLabel}
           />
         ))}
-        <AddAssetCard label="Upload" onClick={handleClick} />
+        <AddAssetCard label="上传图片" onClick={handleClick} />
         <input
           ref={inputRef}
           type="file"

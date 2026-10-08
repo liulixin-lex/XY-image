@@ -1,14 +1,23 @@
 "use client";
 
+/**
+ * Which image models the design agent may use. Lists only models the
+ * selected image key can reach; preferences for unreachable models are
+ * ignored when a run starts (see resolveImagePreference).
+ */
+import { CheckIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Lock, Zap } from "lucide-react";
 
-import type { ImageModelInfo } from "../lib/server-api";
-import type { VideoModelInfo } from "../lib/server-api";
-import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import { useImageModels } from "../lib/account-context";
+import { describeIssue } from "../lib/generation-errors";
+import { QUALITY_LABEL } from "../lib/image-model-meta";
+import { cn } from "../lib/utils";
+import { Segmented } from "./ui/select";
+
+const POPOVER_WIDTH = 340;
 
 export function ImageModelPreferencePopover({
   open,
@@ -20,192 +29,138 @@ export function ImageModelPreferencePopover({
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
-  const [models, setModels] = useState<ImageModelInfo[]>([]);
-  const [activeTab, setActiveTab] = useState<"image" | "video">("image");
-  const videoPreference = useVideoModelPreference();
-  const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
+  const { data, loading, error } = useImageModels();
+  const models = data ?? [];
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    fetchImageModels()
-      .then((data) => setModels(data.models))
-      .catch(() => {});
-    fetchVideoModels()
-      .then((data) => setVideoModels(data.models))
-      .catch(() => {});
-  }, [open]);
-
-  // Calculate position — auto-detect direction based on available space
+  // Open toward the side with more room.
   useLayoutEffect(() => {
     if (!open || !anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
-    const popoverHeight = 400; // approximate max height
     const spaceBelow = window.innerHeight - rect.bottom;
-    const openAbove = spaceBelow < popoverHeight && rect.top > spaceBelow;
-
+    const above = spaceBelow < 380 && rect.top > spaceBelow;
     setPos({
-      top: openAbove ? rect.top - 8 : rect.bottom + 8,
-      left: Math.max(8, rect.right - 380),
-      above: openAbove,
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(8, Math.min(rect.right - POPOVER_WIDTH, window.innerWidth - POPOVER_WIDTH - 8)),
+      above,
     });
   }, [open, anchorRef]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (popoverRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      onClose();
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, onClose, anchorRef]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  const currentPreference = activeTab === "image" ? preference : videoPreference.preference;
-  const currentModels = activeTab === "image" ? models : videoModels;
-  const currentSetMode = activeTab === "image" ? setMode : videoPreference.setMode;
-  const currentToggleModel = activeTab === "image" ? toggleModel : videoPreference.toggleModel;
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose, anchorRef]);
 
   if (!open || !pos) return null;
+  const manual = preference.mode === "manual";
 
   return createPortal(
     <div
       ref={popoverRef}
+      role="dialog"
+      aria-label="生图模型偏好"
       style={{
         top: pos.above ? undefined : pos.top,
         bottom: pos.above ? window.innerHeight - pos.top : undefined,
         left: pos.left,
+        width: POPOVER_WIDTH,
       }}
-      className="fixed z-[9999] w-[380px] rounded-xl border-[0.5px] border-border bg-card p-1 shadow-card"
+      className="fixed z-[9999] rounded-lg glass shadow-float"
     >
-      <div className="flex flex-col gap-3 py-2">
-        {/* Tab switcher */}
-        <div className="px-3">
-          <div className="flex rounded-lg bg-muted p-0.5">
-            {(["image", "video"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeTab === tab
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab === "image" ? "Image" : "Video"}
-              </button>
+      <div className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-3">
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-semibold text-fg">助手用哪些生图模型</p>
+          <p className="mt-1 text-[12px] leading-snug text-fg-muted">
+            {manual
+              ? "只在勾选的模型里挑。都取消就回到自动。"
+              : "按任务自动挑选当前 Key 可用的模型。"}
+          </p>
+        </div>
+        <Segmented
+          value={preference.mode}
+          onValueChange={(mode) => setMode(mode === "manual" ? "manual" : "auto")}
+          ariaLabel="选择方式"
+          className="h-8 shrink-0"
+          options={[
+            { value: "auto", label: "自动" },
+            {
+              value: "manual",
+              label: "指定",
+              disabled: preference.models.length === 0,
+              title: preference.models.length === 0 ? "先在下面勾选模型" : "指定",
+            },
+          ]}
+        />
+      </div>
+
+      <div className="max-h-[300px] overflow-y-auto border-t border-line p-1.5">
+        {error ? (
+          <div className="px-2.5 py-3 text-[12.5px] leading-relaxed text-fg-soft">
+            {describeIssue(error, null).title}。
+            <Link href="/settings?tab=keys" className="ml-0.5 text-fg underline underline-offset-2">
+              去选择 Key
+            </Link>
+          </div>
+        ) : loading && models.length === 0 ? (
+          <div className="space-y-1.5 p-1.5" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-10 animate-pulse rounded-md bg-white/[0.05]" />
             ))}
           </div>
-        </div>
-
-        {/* Header */}
-        <div className="flex flex-col gap-2 px-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">
-              {activeTab === "image" ? "Image Model" : "Video Model"}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
-              }
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                currentPreference.mode === "auto"
-                  ? "bg-accent/15 text-accent-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  currentPreference.mode === "auto" ? "bg-accent" : "bg-muted-foreground"
-                }`}
-              />
-              {currentPreference.mode === "auto" ? "Auto" : "Manual"}
-            </button>
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {currentPreference.mode === "auto"
-              ? `Agent automatically selects the best model for each ${activeTab} task`
-              : `Agent chooses from your selected models for each ${activeTab} task`}
-          </span>
-        </div>
-
-        {/* Model list */}
-        <div className="scrollbar-hidden max-h-[300px] space-y-0.5 overflow-y-auto px-1">
-          {currentModels.map((m) => {
-            const selected = currentPreference.models.includes(m.id);
+        ) : models.length === 0 ? (
+          <p className="px-2.5 py-3 text-[12.5px] text-fg-muted">当前 Key 没有可用的生图模型。</p>
+        ) : (
+          models.map((m) => {
+            const selected = manual && preference.models.includes(m.id);
             return (
               <button
                 key={m.id}
                 type="button"
-                onClick={() => currentToggleModel(m.id)}
-                className={`group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
-                  selected ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-muted"
-                }`}
+                role="checkbox"
+                aria-checked={selected}
+                onClick={() => toggleModel(m.id)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
+                  selected ? "bg-white/[0.05]" : "hover:bg-white/[0.06]",
+                )}
               >
-                {m.iconUrl && (
-                  <img
-                    src={m.iconUrl}
-                    alt={m.displayName}
-                    className="h-5 w-5 shrink-0 rounded-full object-cover"
-                  />
-                )}
-                <div className="flex flex-1 flex-col">
-                  <span className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+                <span
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                    selected ? "border-fg bg-fg text-ground" : "border-line-strong",
+                  )}
+                >
+                  {selected ? <CheckIcon className="size-3" strokeWidth={2.5} /> : null}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-fg">
                     {m.displayName}
-                    {m.accessible === false && (
-                      <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight tracking-wider bg-muted text-muted-foreground">
-                        <Lock className="h-2.5 w-2.5" />
-                        {m.minTier ?? "PRO"}
-                      </span>
-                    )}
                   </span>
-                  <span className="flex items-center gap-1.5 text-[11px] leading-tight text-muted-foreground">
+                  <span className="block truncate text-[11.5px] text-fg-muted">
                     {m.description}
-                    {typeof m.creditCost === "number" && (
-                      <span className="inline-flex items-center gap-0.5 tabular-nums text-muted-foreground">
-                        <Zap className="h-2.5 w-2.5" />
-                        {m.creditCost}
-                      </span>
-                    )}
                   </span>
-                </div>
-                {selected && (
-                  <svg
-                    className="h-3.5 w-3.5 shrink-0 text-accent-foreground"
-                    viewBox="0 0 14 14"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.08 3.087a.583.583 0 0 1 0 .825L5.661 10.33a.583.583 0 0 1-.824 0L1.92 7.412a.583.583 0 0 1 .825-.825L5.25 9.092l6.004-6.005a.583.583 0 0 1 .825 0"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
+                </span>
+                <span className="data-label shrink-0 text-fg-muted">
+                  {QUALITY_LABEL[m.maxQuality ?? "hd"]}
+                </span>
               </button>
             );
-          })}
-        </div>
+          })
+        )}
       </div>
     </div>,
     document.body,

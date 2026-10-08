@@ -1,9 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 
-import type { ImageArtifact, VideoArtifact } from "@loomic/shared";
+import type { ImageArtifact } from "@loomic/shared";
+import { RotateCwIcon } from "lucide-react";
+
+import { AccountChip } from "../../components/account/account-chip";
+import { BrandLockup } from "../../components/brand/brand-mark";
+import { Button, buttonVariants } from "../../components/ui/button";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { LoadingScreen } from "../../components/loading-screen";
@@ -15,13 +21,20 @@ import { ChatSidebar } from "../../components/chat-sidebar";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas, insertVideoOnCanvas } from "../../lib/canvas-elements";
-import { fetchCanvas, fetchProject, ApiAuthError } from "../../lib/server-api";
+import { insertImageOnCanvas } from "../../lib/canvas-elements";
+import { useAccount } from "../../lib/account-context";
+import { BRAND } from "../../lib/brand";
+import { cn } from "../../lib/utils";
+import {
+  ApiApplicationError,
+  ApiAuthError,
+  fetchCanvas,
+  fetchProject,
+} from "../../lib/server-api";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
-import { CreditHeaderButton } from "../../components/credits/credit-header-button";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -30,7 +43,7 @@ function CanvasPageContent() {
   // Capture prompt once — router.replace will strip it from URL, but the
   // value must survive for the auto-send effect in ChatSidebar.
   const [initialPrompt] = useState(() => searchParams.get("prompt") ?? undefined);
-  const { user, session, loading: authLoading, signOut } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [canvasData, setCanvasData] = useState<{
@@ -53,14 +66,12 @@ function CanvasPageContent() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("Untitled");
+  const [projectName, setProjectName] = useState("未命名项目");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
 
   const excalidrawApiRef = useRef<any>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
 
-  const signOutRef = useRef(signOut);
-  signOutRef.current = signOut;
   const routerRef = useRef(router);
   routerRef.current = router;
 
@@ -89,14 +100,6 @@ function CanvasPageContent() {
     if (!api) return;
     insertImageOnCanvas(api, artifact).catch((err) => {
       console.warn("Failed to insert image on canvas:", err);
-    });
-  }, []);
-
-  const handleVideoGenerated = useCallback((artifact: VideoArtifact) => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    insertVideoOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert video on canvas:", err);
     });
   }, []);
 
@@ -179,7 +182,8 @@ function CanvasPageContent() {
   useEffect(() => {
     if (authLoading) return;
     if (!userId) {
-      routerRef.current.replace("/login");
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      routerRef.current.replace(`/login?next=${next}`);
       return;
     }
     const token = accessTokenRef.current;
@@ -204,41 +208,36 @@ function CanvasPageContent() {
         fetchProject(token, c.projectId)
           .then((projectData) => {
             setBrandKitId(projectData.project.brand_kit_id);
-            setProjectName(projectData.project.name ?? "Untitled");
+            setProjectName(projectData.project.name ?? "未命名项目");
           })
           .catch((err) => console.warn("Failed to fetch project for brand kit:", err));
       })
       .catch((err) => {
-        if (err instanceof ApiAuthError) {
-          signOutRef.current().then(() => routerRef.current.replace("/login"));
-          return;
-        }
-        setError("Failed to load canvas.");
+        // 401 is handled by the auth-expiry listener (signs out, redirects).
+        if (err instanceof ApiAuthError) return;
+        console.warn("[canvas] load failed", err);
+        setError(err instanceof ApiApplicationError && err.status === 404 ? "missing" : "failed");
         setPageLoading(false);
       });
-    // Intentionally omitting accessTokenRef (stable ref) and signOutRef/routerRef
+    // Intentionally omitting accessTokenRef (stable ref) and routerRef
     // (ref wrappers) from deps — only re-run when auth resolves, user changes, or
     // canvasId changes. Token refresh (e.g. tab switch) must NOT trigger a reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, userId, canvasId]);
 
-  if (!canvasId) {
+  if (!canvasId || error === "missing") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">No canvas ID specified.</p>
-      </div>
+      <CanvasNotice kind="missing" />
     );
   }
 
   if (authLoading || pageLoading) {
-    return <LoadingScreen />;
+    return <LoadingScreen label="正在打开画布" />;
   }
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-destructive">{error}</p>
-      </div>
+      <CanvasNotice kind="failed" />
     );
   }
 
@@ -268,10 +267,12 @@ function CanvasPageContent() {
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
-        {/* Credits button — canvas area top-right, NOT chatbar */}
-        <div className="absolute top-3 right-3 z-20">
-          <CreditHeaderButton />
+        {/* Balance + account, kept clear of the collapsed chat toggle
+            (icon-only below sm, so the gap is smaller there). */}
+        <div className={cn("absolute top-3 z-20", chatOpen ? "right-3" : "right-[58px] sm:right-[136px]")}>
+          <AccountChip />
         </div>
+        <KeyNotice />
         <CanvasEditor
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
@@ -311,7 +312,6 @@ function CanvasPageContent() {
         open={chatOpen}
         onToggle={handleToggleChat}
         onImageGenerated={handleImageGenerated}
-        onVideoGenerated={handleVideoGenerated}
         onCanvasSync={handleCanvasSync}
         onStreamEvent={checkForTimedOutJobs}
         initialPrompt={initialPrompt}
@@ -322,6 +322,93 @@ function CanvasPageContent() {
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
       />
+    </div>
+  );
+}
+
+/** Missing keys block both the agent (chat key) and generation (image key). */
+function KeyNotice() {
+  const { account } = useAccount();
+  const prefs = account.data?.preferences;
+  if (!prefs) return null;
+  const missing = [
+    prefs.chat_key_id === null ? "对话" : null,
+    prefs.image_key_id === null ? "生图" : null,
+  ].filter(Boolean);
+  if (missing.length === 0) return null;
+  return (
+    <div
+      role="status"
+      className="absolute top-3 left-1/2 z-20 hidden -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-panel/80 backdrop-blur-xl px-3 py-2 text-[12.5px] text-fg-soft shadow-subtle md:flex"
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-alert" aria-hidden />
+      还没选择{missing.join("和")} Key，设计助手{missing.includes("生图") ? "和生图" : ""}暂时用不了。
+      <Link href="/settings?tab=keys" className="font-medium text-fg underline underline-offset-4">
+        去选择
+      </Link>
+    </div>
+  );
+}
+
+const NOTICE_COPY = {
+  missing: {
+    title: "找不到这张画布",
+    body: "链接可能不完整，或者项目已经被删除。可以回到画布项目里重新打开。",
+  },
+  failed: {
+    title: "画布没有加载出来",
+    body: "可能是网络波动或服务暂时不可用，刷新页面再试一次。",
+  },
+} as const;
+
+/**
+ * Full-page notice when a canvas can't open. Same lit room as the 404 page,
+ * plus the canvas dot grid fading in from the right, so it reads as "the
+ * board that should be here" rather than a generic error card.
+ */
+function CanvasNotice({ kind }: { kind: keyof typeof NOTICE_COPY }) {
+  const copy = NOTICE_COPY[kind];
+  const canRetry = kind === "failed";
+  return (
+    <div className="relative isolate flex min-h-[100dvh] flex-col overflow-hidden bg-ground px-5 py-6 sm:px-12">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(50%_60%_at_75%_40%,rgb(var(--amb)/0.2),transparent_70%),radial-gradient(40%_50%_at_20%_80%,rgb(var(--amb-2)/0.14),transparent_70%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 -z-10 w-[min(100%,960px)] bg-[radial-gradient(rgb(255_255_255/0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(60%_65%_at_65%_50%,black,transparent)] [-webkit-mask-image:radial-gradient(60%_65%_at_65%_50%,black,transparent)]"
+      />
+      <Link href="/home" aria-label={`${BRAND.name} 工作台`} className="self-start rounded-md">
+        <BrandLockup />
+      </Link>
+      <main className="flex flex-1 flex-col items-start justify-center gap-5 py-12">
+        <h1 className="font-display text-[clamp(40px,5.2vw,72px)] leading-[1.04] font-normal text-balance text-fg">
+          {copy.title}
+        </h1>
+        <p className="max-w-[28em] text-[16px] leading-relaxed text-pretty text-fg-soft">{copy.body}</p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {canRetry ? (
+            <Button
+              variant="glow"
+              size="lg"
+              onClick={() => {
+                console.info("[canvas] reloading after load failure");
+                window.location.reload();
+              }}
+            >
+              <RotateCwIcon data-icon="inline-start" strokeWidth={1.75} />
+              刷新页面
+            </Button>
+          ) : null}
+          <Link
+            href="/projects"
+            className={buttonVariants({ variant: canRetry ? "outline" : "glow", size: "lg" })}
+          >
+            回到画布项目
+          </Link>
+        </div>
+      </main>
     </div>
   );
 }

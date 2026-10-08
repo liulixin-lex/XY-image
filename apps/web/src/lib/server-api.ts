@@ -1,7 +1,9 @@
 import type {
   AssetSignedUrlResponse,
+  BackgroundJob,
   CanvasDetail,
   ChatMessageCreateRequest,
+  JobListResponse,
   JobResponse,
   MarketplaceDetail,
   MarketplaceSearchResponse,
@@ -30,8 +32,11 @@ import type {
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 
-// --- Error types ---
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
 
+/** Thrown on HTTP 401. The session is gone; the UI must send the user to login. */
 export class ApiAuthError extends Error {
   constructor(message = "unauthorized") {
     super(message);
@@ -39,13 +44,97 @@ export class ApiAuthError extends Error {
   }
 }
 
+/**
+ * Any non-401 API failure. `code` is the server's stable error code
+ * (`insufficient_balance`, `key_unavailable`, ...); route UI on it, never on
+ * `status` alone, because gateway failures are mapped to 502 on purpose.
+ */
 export class ApiApplicationError extends Error {
   code: string;
-  constructor(code: string, message: string) {
+  status: number;
+  /** Seconds from the `Retry-After` header, when the server sent one. */
+  retryAfter: number | null;
+  constructor(
+    code: string,
+    message: string,
+    status = 0,
+    retryAfter: number | null = null,
+  ) {
     super(message);
     this.name = "ApiApplicationError";
     this.code = code;
+    this.status = status;
+    this.retryAfter = retryAfter;
   }
+}
+
+/**
+ * Window event fired once per expiry when a protected request returns 401.
+ * AuthProvider listens, clears the local session and routes to
+ * `/login?reason=expired`. Login endpoints never fire it.
+ */
+export const AUTH_EXPIRED_EVENT = "xy:auth-expired";
+
+export function emitAuthExpired(source: string) {
+  if (typeof window === "undefined") return;
+  console.warn(`[auth] session rejected by API (${source})`);
+  window.dispatchEvent(
+    new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { source } }),
+  );
+}
+
+function readRetryAfter(response: Response): number | null {
+  const raw =
+    typeof response.headers?.get === "function"
+      ? response.headers.get("Retry-After")
+      : null;
+  if (!raw) return null;
+  const seconds = Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+/**
+ * Convert a failed response into a typed error.
+ * `authExpiry: false` is for endpoints where 401 is a form error (login).
+ */
+export async function toApiError(
+  response: Response,
+  options: { authExpiry?: boolean; source?: string } = {},
+): Promise<ApiAuthError | ApiApplicationError> {
+  const body = (await response.json().catch(() => null)) as {
+    error?: { code?: string; message?: string };
+  } | null;
+  const code = body?.error?.code ?? "application_error";
+  const message = body?.error?.message ?? "请求失败，请稍后再试";
+  if (response.status === 401 && options.authExpiry !== false) {
+    emitAuthExpired(options.source ?? "http");
+    return new ApiAuthError();
+  }
+  return new ApiApplicationError(
+    code,
+    message,
+    response.status,
+    readRetryAfter(response),
+  );
+}
+
+async function handleErrorResponse(response: Response): Promise<never> {
+  throw await toApiError(response);
+}
+
+// ---------------------------------------------------------------------------
+// Headers
+// ---------------------------------------------------------------------------
+
+function authHeaders(accessToken: string): Record<string, string> {
+  return { Authorization: `Bearer ${accessToken}` };
+}
+
+function authJsonHeaders(accessToken: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    "content-type": "application/json",
+  };
 }
 
 // --- Existing ---
@@ -67,35 +156,12 @@ export async function createRun(
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
-    throw new Error(`Run creation failed with status ${response.status}`);
-  }
+  if (!response.ok) return handleErrorResponse(response);
 
   return (await response.json()) as RunCreateResponse;
 }
 
 // --- Authenticated API ---
-
-function authHeaders(accessToken: string): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken}` };
-}
-
-function authJsonHeaders(accessToken: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${accessToken}`,
-    "content-type": "application/json",
-  };
-}
-
-async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAuthError();
-  }
-  const body = await response.json().catch(() => null);
-  const code = body?.error?.code ?? "application_error";
-  const message = body?.error?.message ?? "Request failed";
-  throw new ApiApplicationError(code, message);
-}
 
 export async function fetchViewer(
   accessToken: string,
@@ -266,12 +332,55 @@ export async function updateWorkspaceSettings(
   return (await response.json()) as WorkspaceSettingsResponse;
 }
 
-export async function fetchModels(): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch models: ${response.status}`);
-  }
-  return (await response.json()) as ModelListResponse;
+// --- Models (scoped to the user's selected xy2api keys) ---
+
+/**
+ * Chat models available to the selected chat key. Ids are `openai:<model>`.
+ * Fails with `key_unavailable` when no usable chat key is selected; there is
+ * no platform fallback.
+ */
+export async function fetchModels(
+  accessToken: string,
+): Promise<ModelListResponse> {
+  return dedupeRequest(`models:${accessToken.slice(-12)}`, async () => {
+    const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+      headers: authHeaders(accessToken),
+    });
+    if (!response.ok) return handleErrorResponse(response);
+    return (await response.json()) as ModelListResponse;
+  });
+}
+
+export type ImageQuality = "standard" | "hd";
+
+export type ImageModelInfo = {
+  /** Exact id to send back (may be a `*-preview` alias). */
+  id: string;
+  displayName: string;
+  description: string;
+  provider: string;
+  iconUrl?: string;
+  /** Always null in P0; cost is decided by the main site. */
+  priceUsd?: number | null;
+  /** `standard` = 1K only, `hd` = 1K and 2K. */
+  maxQuality?: ImageQuality;
+  accessible?: boolean;
+  /** Compatibility fields from the old credits system. Never display. */
+  creditCost?: number;
+  minTier?: string;
+};
+
+/** Image models available to the selected image key. */
+export async function fetchImageModels(
+  accessToken: string,
+): Promise<{ models: ImageModelInfo[] }> {
+  return dedupeRequest(`image-models:${accessToken.slice(-12)}`, async () => {
+    const response = await fetch(`${getServerBaseUrl()}/api/image-models`, {
+      headers: authHeaders(accessToken),
+    });
+    if (!response.ok) return handleErrorResponse(response);
+    return (await response.json()) as { models: ImageModelInfo[] };
+  });
 }
 
 // --- Chat Session API ---
@@ -415,86 +524,37 @@ export async function deleteAsset(
 
 export type GenerateImageResponse = {
   url: string;
+  assetId?: string;
   prompt: string;
   mimeType: string;
   width: number;
   height: number;
 };
 
-export type ImageModelInfo = {
-  id: string;
-  displayName: string;
-  description: string;
-  provider: string;
-  iconUrl?: string;
-  creditCost?: number;
-  accessible?: boolean;
-  minTier?: string;
+export type GenerateImageOptions = {
+  model?: string;
+  aspectRatio?: string;
+  quality?: string;
+  /** Supabase Storage URLs or PNG/JPEG/WebP data URLs, max 10 MiB each. */
+  inputImages?: string[];
 };
 
-export async function fetchImageModels(): Promise<{
-  models: ImageModelInfo[];
-}> {
-  const response = await fetch(`${getServerBaseUrl()}/api/image-models`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image models: ${response.status}`);
-  }
-  return (await response.json()) as { models: ImageModelInfo[] };
-}
-
-export type VideoModelInfo = {
-  id: string;
-  displayName: string;
-  description: string;
-  provider: string;
-  iconUrl?: string;
-  creditCost?: number;
-  accessible?: boolean;
-  minTier?: string;
-  capabilities?: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
-  };
-  limits?: {
-    maxDuration: number;
-    allowedDurations?: number[];
-    maxResolution: "480p" | "720p" | "1080p" | "2160p";
-    maxInputImages: number;
-  };
-  pricing?: {
-    currency: "CNY";
-    billingUnit: "generated_second";
-    providerPointsName: string;
-    evidenceDate: string;
-    rates: Array<{
-      resolution: "720p" | "1080p";
-      displayResolution: string;
-      providerPointsPerSecond: number;
-      cnyPerSecond: { min: number; max: number };
-    }>;
-  };
-};
-
-export async function fetchVideoModels(): Promise<{
-  models: VideoModelInfo[];
-}> {
-  const response = await fetch(`${getServerBaseUrl()}/api/video-models`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch video models: ${response.status}`);
-  }
-  return (await response.json()) as { models: VideoModelInfo[] };
-}
-
+/**
+ * Synchronous canvas generation. May take up to ten minutes.
+ *
+ * Billing rule: this call is never retried. If the connection drops after the
+ * request left the browser, the main site may already have charged; the
+ * error is surfaced as `upstream_unknown` so the UI tells the user to check
+ * the main-site usage page instead of offering a blind retry.
+ */
 export async function generateImageDirect(
   accessToken: string,
   prompt: string,
-  options?: { model?: string; aspectRatio?: string; quality?: string },
+  options?: GenerateImageOptions,
 ): Promise<GenerateImageResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/agent/generate-image`,
-    {
+  let response: Response;
+  try {
+    response = await fetch(`${getServerBaseUrl()}/api/agent/generate-image`, {
       method: "POST",
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
@@ -502,56 +562,52 @@ export async function generateImageDirect(
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
-      }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateImageResponse;
-}
-
-export type GenerateVideoResponse = {
-  url: string;
-  assetId: string;
-  prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  durationSeconds: number;
-};
-
-export async function generateVideoDirect(
-  accessToken: string,
-  prompt: string,
-  options?: {
-    model?: string;
-    duration?: number;
-    resolution?: string;
-    aspectRatio?: string;
-    inputImages?: string[];
-  },
-): Promise<GenerateVideoResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/agent/generate-video`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({
-        prompt,
-        ...(options?.model ? { model: options.model } : {}),
-        ...(options?.duration != null ? { duration: options.duration } : {}),
-        ...(options?.resolution ? { resolution: options.resolution } : {}),
-        ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
           : {}),
       }),
-    },
-  );
+    });
+  } catch (error) {
+    console.error("[generate-image] request interrupted", error);
+    throw new ApiApplicationError(
+      "upstream_unknown",
+      "连接中断，图片可能已生成并扣费，请先到主站用量页核对",
+    );
+  }
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoResponse;
+  return (await response.json()) as GenerateImageResponse;
 }
 
 // --- Jobs API ---
+
+export type CreateImageJobInput = {
+  prompt: string;
+  model?: string;
+  quality?: ImageQuality;
+  aspect_ratio?: string;
+  input_images?: string[];
+  project_id?: string;
+  canvas_id?: string;
+  session_id?: string;
+  thread_id?: string;
+};
+
+/** Queue an image generation job (studio). Returns 201 `{ job }`. */
+export async function createImageJob(
+  accessToken: string,
+  input: CreateImageJobInput,
+): Promise<JobResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/image-generation`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobResponse;
+}
 
 export async function fetchJob(
   accessToken: string,
@@ -560,6 +616,39 @@ export async function fetchJob(
   const response = await fetch(`${getServerBaseUrl()}/api/jobs/${jobId}`, {
     headers: authHeaders(accessToken),
   });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobResponse;
+}
+
+/** Latest 50 jobs of the user, newest first. */
+export async function fetchJobs(
+  accessToken: string,
+  filters: { status?: BackgroundJob["status"]; jobType?: BackgroundJob["job_type"] } = {},
+): Promise<JobListResponse> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.jobType) params.set("job_type", filters.jobType);
+  const query = params.toString();
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs${query ? `?${query}` : ""}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobListResponse;
+}
+
+/** Only queued jobs can be canceled; running ones already reached the main site. */
+export async function cancelJob(
+  accessToken: string,
+  jobId: string,
+): Promise<JobResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/${jobId}/cancel`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as JobResponse;
 }
@@ -625,25 +714,25 @@ export async function deleteSkill(
   if (!response.ok) return handleErrorResponse(response);
 }
 
+export type SkillFile = {
+  id: string;
+  filePath: string;
+  content: string;
+  mimeType: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export async function fetchSkillFiles(
   accessToken: string,
   skillId: string,
-): Promise<{
-  files: Array<{
-    id: string;
-    filePath: string;
-    content: string;
-    mimeType: string;
-    createdAt: string;
-    updatedAt: string;
-  }>;
-}> {
+): Promise<{ files: SkillFile[] }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/skills/${skillId}/files`,
     { headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as any;
+  return (await response.json()) as { files: SkillFile[] };
 }
 
 // --- Workspace Skills API ---

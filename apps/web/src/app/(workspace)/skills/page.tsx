@@ -6,12 +6,15 @@ import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
 
 import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 
+import { SKILL_CATEGORY_OPTIONS } from "@/components/skills/categories";
 import { SkillCard } from "@/components/skills/skill-card";
 import { CreateSkillDialog } from "@/components/skills/create-skill-dialog";
 import { ImportPanel } from "@/components/skills/import-panel";
 import { MarketplacePanel } from "@/components/skills/marketplace-panel";
 import { SkillDetailDialog } from "@/components/skills/skill-detail-dialog";
+import { PageHeader } from "@/components/page-header";
 import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -51,14 +54,7 @@ const TABS: SkillsTab[] = ["installed", "marketplace", "import"];
 // Category filter options
 // ---------------------------------------------------------------------------
 
-const CATEGORIES: Array<{ value: SkillCategory; label: string }> = [
-  { value: "design", label: "Design" },
-  { value: "generation", label: "Generation" },
-  { value: "code", label: "Code" },
-  { value: "data", label: "Data" },
-  { value: "writing", label: "Writing" },
-  { value: "custom", label: "Custom" },
-];
+const CATEGORIES = SKILL_CATEGORY_OPTIONS;
 
 // ---------------------------------------------------------------------------
 // Animation variants
@@ -80,6 +76,7 @@ const emptyVariants = {
 
 export default function SkillsPage() {
   const { session } = useAuth();
+  const { error: toastError } = useToast();
 
   // Token ref pattern (same as settings page)
   const accessTokenRef = useRef(session?.access_token);
@@ -94,6 +91,7 @@ export default function SkillsPage() {
   // Data state
   const [skills, setSkills] = useState<SkillListItem[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // Filter state (installed tab only)
   const [searchQuery, setSearchQuery] = useState("");
@@ -133,9 +131,11 @@ export default function SkillsPage() {
           : { ...skill, installed: false, enabled: false };
       });
       setSkills(merged);
+      setLoadFailed(false);
     } catch (err) {
       if (err instanceof ApiAuthError) return;
-      console.error("Failed to fetch skills:", err);
+      console.error("[skills] load failed", err);
+      setLoadFailed(true);
     }
   }, [getToken]);
 
@@ -213,7 +213,9 @@ export default function SkillsPage() {
 
       try {
         await toggleSkill(token, skillId, enabled);
-      } catch {
+      } catch (err) {
+        console.warn("[skills] toggle failed", err);
+        if (!(err instanceof ApiAuthError)) toastError(enabled ? "没有启用成功" : "没有停用成功");
         // Revert on failure
         setSkills((prev) =>
           prev.map((s) =>
@@ -260,10 +262,11 @@ export default function SkillsPage() {
         await installSkill(token, skillId);
         await loadSkills();
       } catch (err) {
-        console.error("Failed to install skill:", err);
+        console.error("[skills] install failed", err);
+        if (!(err instanceof ApiAuthError)) toastError("技能没有安装成功，请稍后再试");
       }
     },
-    [getToken, loadSkills],
+    [getToken, loadSkills, toastError],
   );
 
   const handleUninstall = useCallback(
@@ -275,10 +278,11 @@ export default function SkillsPage() {
         setDetailOpen(false);
         await loadSkills();
       } catch (err) {
-        console.error("Failed to uninstall skill:", err);
+        console.error("[skills] uninstall failed", err);
+        if (!(err instanceof ApiAuthError)) toastError("技能没有卸载成功，请稍后再试");
       }
     },
-    [getToken, loadSkills],
+    [getToken, loadSkills, toastError],
   );
 
   const handleCreate = useCallback(
@@ -295,21 +299,28 @@ export default function SkillsPage() {
         await createSkill(token, data);
         await loadSkills();
       } catch (err) {
-        console.error("Failed to create skill:", err);
+        console.error("[skills] create failed", err);
+        if (!(err instanceof ApiAuthError)) toastError("技能没有创建成功，请检查内容后再试");
+        throw err;
       }
     },
-    [getToken, loadSkills],
+    [getToken, loadSkills, toastError],
   );
 
   const handleDelete = useCallback(
     async (skillId: string) => {
       const token = getToken();
       if (!token) return;
-      await deleteSkill(token, skillId);
-      setDetailOpen(false);
-      await loadSkills();
+      try {
+        await deleteSkill(token, skillId);
+        setDetailOpen(false);
+        await loadSkills();
+      } catch (err) {
+        console.error("[skills] delete failed", err);
+        if (!(err instanceof ApiAuthError)) toastError("技能没有删除，请稍后再试");
+      }
     },
-    [getToken, loadSkills],
+    [getToken, loadSkills, toastError],
   );
 
   // ---------------------------------------------------------------------------
@@ -343,12 +354,13 @@ export default function SkillsPage() {
     officialOnly;
 
   return (
-    <div className="px-4 py-6 sm:px-6 md:p-8">
-      {/* Header */}
-      <h1 className="text-base font-semibold sm:text-lg">Skills</h1>
-      <p className="mt-1 mb-4 text-xs text-muted-foreground sm:mb-6 sm:text-sm">
-        为您的智能体提供预封装且可重复的最佳实践与工具
-      </p>
+    <div>
+      <PageHeader
+        title="技能"
+        description="给助手装上可复用的做法和工具，对话时会按需调用。"
+        className="pb-6"
+      />
+      <div className="mx-auto max-w-[1600px] px-4 pb-12 sm:px-8 lg:px-12">
 
       {/* Tab navigation -- scrollable on narrow screens */}
       <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-border sm:mb-6">
@@ -357,6 +369,7 @@ export default function SkillsPage() {
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
+            aria-pressed={activeTab === tab}
             className={cn(
               "min-h-[44px] whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px sm:min-h-0",
               activeTab === tab
@@ -370,7 +383,15 @@ export default function SkillsPage() {
       </div>
 
       {/* === Installed Tab === */}
-      {activeTab === "installed" && (
+      {activeTab === "installed" && loadFailed && (
+        <div className="flex flex-col items-start gap-3 rounded-lg glass p-5">
+          <p className="text-sm text-fg">技能列表没有加载出来。</p>
+          <Button variant="outline" size="sm" onClick={() => void loadSkills()}>
+            重试
+          </Button>
+        </div>
+      )}
+      {activeTab === "installed" && !loadFailed && (
         <>
           {/* Search + Filter Bar -- wraps on small screens */}
           <div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-6 sm:gap-3">
@@ -386,7 +407,7 @@ export default function SkillsPage() {
                     <ListFilter className="size-3.5" />
                     筛选
                     {selectedCategories.size > 0 && (
-                      <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-medium text-background">
+                      <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[11px] font-medium text-background">
                         {selectedCategories.size}
                       </span>
                     )}
@@ -411,7 +432,7 @@ export default function SkillsPage() {
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="搜索技能..."
+                placeholder="搜索技能"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="搜索技能"
@@ -436,7 +457,7 @@ export default function SkillsPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-card p-3 sm:mb-6 sm:gap-5 sm:p-5"
+            className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-card p-3 sm:mb-6 sm:gap-5 sm:p-5"
           >
             {/* Puzzle illustration */}
             <div className="hidden sm:flex shrink-0 items-center justify-center">
@@ -463,7 +484,7 @@ export default function SkillsPage() {
                 添加自定义技能
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                添加技能以解锁您智能体的新功能
+                把常用流程写成 SKILL.md，助手就能照着做
               </p>
             </div>
 
@@ -490,7 +511,7 @@ export default function SkillsPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {hasActiveFilters
                   ? "尝试调整搜索或筛选条件"
-                  : "创建自定义技能来扩展您智能体的能力"}
+                  : "创建一个自定义技能，或去「市场」装一个"}
               </p>
             </motion.div>
           ) : (
@@ -551,6 +572,7 @@ export default function SkillsPage() {
         onUninstall={handleUninstall}
         onDelete={handleDelete}
       />
+      </div>
     </div>
   );
 }

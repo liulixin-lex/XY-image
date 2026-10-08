@@ -57,7 +57,7 @@ export function ColorSection({
 
   return (
     <section>
-      <SectionHeader title="Colors" count={colors.length} />
+      <SectionHeader title="颜色" count={colors.length} />
       <div className="flex flex-wrap gap-3">
         {colors.map((color) => (
           <div key={color.id} className="flex flex-col items-center gap-1.5">
@@ -65,7 +65,7 @@ export function ColorSection({
               <button
                 type="button"
                 onClick={() => handleSwatchClick(color)}
-                className="w-[69px] h-[69px] rounded-xl border cursor-pointer transition-shadow hover:shadow-md"
+                className="w-[69px] h-[69px] rounded-frame border cursor-pointer transition-shadow hover:shadow-md"
                 style={{ backgroundColor: color.text_content ?? "#888888" }}
                 aria-label={`Edit color ${color.display_name}`}
               />
@@ -110,8 +110,8 @@ export function ColorSection({
               ref={addButtonRef}
               type="button"
               onClick={handleAddClick}
-              className="w-[69px] h-[69px] rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
-              aria-label="Add color"
+              className="w-[69px] h-[69px] rounded-frame border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+              aria-label="添加颜色"
             >
               <Plus className="h-5 w-5 text-muted-foreground/60" />
             </button>
@@ -126,7 +126,7 @@ export function ColorSection({
               />
             )}
           </div>
-          <span className="text-xs text-muted-foreground/60">Add</span>
+          <span className="text-xs text-muted-foreground/60">添加</span>
         </div>
       </div>
     </section>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelRightCloseIcon, MessageSquareIcon } from "lucide-react";
 
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
@@ -9,8 +10,6 @@ import type {
   ImageGenerationPreference,
   MessageMention,
   StreamEvent,
-  VideoArtifact,
-  VideoGenerationPreference,
 } from "@loomic/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -22,12 +21,15 @@ import {
 } from "../hooks/use-create-project";
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import { useImageAttachments } from "../hooks/use-image-attachments";
-import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import {
+  resolveImagePreference,
+  useImageModelPreference,
+} from "../hooks/use-image-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { useAccount, useImageModels } from "../lib/account-context";
+import { BRAND } from "../lib/brand";
 import { fetchBrandKit } from "../lib/brand-kit-api";
-import { claimDailyCredits } from "../lib/credits-api";
-import { fetchImageModels, fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
+import { fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -40,8 +42,8 @@ import {
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
-import { CreditInsufficientDialog } from "./credits/credit-insufficient-dialog";
-import { useTierLimitToast } from "./credits/tier-limit-toast";
+import { LiveDot } from "./ambient/live-dot";
+import { useIssues } from "./issues/issue-provider";
 import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
@@ -52,7 +54,6 @@ type ChatSidebarProps = {
   open: boolean;
   onToggle: () => void;
   onImageGenerated?: (artifact: ImageArtifact) => void;
-  onVideoGenerated?: (artifact: VideoArtifact) => void;
   onCanvasSync?: () => void;
   /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
   onStreamEvent?: (event: StreamEvent) => void;
@@ -71,7 +72,6 @@ export function ChatSidebar({
   open,
   onToggle,
   onImageGenerated,
-  onVideoGenerated,
   onCanvasSync,
   onStreamEvent,
   initialPrompt,
@@ -120,19 +120,9 @@ export function ChatSidebar({
   const [brandKitMentionItems, setBrandKitMentionItems] = useState<
     BrandKitMentionItem[]
   >([]);
-  const [imageModelMentionItems, setImageModelMentionItems] = useState<
-    ImageModelMentionItem[]
-  >([]);
   const [skillMentionItems, setSkillMentionItems] = useState<
     SkillMentionItem[]
   >([]);
-  const [creditDialog, setCreditDialog] = useState<{
-    open: boolean;
-    currentBalance: number;
-    requiredAmount: number;
-    plan: string;
-    dailyClaimed: boolean;
-  } | null>(null);
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
 
   const initialPromptSent = useRef(false);
@@ -144,6 +134,8 @@ export function ChatSidebar({
   selectedCanvasElementsRef.current = selectedCanvasElements;
   const prevConnectedRef = useRef(false);
 
+  const { toast: showToast } = useToast();
+
   const {
     attachments: imageAttachments,
     addFiles,
@@ -153,7 +145,9 @@ export function ChatSidebar({
     clearAll: clearAttachments,
     isUploading,
     readyAttachments,
-  } = useImageAttachments(accessToken);
+  } = useImageAttachments(accessToken, undefined, {
+    onReject: (message) => showToast(message, "error"),
+  });
 
   const { activeImageGenerationPreference } = useImageModelPreference();
   const activeImageGenerationPreferenceRef = useRef(
@@ -161,18 +155,18 @@ export function ChatSidebar({
   );
   activeImageGenerationPreferenceRef.current = activeImageGenerationPreference;
 
-  const { activeVideoGenerationPreference } = useVideoModelPreference();
-  const activeVideoGenerationPreferenceRef = useRef(
-    activeVideoGenerationPreference,
-  );
-  activeVideoGenerationPreferenceRef.current = activeVideoGenerationPreference;
+  // Image models the selected key can reach: feeds the @mention picker and
+  // drops stale ids from the generation preference before a run starts.
+  const { data: imageModels } = useImageModels();
+  const imageModelIdsRef = useRef<string[] | null>(null);
+  imageModelIdsRef.current = imageModels ? imageModels.map((m) => m.id) : null;
 
   const { model: agentModel } = useAgentModel();
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
 
-  const { showTierLimit } = useTierLimitToast();
-  const { toast: showToast } = useToast();
+  const { reportCode } = useIssues();
+  const { notifyGenerationSettled, refreshImageModels } = useAccount();
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -266,31 +260,17 @@ export function ChatSidebar({
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // ── Fetch image models for @mention picker ──
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchImageModels()
-      .then((data) => {
-        if (cancelled) return;
-        setImageModelMentionItems(
-          data.models.map((model) => ({
-            kind: "image-model",
-            id: model.id,
-            label: model.displayName,
-            description: model.description,
-            ...(model.iconUrl ? { iconUrl: model.iconUrl } : {}),
-          })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setImageModelMentionItems([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const imageModelMentionItems = useMemo<ImageModelMentionItem[]>(
+    () =>
+      (imageModels ?? []).map((model) => ({
+        kind: "image-model",
+        id: model.id,
+        label: model.displayName,
+        description: model.description,
+        ...(model.iconUrl ? { iconUrl: model.iconUrl } : {}),
+      })),
+    [imageModels],
+  );
 
   // Fetch enabled workspace skills for @ mention
   useEffect(() => {
@@ -335,7 +315,7 @@ export function ChatSidebar({
       .then((kit) => {
         if (cancelled) return;
         setBrandKitMentionItems(
-          kit.assets.map((asset: { id: string; display_name: string; asset_type: string; text_content?: string; file_url?: string }) => ({
+          kit.assets.map((asset) => ({
             kind: "brand-kit-asset" as const,
             id: asset.id,
             label: asset.display_name,
@@ -391,11 +371,12 @@ export function ChatSidebar({
           currentAttachments = [...currentAttachments, ...selectionAttachments];
         }
       }
-      const currentImageGenerationPreference =
+      const requestedPreference =
         imageGenerationPreferenceOverride ??
         activeImageGenerationPreferenceRef.current;
-      const currentVideoGenerationPreference =
-        activeVideoGenerationPreferenceRef.current;
+      const currentImageGenerationPreference = requestedPreference
+        ? resolveImagePreference(requestedPreference, imageModelIdsRef.current)
+        : undefined;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
 
       // Add user message locally
@@ -407,28 +388,36 @@ export function ChatSidebar({
         source: a.source,
         ...(a.name ? { name: a.name } : {}),
       }));
-      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) =>
-        mention.mentionType === "image-model"
-          ? {
-              type: "mention" as const,
-              mentionType: "image-model" as const,
-              id: mention.id,
-              label: mention.label,
-            }
-          : {
-              type: "mention" as const,
-              mentionType: "brand-kit-asset" as const,
-              id: mention.id,
-              label: mention.label,
-              assetType: mention.assetType,
-              ...(mention.textContent !== undefined
-                ? { textContent: mention.textContent }
-                : {}),
-              ...(mention.fileUrl !== undefined
-                ? { fileUrl: mention.fileUrl }
-                : {}),
-            },
-      );
+      const mentionBlocks: ContentBlock[] = currentMentions.map((mention): ContentBlock => {
+        if (mention.mentionType === "image-model") {
+          return {
+            type: "mention",
+            mentionType: "image-model",
+            id: mention.id,
+            label: mention.label,
+          };
+        }
+        if (mention.mentionType === "skill") {
+          return {
+            type: "mention",
+            mentionType: "skill",
+            id: mention.id,
+            label: mention.label,
+            slug: mention.slug,
+          };
+        }
+        return {
+          type: "mention",
+          mentionType: "brand-kit-asset",
+          id: mention.id,
+          label: mention.label,
+          assetType: mention.assetType,
+          ...(mention.textContent !== undefined
+            ? { textContent: mention.textContent }
+            : {}),
+          ...(mention.fileUrl !== undefined ? { fileUrl: mention.fileUrl } : {}),
+        };
+      });
       const userMsg = {
         id: `user-${Date.now()}`,
         role: "user" as const,
@@ -496,20 +485,12 @@ export function ChatSidebar({
             );
           }
 
-          // Billing error: route to appropriate UI, run.canceled will follow
+          // Billing / key errors go to the issue center, which knows which
+          // ones may already be charged. The run ends on its own afterwards;
+          // nothing here re-sends it.
           if (event.type === "billing.error") {
-            if (event.code === "insufficient_credits") {
-              setCreditDialog({
-                open: true,
-                currentBalance: event.currentBalance ?? 0,
-                requiredAmount: event.requiredAmount ?? 0,
-                plan: event.plan ?? "free",
-                dailyClaimed: event.dailyClaimed ?? false,
-              });
-            } else {
-              // model_not_accessible, resolution_not_allowed, concurrency_limit
-              showTierLimit({ code: event.code, message: event.message });
-            }
+            reportCode(event.code, event.message);
+            if (event.code === "model_not_accessible") void refreshImageModels();
           }
 
           // Apply event to messages (single source of truth — shared with reconnect)
@@ -518,7 +499,7 @@ export function ChatSidebar({
           // Forward event to parent for fallback job polling (timed-out generation recovery)
           onStreamEvent?.(event);
 
-          // Fire canvas insertion callbacks for image/video artifacts.
+          // Fire canvas insertion callbacks for image artifacts.
           // Skip if the backend already inserted the element (elementId in output).
           const backendInserted = event.type === "tool.completed"
             && event.output
@@ -533,10 +514,14 @@ export function ChatSidebar({
               if (artifact.type === "image" && onImageGenerated) {
                 onImageGenerated(artifact as ImageArtifact);
               }
-              if (artifact.type === "video" && onVideoGenerated) {
-                onVideoGenerated(artifact as VideoArtifact);
-              }
             }
+          }
+          // Each finished image tool call was billed: let the balance catch up.
+          if (
+            event.type === "tool.completed" &&
+            event.artifacts?.some((a) => a.type === "image")
+          ) {
+            notifyGenerationSettled();
           }
 
           if (event.type === "canvas.sync" && onCanvasSync) {
@@ -548,7 +533,7 @@ export function ChatSidebar({
             const currentModel = agentModelRef.current ?? "";
             if (currentModel.includes("preview")) {
               showToast(
-                "当前 Preview 模型请求不稳定，建议切换模型后重试",
+                "当前 Preview 模型请求不稳定，建议换一个对话模型再试",
                 "error",
               );
             }
@@ -559,6 +544,8 @@ export function ChatSidebar({
             event.type === "run.failed" ||
             event.type === "run.canceled"
           ) {
+            // Chat tokens bill against the same balance.
+            notifyGenerationSettled();
             resolveStream();
           }
         });
@@ -586,11 +573,6 @@ export function ChatSidebar({
               ...(currentImageGenerationPreference
                 ? {
                     imageGenerationPreference: currentImageGenerationPreference,
-                  }
-                : {}),
-              ...(currentVideoGenerationPreference
-                ? {
-                    videoGenerationPreference: currentVideoGenerationPreference,
                   }
                 : {}),
               ...(agentModelRef.current
@@ -624,7 +606,10 @@ export function ChatSidebar({
               ...m,
               contentBlocks: [
                 ...m.contentBlocks,
-                { type: "text" as const, text: "Failed to get response." },
+                {
+                  type: "text" as const,
+                  text: "没有收到回复，连接可能中断了。这条消息不会自动重发，确认网络后可以再发一次。",
+                },
               ],
             };
           }),
@@ -639,10 +624,13 @@ export function ChatSidebar({
       applyStreamEvent,
       updateSessionMessages,
       onImageGenerated,
-      onVideoGenerated,
       onCanvasSync,
       onStreamEvent,
       readyAttachments,
+      reportCode,
+      refreshImageModels,
+      notifyGenerationSettled,
+      showToast,
       clearAttachments,
       ws,
       autoTitleSession,
@@ -845,11 +833,9 @@ export function ChatSidebar({
                 if (artifact.type === "image" && onImageGenerated) {
                   onImageGenerated(artifact as ImageArtifact);
                 }
-                if (artifact.type === "video" && onVideoGenerated) {
-                  onVideoGenerated(artifact as VideoArtifact);
-                }
               }
             }
+            if (evt.type === "billing.error") reportCode(evt.code, evt.message);
 
             if (evt.type === "canvas.sync" && onCanvasSync) {
               onCanvasSync();
@@ -860,6 +846,7 @@ export function ChatSidebar({
               evt.type === "run.failed" ||
               evt.type === "run.canceled"
             ) {
+              notifyGenerationSettled();
               setStreaming(false);
               unsub();
             }
@@ -875,10 +862,11 @@ export function ChatSidebar({
     applyStreamEvent,
     onStreamEvent,
     onImageGenerated,
-    onVideoGenerated,
     onCanvasSync,
     activeSessionIdRef,
     reloadMessages,
+    reportCode,
+    notifyGenerationSettled,
     updateSessionMessages,
     setStreaming,
     initialPrompt,
@@ -887,20 +875,16 @@ export function ChatSidebar({
   // ── Collapsed state ──
   if (!open) {
     return (
-      <div className="absolute right-3 top-3 z-20">
+      <div className="absolute top-3 right-3 z-20">
         <button
           onClick={onToggle}
           type="button"
-          className="group inline-flex items-center gap-1 rounded-xl bg-card/80 backdrop-blur-sm border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
+          aria-label={`打开${BRAND.agentName}`}
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-panel/80 backdrop-blur-xl px-3 text-[13px] text-fg shadow-subtle transition-colors hover:border-line-strong"
         >
-          <svg className="size-4 md:size-3.5" viewBox="0 0 24 24" fill="none">
-            <path
-              fill="currentColor"
-              fillOpacity={0.9}
-              d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
-            />
-          </svg>
-          对话
+          <MessageSquareIcon className="size-4" strokeWidth={1.75} />
+          <span className="hidden sm:inline">{BRAND.agentName}</span>
+          {streaming ? <LiveDot /> : null}
         </button>
       </div>
     );
@@ -923,11 +907,9 @@ export function ChatSidebar({
   const panelContent = (
     <>
       {/* Header */}
-      <div className="flex min-h-[48px] items-center justify-between pl-4 pr-2">
-        <div className="flex items-center gap-1 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">
-            Loomic Agent
-          </h2>
+      <div className="flex min-h-12 items-center justify-between gap-2 border-b border-line pr-2 pl-4">
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="shrink-0 text-[14px] font-semibold text-fg">{BRAND.agentName}</h2>
           {!sessionsLoading && (
             <SessionSelector
               sessions={sessions}
@@ -941,24 +923,20 @@ export function ChatSidebar({
         <button
           type="button"
           onClick={onToggle}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-          title="Collapse panel"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-white/[0.06] hover:text-fg"
+          title="收起对话"
+          aria-label="收起对话"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
-              fill="currentColor"
-            />
-          </svg>
+          <PanelRightCloseIcon className="size-4" strokeWidth={1.75} />
         </button>
       </div>
 
       {/* Disconnected banner */}
       {!ws.connected && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
-          <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
-          <span className="text-[11px] text-muted-foreground">
-            连接已断开，正在重连...
+        <div role="status" className="flex items-center gap-2 border-b border-line bg-white/[0.05] px-4 py-2">
+          <LiveDot className="bg-alert" />
+          <span className="text-[12px] text-fg-soft">
+            连接已断开，正在重连。进行中的生成不受影响。
           </span>
         </div>
       )}
@@ -971,8 +949,8 @@ export function ChatSidebar({
       >
         <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4" aria-live="polite" aria-relevant="additions">
           {sessionsLoading || messagesLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
+            <div className="flex h-full items-center justify-center" role="status" aria-label="读取对话">
+              <LiveDot />
             </div>
           ) : messages.length === 0 ? (
             <ChatSkills onSend={handleSend} />
@@ -1026,20 +1004,6 @@ export function ChatSidebar({
     </>
   );
 
-  const creditDialogEl = creditDialog && (
-    <CreditInsufficientDialog
-      open={creditDialog.open}
-      onClose={() => setCreditDialog(null)}
-      currentBalance={creditDialog.currentBalance}
-      requiredAmount={creditDialog.requiredAmount}
-      plan={creditDialog.plan}
-      dailyClaimed={creditDialog.dailyClaimed}
-      onClaimDaily={async () => {
-        await claimDailyCredits(accessTokenRef.current);
-      }}
-    />
-  );
-
   // ── Mobile / Tablet: full-screen overlay with backdrop ──
   if (isOverlay) {
     return (
@@ -1047,21 +1011,20 @@ export function ChatSidebar({
         {/* Semi-transparent backdrop — click to close */}
         {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- backdrop is a non-interactive dismissal layer, keyboard close is handled via Escape */}
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
+          className="fixed inset-0 z-40 bg-ground/70 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={onToggle}
         />
         {/* Chat panel — full screen on mobile, fixed-width drawer on tablet */}
         <div
           className={
             breakpoint === "mobile"
-              ? "fixed inset-0 z-50 flex flex-col bg-card animate-in slide-in-from-right duration-250"
-              : "fixed inset-y-0 right-0 z-50 flex w-[400px] flex-col border-l border-border bg-card shadow-2xl animate-in slide-in-from-right duration-250"
+              ? "fixed inset-0 z-50 flex flex-col bg-panel animate-in slide-in-from-right duration-250"
+              : "fixed inset-y-0 right-0 z-50 flex w-[400px] flex-col border-l border-line bg-panel shadow-float animate-in slide-in-from-right duration-250"
           }
           {...eventIsolationProps}
         >
           {panelContent}
         </div>
-        {creditDialogEl}
       </>
     );
   }
@@ -1077,20 +1040,21 @@ export function ChatSidebar({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize chat panel"
+        aria-label="调整对话栏宽度"
         aria-valuenow={sidebarWidth}
         aria-valuemin={SIDEBAR_MIN}
         aria-valuemax={SIDEBAR_MAX}
         tabIndex={0}
-        className="w-2 shrink-0 cursor-col-resize bg-gradient-to-r from-transparent via-border to-transparent shadow-[1px_0_10px_rgba(15,23,42,0.06)] transition-all hover:via-muted-foreground/40 hover:shadow-[1px_0_14px_rgba(15,23,42,0.1)] active:via-muted-foreground/60 active:shadow-[1px_0_16px_rgba(15,23,42,0.14)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-2 shrink-0 cursor-col-resize justify-center outline-none focus-visible:bg-white/[0.06]"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}
-      />
-      <div className="flex flex-1 flex-col bg-card min-w-0">
+      >
+        <span className="h-full w-px bg-line transition-colors group-hover:bg-line-strong group-active:bg-fg/40" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col bg-panel">
         {panelContent}
       </div>
-      {creditDialogEl}
     </div>
   );
 }

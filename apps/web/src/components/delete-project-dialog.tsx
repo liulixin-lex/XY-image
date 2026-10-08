@@ -1,13 +1,14 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
-
+import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "./ui/dialog";
-import { Button } from "./ui/button";
 
 interface DeleteProjectDialogProps {
   open: boolean;
@@ -23,36 +24,22 @@ export function DeleteProjectDialog({
   onCancel,
 }: DeleteProjectDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v && !deleting) onCancel(); }}>
       <DialogContent className="sm:max-w-sm" showCloseButton={false}>
-        <p className="text-sm font-medium text-foreground">
-          确定删除此项目？此操作无法撤销。
-        </p>
-        <div className="mt-4 flex items-center justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={onCancel}
-            disabled={deleting}
-            className="rounded-xl"
-          >
+        <DialogHeader>
+          <DialogTitle>删除这个项目？</DialogTitle>
+          <DialogDescription>
+            画布和对话记录会一起删除，无法恢复。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel} disabled={deleting}>
             取消
           </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={deleting}
-            className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {deleting ? (
-              <motion.span
-                animate={{ rotate: 360 }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                className="flex items-center justify-center"
-              >
-                <Loader2 size={16} />
-              </motion.span>
-            ) : "永久删除"}
+          <Button variant="destructive" onClick={onConfirm} disabled={deleting}>
+            {deleting ? "正在删除" : "删除"}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { SKILL_CATEGORY_LABELS } from "./categories";
 
 // ---------------------------------------------------------------------------
 // Category badge colour mapping
@@ -33,14 +34,6 @@ const CATEGORY_STYLES: Record<SkillCategory, string> = {
   custom: "bg-muted text-muted-foreground",
 };
 
-const CATEGORY_LABELS: Record<SkillCategory, string> = {
-  design: "Design",
-  generation: "Generation",
-  code: "Code",
-  data: "Data",
-  writing: "Writing",
-  custom: "Custom",
-};
 
 // ---------------------------------------------------------------------------
 // Source badge
@@ -138,7 +131,7 @@ export function SkillCard({
       whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={() => onClick(skill)}
-      className="group cursor-pointer rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/50"
+      className="group cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/50"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -149,7 +142,7 @@ export function SkillCard({
               CATEGORY_STYLES[skill.category],
             )}
           >
-            {CATEGORY_LABELS[skill.category]}
+            {SKILL_CATEGORY_LABELS[skill.category] ?? skill.category}
           </span>
           <span className="truncate text-sm font-medium text-foreground">
             {skill.name}

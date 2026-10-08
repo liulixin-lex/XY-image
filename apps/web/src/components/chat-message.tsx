@@ -216,17 +216,17 @@ const AssistantMessage = React.memo(function AssistantMessage({
     >
       {showThinking && (
         <div className="flex items-center gap-1 text-sm text-muted-foreground">
-          <span>{"\u601d\u8003\u4e2d"}</span>
+          <span>思考中</span>
           <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
             style={{ animationDelay: "0ms" }}
           />
           <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
             style={{ animationDelay: "150ms" }}
           />
           <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-bounce-dot"
+            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
             style={{ animationDelay: "300ms" }}
           />
         </div>

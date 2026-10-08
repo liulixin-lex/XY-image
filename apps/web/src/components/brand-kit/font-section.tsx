@@ -4,6 +4,7 @@ import type { BrandKitAsset } from "@loomic/shared";
 import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { loadFontStylesheet } from "../../lib/font-api";
 import { cn } from "../../lib/utils";
 import { FontPickerDialog } from "./font-picker-dialog";
 import { InlineInput } from "./inline-input";
@@ -42,22 +43,11 @@ export function FontSection({
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [menuOpen]);
 
-  // Load Google Fonts CSS for each font card
+  // Load each brand font in full (proxy first, Google directly as fallback);
+  // loadFontStylesheet skips families that are already on the page.
   useEffect(() => {
-    const families = fonts
-      .map((f) => f.text_content)
-      .filter((v): v is string => Boolean(v));
-
-    const uniqueFamilies = [...new Set(families)];
-
-    for (const family of uniqueFamilies) {
-      const linkId = `gfont-${family.replace(/\s+/g, "-")}`;
-      if (document.getElementById(linkId)) continue;
-      const link = document.createElement("link");
-      link.id = linkId;
-      link.rel = "stylesheet";
-      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`;
-      document.head.appendChild(link);
+    for (const font of fonts) {
+      if (font.text_content) loadFontStylesheet(font.text_content);
     }
   }, [fonts]);
 
@@ -77,12 +67,12 @@ export function FontSection({
 
   return (
     <section>
-      <SectionHeader title="Fonts" count={fonts.length} />
+      <SectionHeader title="字体" count={fonts.length} />
       <div className="flex flex-wrap gap-3">
         {fonts.map((font) => (
           <div key={font.id} className="flex flex-col items-center gap-1.5">
             <div className="relative group">
-              <div className="w-[150px] h-[113px] rounded-xl border bg-muted/30 flex items-center justify-center">
+              <div className="w-[150px] h-[113px] rounded-frame border bg-muted/30 flex items-center justify-center">
                 <span
                   className="text-3xl font-light text-foreground/70 select-none"
                   style={{
@@ -100,9 +90,9 @@ export function FontSection({
                 className={cn(
                   "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
                   "flex items-center justify-center",
-                  "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
+                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity cursor-pointer",
                 )}
-                aria-label={`Delete font ${font.display_name}`}
+                aria-label={`删除字体「${font.display_name}」`}
               >
                 <X className="h-3 w-3 text-muted-foreground" />
               </button>
@@ -122,14 +112,14 @@ export function FontSection({
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="w-[150px] h-[113px] rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
-              aria-label="Add font"
+              className="w-[150px] h-[113px] rounded-frame border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+              aria-label="添加字体"
             >
               <Plus className="h-5 w-5 text-muted-foreground/60" />
             </button>
 
             {menuOpen && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-[180px] rounded-xl border bg-popover p-1.5 shadow-lg">
+              <div className="absolute left-0 top-full mt-1 z-50 w-[180px] rounded-lg border bg-popover p-1.5 shadow-lg">
                 <button
                   type="button"
                   onClick={() => {
@@ -150,7 +140,7 @@ export function FontSection({
               </div>
             )}
           </div>
-          <span className="text-xs text-muted-foreground/60">Add</span>
+          <span className="text-xs text-muted-foreground/60">添加</span>
         </div>
       </div>
 

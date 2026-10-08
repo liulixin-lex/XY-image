@@ -71,7 +71,7 @@ const FileRow = memo(function FileRow({
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground text-xs">N/A</div>
+          <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground text-xs">无预览</div>
         )}
       </div>
       <div className="flex-1 overflow-hidden text-sm leading-[22px] text-foreground min-w-0">
@@ -82,7 +82,7 @@ const FileRow = memo(function FileRow({
         onClick={handleDownload}
         className="flex h-4 w-4 shrink-0 items-center justify-center text-foreground hover:text-muted-foreground transition-colors"
         title="下载"
-        aria-label={`Download ${file.name}`}
+        aria-label={`下载 ${file.name}`}
       >
         <DownloadIcon className="h-4 w-4" />
       </button>
@@ -155,7 +155,7 @@ export function CanvasFilesPanel({ excalidrawApi, open, onClose }: CanvasFilesPa
           type="button"
           className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           onClick={onClose}
-          aria-label="Close files panel"
+          aria-label="关闭文件"
         >
           <CloseIcon className="h-3.5 w-3.5" />
         </button>

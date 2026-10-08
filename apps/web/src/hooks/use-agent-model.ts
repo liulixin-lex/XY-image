@@ -2,9 +2,10 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "loomic:agent-model";
+const STORAGE_KEY = "xy:agent-model";
 
-type AgentModel = string | null; // null = auto (workspace default)
+// `openai:<id>` as returned by /api/models; null = workspace default.
+type AgentModel = string | null;
 
 // Listeners for cross-component reactivity
 const listeners = new Set<() => void>();

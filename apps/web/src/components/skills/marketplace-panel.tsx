@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownToLine,
@@ -93,7 +94,7 @@ function MarketplaceSkillCard({
       whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={() => onClick(skill)}
-      className="group cursor-pointer rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/50"
+      className="group cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/50"
     >
       {/* Header */}
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -490,12 +491,16 @@ export function MarketplacePanel({
         onInstall={handleInstall}
       />
 
-      {/* Loading overlay for detail fetch */}
-      {detailLoading && detailOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      )}
+      {/* Loading overlay for detail fetch. Portalled so it sits above the
+          (portalled) dialog instead of inside <main>'s stacking context. */}
+      {detailLoading && detailOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

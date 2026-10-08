@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Comp D2 · 生图工作台（氛围屏）</title>
+<link rel="stylesheet" href="comp.css" />
+<style>
+  :root { --amb: 72 214 204; --amb-2: 70 120 255; --warn: 255 138 128; }
+  .stage { position: relative; width: 1440px; height: 900px; overflow: hidden; background: var(--night-1); }
+  .ambient img.a { left: 45%; top: 0%; width: 70%; height: 90%; opacity: 0.62; }
+  svg { width: 18px; height: 18px; flex: none; }
+
+  nav { position: absolute; z-index: 20; top: 22px; left: 48px; right: 48px; display: flex; align-items: center; justify-content: space-between; }
+  nav .links { display: flex; gap: 4px; padding: 5px; border-radius: 14px; }
+  nav .links span { font: 500 14px "NotoSC"; color: var(--fg-2); padding: 8px 14px; border-radius: 10px; }
+  nav .links span.on { background: rgb(255 255 255 / 0.1); color: var(--fg); }
+  nav .right { display: flex; align-items: center; gap: 10px; }
+  .bal { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 14px; border-radius: 12px; }
+  .bal .l { font: 400 13px "NotoSC"; color: var(--fg-3); }
+  .bal .n { font: 600 16px "Geist"; letter-spacing: -0.01em; }
+  .bal a { height: 28px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 4px; font: 500 12.5px "NotoSC"; color: var(--fg-2); background: rgb(255 255 255 / 0.06); }
+  .bal a svg { width: 13px; height: 13px; }
+  .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font: 600 14px "Geist"; color: #06101a;
+        background: linear-gradient(140deg, rgb(var(--amb)), rgb(var(--amb-2))); box-shadow: 0 0 0 2px rgb(255 255 255 / 0.15); }
+
+  /* Left: ask + queue */
+  .left { position: absolute; z-index: 12; left: 48px; top: 112px; width: 600px; }
+  h1 { font: 400 64px/1 "Smiley", "NotoSC"; }
+  h1 em { font-style: normal; color: rgb(190 248 240); }
+  .composer { margin-top: 26px; border-radius: 22px; padding: 18px 16px 14px 18px; }
+  .composer .top { display: flex; gap: 14px; }
+  .composer .ref { width: 64px; height: 64px; border-radius: 12px; overflow: hidden; flex: none; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.25); position: relative; }
+  .composer .ref img { width: 100%; height: 100%; object-fit: cover; }
+  .composer .ref b { position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: rgb(6 9 18 / 0.75); display: grid; place-items: center; }
+  .composer .ref b svg { width: 11px; height: 11px; }
+  .composer .input { flex: 1; font: 400 16.5px/1.7 "NotoSC"; color: var(--fg); min-height: 92px; }
+  .composer .caret { display: inline-block; width: 2px; height: 20px; background: rgb(var(--amb)); vertical-align: -4px; margin-left: 2px; box-shadow: 0 0 10px rgb(var(--amb)); }
+  .composer .row { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+  .composer .row .sp { flex: 1; }
+
+  .queue { margin-top: 28px; }
+  .queue .hd { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .queue .hd b { font: 700 15px "NotoSC"; }
+  .queue .hd span { font: 400 13px "NotoSC"; color: var(--fg-3); }
+  .job { position: relative; display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 12px; border-radius: 16px; margin-bottom: 10px; overflow: hidden; }
+  .job .th { width: 48px; height: 48px; border-radius: 10px; flex: none; overflow: hidden; display: grid; place-items: center; background: rgb(255 255 255 / 0.06); }
+  .job .th img { width: 100%; height: 100%; object-fit: cover; filter: blur(8px) saturate(1.3); transform: scale(1.3); }
+  .job .tx { flex: 1; min-width: 0; }
+  .job .tx b { display: flex; align-items: center; gap: 8px; font: 600 14px "NotoSC"; }
+  .job .tx p { margin-top: 3px; font: 400 13px/1.5 "NotoSC"; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job .t { font: 500 20px "Geist Mono"; letter-spacing: -0.02em; }
+  .job .act { height: 32px; padding: 0 12px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; font: 500 13px "NotoSC"; border: 1px solid var(--line-2); background: rgb(255 255 255 / 0.05); white-space: nowrap; }
+  .job .act svg { width: 14px; height: 14px; }
+  .job.run { box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 1px rgb(var(--amb) / 0.3), 0 0 40px -16px rgb(var(--amb) / 0.7); }
+  .job.run::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.07) 50%, transparent 65%); }
+  .job.run .dot { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--amb)); box-shadow: 0 0 0 4px rgb(var(--amb) / 0.2), 0 0 12px rgb(var(--amb)); }
+  .job.run .bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 46%; background: linear-gradient(to right, transparent, rgb(var(--amb))); }
+  .job.unk { border-color: rgb(var(--warn) / 0.35); }
+  .job.unk .tx b { color: rgb(255 200 194); }
+  .job.unk .th, .job.fail .th { color: var(--fg-2); }
+  .job.unk .th { color: rgb(255 170 160); background: rgb(var(--warn) / 0.12); }
+
+  /* Right: the screen */
+  .room { position: absolute; inset: 0; z-index: 4; perspective: 1500px; perspective-origin: 62% 40%; }
+  .screen { position: absolute; left: 730px; top: 100px; width: 450px; height: 600px; border-radius: 20px; overflow: hidden;
+            transform: rotateY(-14deg); transform-origin: left center;
+            box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), 0 80px 140px -40px rgb(0 0 0 / 0.9), 0 0 140px -20px rgb(var(--amb) / 0.55);
+            -webkit-box-reflect: below 10px linear-gradient(transparent 70%, rgb(0 0 0 / 0.26)); }
+  .screen img { width: 100%; height: 100%; object-fit: cover; }
+  .floor { position: absolute; left: 0; right: 0; top: 712px; bottom: 0; z-index: 3; background: linear-gradient(to bottom, rgb(var(--amb) / 0.08), transparent 70%); border-top: 1px solid rgb(255 255 255 / 0.05); }
+
+  .info { position: absolute; z-index: 12; left: 1150px; top: 196px; width: 250px; border-radius: 18px; padding: 16px; }
+  .info p { font: 400 14px/1.7 "NotoSC"; }
+  .info dl { margin-top: 14px; display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; font: 400 12.5px "NotoSC"; }
+  .info dt { color: var(--fg-3); }
+  .info dd { color: var(--fg-2); text-align: right; font-family: "Geist Mono", "NotoSC"; font-size: 12px; }
+  .info .btns { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .info .btns span { height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; font: 500 13px "NotoSC"; border: 1px solid var(--line-2); background: rgb(255 255 255 / 0.05); }
+  .info .btns span svg { width: 15px; height: 15px; }
+  .info .btns .primary { grid-column: span 2; background: #f5f7fc; color: #0a0f1e; border: 0; font-weight: 600; box-shadow: 0 10px 30px -10px rgb(var(--amb) / 0.7); }
+
+  .strip { position: absolute; z-index: 12; left: 730px; right: 40px; top: 770px; }
+  .strip .hd { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; font: 400 13px "NotoSC"; color: var(--fg-3); }
+  .strip .hd a { color: var(--fg-2); display: inline-flex; gap: 4px; align-items: center; }
+  .strip .hd a svg { width: 14px; height: 14px; }
+  .strip .row { display: flex; gap: 10px; align-items: flex-end; }
+  .t2 { position: relative; width: 56px; height: 72px; border-radius: 10px; overflow: hidden; opacity: 0.62; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1); flex: none; }
+  .t2 img { width: 100%; height: 100%; object-fit: cover; }
+  .t2.on { width: 64px; height: 84px; opacity: 1; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.9), 0 0 30px -4px rgb(var(--amb) / 0.8); }
+  .t2.run { opacity: 1; background: rgb(255 255 255 / 0.06); box-shadow: 0 0 0 1px rgb(var(--amb) / 0.5); display: grid; place-items: center; }
+  .t2.run svg { width: 30px; height: 30px; }
+  .t2.unk { opacity: 1; box-shadow: 0 0 0 1px rgb(var(--warn) / 0.6); }
+  .t2.unk::after { content: "!"; position: absolute; right: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%; background: rgb(var(--warn)); color: #1a0a0a; font: 700 11px/16px "Geist"; text-align: center; }
+  .cursor { position: absolute; z-index: 9; width: 320px; height: 320px; border-radius: 50%; background: radial-gradient(circle, rgb(var(--amb) / 0.16), transparent 65%); pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="ambient"><img class="a" src="../../public/images/showcase/web/showcase-1.webp" alt="" /></div>
+  <div class="vignette" style="background: radial-gradient(90% 90% at 70% 35%, transparent, rgb(6 9 18 / 0.55) 60%, var(--night-0))"></div>
+  <div class="grain"></div>
+  <div class="floor"></div>
+
+  <nav>
+    <div class="wordmark"><span class="mark"></span>GGUU<span class="wm-sub">AI IMAGE</span></div>
+    <div class="links glass"><span class="on">生图</span><span>画布项目</span><span>品牌套件</span><span>技能</span><span>设置</span></div>
+    <div class="right">
+      <div class="bal glass"><span class="l">主站余额</span><span class="n">$12.48</span><a>充值 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></a></div>
+      <span class="av">L</span>
+    </div>
+  </nav>
+
+  <section class="left">
+    <h1>今天想<em>生成</em>点什么？</h1>
+    <div class="composer glass">
+      <div class="top">
+        <div class="ref"><img src="../../public/images/showcase/web/showcase-7.webp" alt="" /><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg></b></div>
+        <div class="input">把参考图里的人换到海边，傍晚的逆光，头发被风吹起来，保留原来的衣服<span class="caret"></span></div>
+      </div>
+      <div class="row">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>参考图</span>
+        <span class="chip">GPT Image 2 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg></span>
+        <span class="chip">3:4</span><span class="chip">2K 高清</span><span class="chip">2 张</span>
+        <span class="sp"></span>
+        <span class="btn-primary">开始生成 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </div>
+    </div>
+
+    <div class="queue">
+      <div class="hd"><b>正在处理</b><span>按次从主站余额扣费</span></div>
+      <div class="job run glass">
+        <div class="th"><img src="../../public/images/showcase/web/showcase-12.webp" alt="" /></div>
+        <div class="tx"><b><span class="dot"></span>生成中</b><p>雨后的老街，霓虹倒影，胶片质感</p></div>
+        <span class="t">02:14</span>
+        <span class="bar"></span>
+      </div>
+      <div class="job unk glass">
+        <div class="th"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg></div>
+        <div class="tx"><b>结果未知，可能已扣费</b><p>连接中断，没拿到结果 · 请求 ID req_8f2c41…a91e</p></div>
+        <span class="act">去主站核对 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></span>
+      </div>
+      <div class="job fail glass">
+        <div class="th"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div>
+        <div class="tx"><b>没生成出来，这次没有扣费</b><p>一只穿宇航服的柴犬站在月球上，背景是地球</p></div>
+        <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>改一改再试</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="room"><div class="screen"><img src="../../public/images/showcase/web/showcase-1.webp" alt="" /></div></div>
+  <div class="cursor" style="left:840px; top:200px"></div>
+
+  <aside class="info glass">
+    <p>水母造型的台灯，玻璃丝透出青蓝的光，桌面杂物虚化</p>
+    <dl>
+      <dt>模型</dt><dd>GPT Image 2</dd>
+      <dt>尺寸</dt><dd>2K · 3:4</dd>
+      <dt>扣费</dt><dd>$0.042</dd>
+      <dt>时间</dt><dd>今天 14:08</dd>
+    </dl>
+    <div class="btns">
+      <span class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 1 1-2.3-5.6L20 9"/><path d="M20 4v5h-5"/></svg>做同款</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>下载</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>放到画布</span>
+    </div>
+  </aside>
+
+  <div class="strip">
+    <div class="hd"><span>最近生成 · 36 张，点一张就换成它的光</span><a>全部作品 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+    <div class="row">
+      <div class="t2 run"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="rgb(255 255 255 / 0.12)" stroke-width="3"/><circle cx="18" cy="18" r="14" fill="none" stroke="rgb(72 214 204)" stroke-width="3" stroke-linecap="round" stroke-dasharray="40 88" transform="rotate(-90 18 18)"/></svg></div>
+      <div class="t2 unk"><img src="../../public/images/showcase/web/showcase-4.webp" alt="" style="filter: blur(6px) brightness(0.6)" /></div>
+      <div class="t2 on"><img src="../../public/images/showcase/web/showcase-1.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-5.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-3.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-6.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-10.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-9.webp" alt="" /></div>
+      <div class="t2"><img src="../../public/images/showcase/web/showcase-11.webp" alt="" /></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

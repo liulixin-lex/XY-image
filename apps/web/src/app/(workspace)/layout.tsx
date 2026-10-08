@@ -1,54 +1,45 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 
-import { useAuth } from "@/lib/auth-context";
+import { AmbientField } from "@/components/ambient/ambient-provider";
 import { AppSidebar } from "@/components/app-sidebar";
-import { CreditHeaderButton } from "@/components/credits/credit-header-button";
 import { LoadingScreen } from "@/components/loading-screen";
-import { PageTransition } from "@/components/page-transition";
+import { useAuth } from "@/lib/auth-context";
 
-export default function WorkspaceLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+/**
+ * Signed-in shell: the room's light behind everything, a floating top
+ * nav, and the page scrolling on the document. Pages set the light with
+ * useAmbientImage(); pages that don't keep the last picture's colour.
+ */
+export default function WorkspaceLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/login");
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      router.replace(`/login?next=${next}`);
     }
   }, [loading, user, router]);
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (!user) {
-    return null;
-  }
+  if (loading) return <LoadingScreen />;
+  if (!user) return null;
 
   return (
-    <div className="flex h-[100dvh] flex-col md:flex-row">
-      {/* Skip navigation link -- visible only on keyboard focus for a11y */}
+    <div className="relative isolate min-h-[100dvh] bg-ground">
+      <AmbientField />
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-background focus:text-foreground focus:rounded-md focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-[10px] focus:bg-fg focus:px-4 focus:py-2 focus:text-ground"
       >
         跳到主内容
       </a>
       <AppSidebar />
-      {/* pb-14 on mobile for the fixed bottom navigation bar, reset on md+ */}
-      <main id="main" className="relative flex-1 overflow-auto pb-14 md:pb-0">
-        {/* Top-right header credits button */}
-        <div className="absolute right-4 top-3 z-10">
-          <CreditHeaderButton />
-        </div>
-        <PageTransition>{children}</PageTransition>
+      <main id="main" className="relative z-10 pb-28 md:pb-16">
+        {children}
       </main>
     </div>
   );

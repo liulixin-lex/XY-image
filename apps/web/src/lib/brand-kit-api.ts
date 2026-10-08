@@ -9,7 +9,7 @@ import type {
 } from "@loomic/shared";
 
 import { getServerBaseUrl } from "./env";
-import { ApiAuthError, ApiApplicationError } from "./server-api";
+import { toApiError } from "./server-api";
 import { dedupeRequest } from "./dedupe-request";
 
 // --- Internal helpers (mirrored from server-api.ts, not exported there) ---
@@ -25,14 +25,9 @@ function authJsonHeaders(accessToken: string): Record<string, string> {
   };
 }
 
+/** 401 fires the shared expiry event so AuthProvider handles the redirect once. */
 async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAuthError();
-  }
-  const body = await response.json().catch(() => null);
-  const code = body?.error?.code ?? "application_error";
-  const message = body?.error?.message ?? "Request failed";
-  throw new ApiApplicationError(code, message);
+  throw await toApiError(response, { source: "brand-kit" });
 }
 
 // --- Brand Kit CRUD ---
