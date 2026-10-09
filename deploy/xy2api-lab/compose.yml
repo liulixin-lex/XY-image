@@ -1,0 +1,25 @@
+# Zero-cost mock upstream for xy2api (always started).
+#
+#   lab:  docker compose -f compose.yml -f <override joining the lab network> up -d
+#   CI :  docker compose -f compose.yml -f compose.gateway.yml up -d   (see lab.sh)
+#
+# Secrets come from the env file written by lab.sh (never committed).
+name: ${XY2API_LAB_PROJECT:-xy2api-contract}
+
+services:
+  mock-upstream:
+    image: node:22-alpine
+    command: ["node", "/app/mock-upstream.mjs"]
+    environment:
+      PORT: "8000"
+      MOCK_UPSTREAM_KEY: ${MOCK_UPSTREAM_KEY:?MOCK_UPSTREAM_KEY is required}
+    volumes:
+      - ./mock-upstream.mjs:/app/mock-upstream.mjs:ro
+    ports:
+      - "127.0.0.1:${MOCK_PORT:-18190}:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8000/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+    restart: unless-stopped

@@ -1,0 +1,51 @@
+{
+  "scenario": "auth.login_2fa.ok",
+  "tier": "B",
+  "note": "same temp_token after one wrong code",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login/2fa",
+    "auth": "none",
+    "body": {
+      "temp_token": "fixture-temp_token-0007",
+      "totp_code": "000000"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "589b6c27-5781-403b-bb48-8d77ace4b008"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjE3OTE2MTIzODAsImlhdCI6MTc5MTUyNTk4MH0.fixture",
+        "refresh_token": "fixture-refresh_token-0008",
+        "expires_in": 86400,
+        "token_type": "Bearer",
+        "user": {
+          "id": 4,
+          "email": "lab-2fa@xy-lab.test",
+          "username": "lab-2fa",
+          "role": "user",
+          "balance": 50,
+          "frozen_balance": 0,
+          "concurrency": 5,
+          "status": "active",
+          "allowed_groups": null,
+          "last_active_at": "2026-10-09T14:06:19.726209+08:00",
+          "created_at": "2026-10-09T14:06:19.549942+08:00",
+          "updated_at": "2026-10-09T14:06:19.726213+08:00",
+          "balance_notify_enabled": true,
+          "balance_notify_threshold_type": "fixed",
+          "balance_notify_threshold": null,
+          "balance_notify_extra_emails": null,
+          "total_recharged": 0,
+          "rpm_limit": 0
+        }
+      }
+    }
+  }
+}

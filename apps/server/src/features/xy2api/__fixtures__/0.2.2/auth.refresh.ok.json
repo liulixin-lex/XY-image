@@ -1,0 +1,29 @@
+{
+  "scenario": "auth.refresh.ok",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "auth": "none",
+    "body": {
+      "refresh_token": "fixture-refresh_token-0010"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "ba4537af-50e5-4698-a45c-55a50a3b35fb"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjE3OTE2MTIzODAsImlhdCI6MTc5MTUyNTk4MH0.fixture",
+        "refresh_token": "fixture-refresh_token-0011",
+        "expires_in": 86400,
+        "token_type": "Bearer"
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "scenario": "auth.logout",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "auth": "bearer",
+    "body": {
+      "refresh_token": "fixture-refresh_token-0017"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "760d9d35-878e-432d-9148-43d3ccd3e911"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "message": "Logged out successfully"
+      }
+    }
+  }
+}

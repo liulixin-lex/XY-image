@@ -1,0 +1,26 @@
+{
+  "scenario": "gateway.images.generations.insufficient_balance",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture",
+      "size": "1024x1024"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "9f7a9337-6634-4f3c-a5ec-43104d7000b1",
+      "x-request-id": "e452c954-ee4c-46e5-9572-0743ca22834e"
+    },
+    "json": {
+      "code": "INSUFFICIENT_BALANCE",
+      "message": "Insufficient account balance"
+    }
+  }
+}

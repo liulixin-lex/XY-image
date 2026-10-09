@@ -1,0 +1,21 @@
+{
+  "scenario": "gateway.models.user_disabled",
+  "tier": "A",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "9acee42b-0cd5-444e-850a-8b99036fe213",
+      "x-request-id": "bb645b09-b95a-465d-8c4e-9975a0c9ea93"
+    },
+    "json": {
+      "code": "USER_INACTIVE",
+      "message": "User account is not active"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "scenario": "auth.refresh.after_logout",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "auth": "none",
+    "body": {
+      "refresh_token": "fixture-refresh_token-0018"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "3bd8fede-d363-4c39-9ddd-93b469a78e2d"
+    },
+    "json": {
+      "code": 401,
+      "message": "invalid refresh token",
+      "reason": "REFRESH_TOKEN_INVALID"
+    }
+  }
+}

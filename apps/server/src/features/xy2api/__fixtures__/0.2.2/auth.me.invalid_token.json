@@ -1,0 +1,20 @@
+{
+  "scenario": "auth.me.invalid_token",
+  "tier": "B",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "9a8ad71e-5b4c-4f8e-a04e-52d734587d54"
+    },
+    "json": {
+      "code": "INVALID_TOKEN",
+      "message": "Invalid token"
+    }
+  }
+}

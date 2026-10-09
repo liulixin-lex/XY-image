@@ -1,0 +1,45 @@
+{
+  "scenario": "gateway.images.generations.ok",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture: a lighthouse at dusk",
+      "size": "1024x1024",
+      "quality": "low",
+      "n": 1
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "fc206c8b-5e5c-4e6c-bcd2-26d7b06267a5",
+      "x-request-id": "b97ab9b1-9c6f-48df-bada-d6ef99d1efce"
+    },
+    "json": {
+      "created": 1791525980,
+      "data": [
+        {
+          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQCFiAFTEMLQkAPF1GASf8PnAAAAAASUVORK5CYII="
+        }
+      ],
+      "background": "opaque",
+      "output_format": "png",
+      "quality": "low",
+      "size": "1024x1024",
+      "usage": {
+        "input_tokens": 40,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 40
+        },
+        "output_tokens": 1056,
+        "total_tokens": 1096
+      }
+    }
+  }
+}

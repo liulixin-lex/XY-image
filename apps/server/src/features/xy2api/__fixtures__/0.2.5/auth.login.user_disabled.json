@@ -1,0 +1,25 @@
+{
+  "scenario": "auth.login.user_disabled",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "auth": "none",
+    "body": {
+      "email": "lab-off@xy-lab.test",
+      "password": "fixture-password-0020"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "c283595e-7bd6-4b72-82f2-0c5a95e4c126"
+    },
+    "json": {
+      "code": 403,
+      "message": "user is not active",
+      "reason": "USER_NOT_ACTIVE"
+    }
+  }
+}

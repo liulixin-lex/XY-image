@@ -1,0 +1,39 @@
+{
+  "scenario": "gateway.images.edits.ok",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/edits",
+    "auth": "bearer",
+    "body": "<multipart/form-data>"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "624a57ff-ff49-4b7a-82e7-58c54e14b9de",
+      "x-request-id": "4ba787a4-8a3c-4f5b-b121-1daf5fd79dee"
+    },
+    "json": {
+      "created": 1791525980,
+      "data": [
+        {
+          "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQCFiAFTEMLQkAPF1GASf8PnAAAAAASUVORK5CYII="
+        }
+      ],
+      "background": "opaque",
+      "output_format": "png",
+      "quality": "medium",
+      "size": "1024x1024",
+      "usage": {
+        "input_tokens": 40,
+        "input_tokens_details": {
+          "image_tokens": 256,
+          "text_tokens": 40
+        },
+        "output_tokens": 1056,
+        "total_tokens": 1096
+      }
+    }
+  }
+}

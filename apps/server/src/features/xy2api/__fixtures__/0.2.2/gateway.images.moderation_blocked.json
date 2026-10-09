@@ -1,0 +1,28 @@
+{
+  "scenario": "gateway.images.moderation_blocked",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture xylabblockedword",
+      "size": "1024x1024"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "4e8e4cf3-6d0f-4184-8e2c-74039f2e4539",
+      "x-request-id": "26505018-2d53-4d41-ba8a-182c82819269"
+    },
+    "json": {
+      "error": {
+        "message": "内容审计命中风险规则，请调整输入后重试",
+        "type": "content_policy_violation"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "scenario": "gateway.images.upstream_400",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture [[mock:status=400]]"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "bdf41507-8d1f-4257-8f27-8ca221896197",
+      "x-request-id": "a18dce34-b2f9-4fca-8791-1c5c4dd29137"
+    },
+    "json": {
+      "error": {
+        "code": "mock_400",
+        "message": "mock status 400",
+        "type": "invalid_request_error"
+      }
+    }
+  }
+}
