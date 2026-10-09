@@ -130,6 +130,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
     trustProxy: env.trustProxy,
     bodyLimit: 20 * 1024 * 1024,
+    // Keep answering until the server stops listening. Fastify's closing 503
+    // skips @fastify/websocket's hooks: a browser that reconnected while the
+    // server closed kept a socket the 503 never closed, and server.close()
+    // waited for it for minutes. New agent runs are refused while a restart
+    // drains (lifecycle/drain-tasks) and /api/ready reports not ready.
+    return503OnClosing: false,
   });
   app.setErrorHandler((error, request, reply) => {
     const statusCode =
@@ -284,12 +290,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   const readiness = createReadinessProbe(env);
   app.addHook("onClose", async () => readiness.close());
-  void registerHealthRoutes(app, env, readiness.check);
+  void registerHealthRoutes(app, env, () =>
+    taskDrain.isDraining()
+      ? Promise.resolve({ ok: false, checks: { accepting: false } })
+      : readiness.check(),
+  );
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app, { env });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,
+    isDraining: taskDrain.isDraining,
     settingsService,
     threadService,
     viewerService,

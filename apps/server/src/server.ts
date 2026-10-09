@@ -26,15 +26,40 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
-  app.log.info("[server] Draining connections");
-  const deadline = setTimeout(() => process.exit(1), 700_000);
+  const started = Date.now();
+  const elapsedMs = () => Date.now() - started;
+  let phase: "draining" | "closing" = "draining";
+  app.log.info("[server] Shutting down");
+  const deadline = setTimeout(() => {
+    app.log.error({ elapsedMs: elapsedMs() }, "[server] Shutdown timed out");
+    process.exit(1);
+  }, 700_000);
   deadline.unref();
+  // A restart that does not finish says what it is still waiting for. Open
+  // connections are expected while runs drain, not once the server closes.
+  const progress = setInterval(() => {
+    app.server.getConnections((_error, connections) => {
+      const fields = { elapsedMs: elapsedMs(), phase, connections };
+      if (phase === "draining") app.log.info(fields, "[server] Still draining");
+      else app.log.warn(fields, "[server] Still closing");
+    });
+  }, 30_000);
+  progress.unref();
   try {
+    // Runs first, outside Fastify's close hooks (see lifecycle/drain-tasks).
+    await app.drainAgentRuns();
+    phase = "closing";
     await app.close();
+    clearInterval(progress);
+    app.log.info({ elapsedMs: elapsedMs() }, "[server] Closed");
     await closeSupabaseTransport();
+    app.log.info({ elapsedMs: elapsedMs() }, "[server] Shutdown complete");
     process.exit(0);
-  } catch {
-    app.log.error("[server] Shutdown failed");
+  } catch (error) {
+    app.log.error(
+      { elapsedMs: elapsedMs(), error: describeErrorForLog(error) },
+      "[server] Shutdown failed",
+    );
     process.exit(1);
   }
 }
