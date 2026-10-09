@@ -14,6 +14,7 @@ import {
   type ProjectService,
 } from "../features/projects/project-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { logRouteError } from "./log-route-error.js";
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
@@ -198,7 +199,12 @@ export async function registerProjectRoutes(
 
         return reply.code(200).send(result);
       } catch (error) {
-        request.log.error({ err: error }, "thumbnail upload error");
+        logRouteError(
+          request,
+          error,
+          { projectId: request.params.projectId },
+          "thumbnail upload error",
+        );
         return sendProjectError(error, reply, "project_create_failed");
       }
     },
