@@ -83,6 +83,34 @@ export function integrationClient(
 ): SupabaseClient<IntegrationDatabase> {
   return admin as unknown as SupabaseClient<IntegrationDatabase>;
 }
+/**
+ * A login writes the full identity (upsert keyed by xy2api_user_id). Every
+ * other write updates an existing account by user_id and must not carry
+ * xy2api_user_id: an upsert without email would hit the NOT NULL constraint.
+ */
+export type AccountWrite =
+  | (Pick<AccountRow, "user_id" | "xy2api_user_id" | "email"> &
+      Partial<AccountRow>)
+  | (Partial<Omit<AccountRow, "xy2api_user_id">> & {
+      user_id: string;
+      xy2api_user_id?: never;
+    });
+/**
+ * The xy2api user a Supabase shadow account belongs to, or null for any other
+ * account. Shadow users are recognised by app_metadata.xy2api_user_id (only the
+ * service role can write app_metadata). Do not use app_metadata.provider:
+ * GoTrue rewrites it to "email" on the first magic-link sign-in, which locked
+ * every user out after their first login (found in the host-studio lab, GoTrue
+ * v2.196).
+ */
+export function shadowXy2apiUserId(
+  appMetadata: Record<string, unknown> | undefined | null,
+): number | null {
+  const id = appMetadata?.xy2api_user_id;
+  return typeof id === "number" && Number.isSafeInteger(id) && id > 0
+    ? id
+    : null;
+}
 export function checkStoreError(error: unknown): void {
   if (error) throw new Error("Account storage unavailable");
 }
@@ -90,13 +118,16 @@ export function checkStoreError(error: unknown): void {
 export interface AccountStore {
   get(userId: string): Promise<AccountRow | null>;
   find(xy2apiUserId: number): Promise<AccountRow | null>;
-  save(row: Partial<AccountRow> & { user_id: string }): Promise<void>;
+  save(row: AccountWrite): Promise<void>;
   createShadow(
     email: string,
     xy2apiUserId: number,
     displayName: string,
   ): Promise<string>;
-  loginLink(email: string): Promise<{ userId: string; tokenHash: string }>;
+  loginLink(
+    email: string,
+    xy2apiUserId: number,
+  ): Promise<{ userId: string; tokenHash: string }>;
 }
 export function createAccountStore(
   getAdmin: () => AdminSupabaseClient,
@@ -132,6 +163,7 @@ export function createAccountStore(
       const { data, error } = await getAdmin().auth.admin.createUser({
         email,
         email_confirm: true,
+        // provider is informational only; GoTrue overwrites it on sign-in.
         app_metadata: { provider: "xy2api", xy2api_user_id: id },
         user_metadata: { display_name: displayName },
       });
@@ -141,12 +173,12 @@ export function createAccountStore(
         error?.code === "email_conflict" ||
         error?.status === 422
       ) {
-        const link = await this.loginLink(email);
+        const link = await this.loginLink(email, id);
         return link.userId;
       }
       throw new Error("Unable to create shadow account");
     },
-    async loginLink(email) {
+    async loginLink(email, xy2apiUserId) {
       const { data, error } = await getAdmin().auth.admin.generateLink({
         type: "magiclink",
         email,
@@ -155,7 +187,7 @@ export function createAccountStore(
         error ||
         !data.user ||
         !data.properties?.hashed_token ||
-        data.user.app_metadata?.provider !== "xy2api"
+        shadowXy2apiUserId(data.user.app_metadata) !== xy2apiUserId
       )
         throw new Error("Unable to create shadow session");
       return { userId: data.user.id, tokenHash: data.properties.hashed_token };
