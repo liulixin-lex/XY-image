@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractXy2apiErrorId, mapGatewayError } from "./errors.js";
+import {
+  extractXy2apiErrorId,
+  mapGatewayError,
+  neverSent,
+  sanitizeGatewayError,
+} from "./errors.js";
 
 describe("gateway errors", () => {
   it.each([
@@ -177,5 +182,53 @@ describe("gateway errors", () => {
 
   it.each([413, 422])("maps %s to invalid_input", (status) => {
     expect(mapGatewayError({ status, body: {} }).code).toBe("invalid_input");
+  });
+
+  it("calls a request that never left not charged, and keeps the rest unknown", () => {
+    const system = (code: string) =>
+      Object.assign(new Error(`connect ${code}`), { code });
+    const fetchFailed = (cause: unknown) =>
+      new TypeError("fetch failed", { cause });
+    // fetch reports the system error as its cause; the OpenAI client wraps
+    // that once more; several addresses give an AggregateError.
+    const refused = fetchFailed(system("ECONNREFUSED"));
+    expect(neverSent(refused)).toBe(true);
+    expect(neverSent({ name: "APIConnectionError", cause: refused })).toBe(
+      true,
+    );
+    expect(
+      neverSent(fetchFailed(new AggregateError([system("ECONNREFUSED")]))),
+    ).toBe(true);
+    expect(neverSent(fetchFailed(system("ENOTFOUND")))).toBe(true);
+    expect(neverSent(fetchFailed(system("UND_ERR_CONNECT_TIMEOUT")))).toBe(
+      true,
+    );
+    expect(neverSent(fetchFailed(system("CERT_HAS_EXPIRED")))).toBe(true);
+    // The request may have arrived: still unknown.
+    expect(neverSent(fetchFailed(system("ECONNRESET")))).toBe(false);
+    expect(neverSent(fetchFailed(system("UND_ERR_HEADERS_TIMEOUT")))).toBe(
+      false,
+    );
+    expect(neverSent(new Error("This operation was aborted"))).toBe(false);
+
+    expect(sanitizeGatewayError(refused).failure).toMatchObject({
+      code: "xy2api_unavailable",
+      billing: "not_charged",
+      retryable: true,
+    });
+    expect(
+      sanitizeGatewayError(fetchFailed(system("ECONNRESET"))).failure,
+    ).toMatchObject({ code: "upstream_unknown", billing: "unknown" });
+  });
+
+  it("calls Cloudflare's origin-not-reached pages not charged", () => {
+    for (const status of [521, 522, 523, 525, 526, 530])
+      expect(mapGatewayError({ status })).toMatchObject({
+        code: "xy2api_unavailable",
+        billing: "not_charged",
+      });
+    // 520 and 524: the origin got the request.
+    for (const status of [520, 524, 502, 504])
+      expect(mapGatewayError({ status })).toMatchObject({ billing: "unknown" });
   });
 });

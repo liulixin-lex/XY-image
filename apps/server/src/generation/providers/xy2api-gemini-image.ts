@@ -8,7 +8,9 @@ import {
   BillingGuardError,
   GatewayError,
   mapGatewayError,
+  neverSent,
   record,
+  sanitizeGatewayError,
   withRequestId,
 } from "../../features/xy2api/errors.js";
 import type {
@@ -110,6 +112,8 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
     } catch (error) {
       if (error instanceof GatewayError) throw withRequestId(error, requestId);
       if (error instanceof BillingGuardError) throw error;
+      // Never left this server (refused, DNS, TLS): not charged.
+      if (neverSent(error)) throw sanitizeGatewayError(error);
       const e = record(error);
       let body: unknown;
       try {

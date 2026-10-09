@@ -117,5 +117,5 @@ B 层用到的 Key 和用量接口：`GET /api/v1/keys`（列表）、`GET /api/
 
 ## 待办
 
-- 主站还没响应就超时的“待核对”任务没有请求 ID（xy2api 不接受客户端自带的 ID），仍需用户到主站核对。若以后 xy2api 接受客户端请求 ID，可在发请求前生成并保存，再交给 `billing-reconciler.ts` 核对。
+- 主站还没响应就超时的“待核对”任务没有请求 ID（xy2api 不接受客户端自带的 ID），仍需用户到主站核对。请求根本没发出去的（连接被拒、DNS、连接超时、TLS 失败、Cloudflare 521/522/523/525/526/530）从 2026-10-09 起直接记为未扣费（`xy2api_unavailable`），不再进待核对。若以后 xy2api 接受客户端请求 ID，可在发请求前生成并保存，再交给 `billing-reconciler.ts` 核对。
 - 每日契约 CI 已于 10-09 开启（仓库变量 `XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE=1`）。

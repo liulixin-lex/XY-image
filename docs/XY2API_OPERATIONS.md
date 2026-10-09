@@ -91,7 +91,7 @@ where created_at > now() - interval '1 hour'
 group by 1, 2;
 ```
 
-关注 upstream_unknown、key_unavailable、request_rejected、rate_limited 和 storage_failed。request_rejected 增多通常说明主站改了规则或文案（内容审计、新版本错误 id），要对照 `docs/XY2API_COMPAT.md` 补归类。主站开了内容审计自动封禁时，用户反复触发 safety_filter 可能被主站停用，之后会表现为 xy2api_reauth_required。设计助手的对话请求被主站拒绝时也按同一套码归类（`features/chat-providers/run-error.ts`，码放在 `run.failed` 的 `details.gatewayCode`），页面弹对应的提示，对话里写“没能完成：<原因>”；结果不明（upstream_unknown）的对话失败仍显示通用文案。生成发送后无自动重试（包括 429/503）；只重试 Storage 写入（见下节），从不重新生图。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
+关注 upstream_unknown、key_unavailable、request_rejected、rate_limited、storage_failed 和 xy2api_unavailable（连不上主站，成批出现说明主站或网络出了问题）。request_rejected 增多通常说明主站改了规则或文案（内容审计、新版本错误 id），要对照 `docs/XY2API_COMPAT.md` 补归类。主站开了内容审计自动封禁时，用户反复触发 safety_filter 可能被主站停用，之后会表现为 xy2api_reauth_required。设计助手的对话请求被主站拒绝时也按同一套码归类（`features/chat-providers/run-error.ts`，码放在 `run.failed` 的 `details.gatewayCode`），页面弹对应的提示，对话里写“没能完成：<原因>”；结果不明（upstream_unknown）的对话失败仍显示通用文案。生成发送后无自动重试（包括 429/503）；只重试 Storage 写入（见下节），从不重新生图。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
 
 ### 已扣费图片暂存与补传（M6）
 
@@ -143,7 +143,7 @@ where j.id = d.job_id and j.status = 'succeeded';
 
 Worker 每 5 分钟扫一次，每次最多 20 个任务。任务结束 2 分钟后第一次查，2 小时内每 10 分钟查一次，之后每 2 小时一次，最多查 7 天。多个 Worker 用 `billing_checked_at` 加 `SKIP LOCKED` 分摊，不会重复查同一个任务。用量列表占用户在主站的重查询额度（按分钟限流），所以同一用户遇到 429 或需要重新登录时，本轮跳过该用户。查询按 Key 过滤，Key 已在主站删除时改为查该用户的全部记录。
 
-请求 ID 只有主站有响应时才拿得到：xy2api 不接受客户端自带的请求 ID。所以“主站还没响应就超时”的任务没法自动核对，仍然要用户到主站用量页核对。会带请求 ID 的情况：Gemini 安全拦截（主站会计费），以及主站已返回、但本站读不出图片的情况。
+请求 ID 只有主站有响应时才拿得到：xy2api 不接受客户端自带的请求 ID。所以“主站还没响应就超时”的任务没法自动核对，仍然要用户到主站用量页核对。但请求根本没发出去的不算待核对：连接被拒、域名解析失败、连接超时、TLS 握手失败（`features/xy2api/errors.ts` 的 `neverSent`），以及 Cloudflare 表示没连上源站的 521、522、523、525、526、530，都直接记为未扣费，码是 `xy2api_unavailable`（“暂时连不上主站，这次没有发出请求，也没有扣费”）。连上后没回应（读超时、连接被重置）和 Cloudflare 的 520、524 请求可能已经到了主站，仍是待核对。2026-10-09 之前主站一宕机，每次生图都会留下一条没有请求 ID 的待核对任务。实验环境演练：`~/xy-lab/e2e/unsent.sh`（停掉 Worker 建任务，停掉 TLS 边缘让主站地址解析失败，再启动 Worker；改之前是 `dead_letter / unknown / upstream_unknown`，改之后是 `dead_letter / not_charged / xy2api_unavailable`）。会带请求 ID 的情况：Gemini 安全拦截（主站会计费），以及主站已返回、但本站读不出图片的情况。
 
 日志关键字：`[xy2api-reconcile]`。`checked N 待核对 job(s)` 是每轮汇总，`charged: usage row`、`not charged: no usage row` 是结论，`not checked (...)` 是跳过原因，`sweep failed` 说明数据库不可用或迁移没执行。设置 `XY2API_BILLING_RECONCILE=false` 可以关闭（默认开启），关闭后任务一直保持“待核对”。
 

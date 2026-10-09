@@ -107,6 +107,7 @@ export const billingErrorCodeSchema = z.enum([
   "upstream_busy",
   "upstream_too_large",
   "upstream_unknown",
+  "xy2api_unavailable",
   "storage_failed",
   "storage_retrying",
   "insufficient_credits",
