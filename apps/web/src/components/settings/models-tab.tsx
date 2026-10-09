@@ -5,18 +5,14 @@
  * on the selected image key; the chat list merges the chat key's models with
  * the user's providers (lib/chat-models.ts).
  *
- * The default chat model is written to two places on purpose: account
- * preferences (bare model + provider id; null = main site) and workspace
- * settings (the full id, `openai:<model>` or `custom:<provider>:<model>`),
- * because the agent runtime currently reads only the workspace setting.
- * TODO(agent03): once the runtime resolves the default from account
- * preferences (plan §6.5), drop the workspace write and `workspaceModel`.
+ * The default chat model lives only in account preferences (bare model +
+ * provider id; null = main site); the agent runtime resolves it from there
+ * (model-resolver.ts). The old workspace `default_model` is no longer read.
  */
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useAccount, useChatModels, useImageModels } from "@/lib/account-context";
-import { useAuth } from "@/lib/auth-context";
 import {
   type ChatModel,
   chatBillingNote,
@@ -26,7 +22,6 @@ import {
 } from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
-import { fetchWorkspaceSettings, updateWorkspaceSettings } from "@/lib/server-api";
 
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
@@ -35,32 +30,18 @@ import { ChatProvidersSection } from "./chat-providers-section";
 import { SettingsSection } from "./section";
 
 export function ModelsTab() {
-  const { session } = useAuth();
   const { account, updatePreferences } = useAccount();
   const image = useImageModels();
   const chat = useChatModels();
   const { report } = useIssues();
   const { success } = useToast();
   const [saving, setSaving] = useState<"image" | "chat" | null>(null);
-  const [workspaceModel, setWorkspaceModel] = useState<string | null>(null);
-  const tokenRef = useRef(session?.access_token);
-  tokenRef.current = session?.access_token;
-
-  useEffect(() => {
-    const token = tokenRef.current;
-    if (!token) return;
-    fetchWorkspaceSettings(token)
-      .then((res) => setWorkspaceModel(res.settings.defaultModel))
-      .catch((error) => console.warn("[settings] workspace settings unavailable", error));
-  }, []);
 
   const prefs = account.data?.preferences;
   const imageModels = useMemo(() => image.data ?? [], [image.data]);
   const chatModels = useMemo(() => chat.data ?? [], [chat.data]);
 
-  // Preferences first; the workspace setting covers defaults saved before
-  // preferences existed.
-  const currentChat = preferredChatModelId(prefs) ?? workspaceModel;
+  const currentChat = preferredChatModelId(prefs);
   const chatSelected = chatModels.find((m) => m.id === currentChat) ?? null;
   const chatOptions = useMemo(() => chatPickerOptions(chatModels), [chatModels]);
   const imageValue =
@@ -81,7 +62,6 @@ export function ModelsTab() {
   };
 
   const saveChat = async (id: string) => {
-    const token = tokenRef.current;
     const patch = chatPreferencePatch(id, prefs);
     if (!patch) {
       console.warn("[settings] unrecognised chat model id", id);
@@ -90,10 +70,6 @@ export function ModelsTab() {
     setSaving("chat");
     try {
       await updatePreferences(patch);
-      if (token) {
-        const res = await updateWorkspaceSettings(token, { defaultModel: id });
-        setWorkspaceModel(res.settings.defaultModel);
-      }
       success("默认对话模型已保存");
     } catch (error) {
       report(error);

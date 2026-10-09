@@ -1,103 +1,23 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { Suspense, useEffect, useRef } from "react";
+/**
+ * Retired Supabase PKCE callback. Sign-in goes through the main site
+ * (POST /api/auth/xy2api/login), and the self-hosted Nginx refuses PKCE
+ * grants, so this page only sends old links and bookmarks to /login.
+ * TODO: delete once `${web}/auth/callback` leaves GoTrue's
+ * ADDITIONAL_REDIRECT_URLS (deploy/selfhost/prepare.mjs).
+ */
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 import { LoadingScreen } from "../../../components/loading-screen";
-import {
-  ApiApplicationError,
-  ApiAuthError,
-  fetchViewer,
-} from "../../../lib/server-api";
-import { getSupabaseBrowserClient } from "../../../lib/supabase-browser";
-
-const CALLBACK_TIMEOUT_MS = 5_000;
-
-function loginErrorUrl(error: string): string {
-  return `/login?${new URLSearchParams({ error }).toString()}`;
-}
-
-function AuthCallbackPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const started = useRef(false);
-
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
-    const code = searchParams.get("code");
-    const providerError = searchParams.get("error");
-
-    if (providerError) {
-      router.replace(loginErrorUrl(providerError));
-      return;
-    }
-
-    if (!code) {
-      router.replace(loginErrorUrl("auth_callback_missing_code"));
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      cancelled = true;
-      router.replace(loginErrorUrl("auth_callback_timeout"));
-    }, CALLBACK_TIMEOUT_MS);
-
-    void (async () => {
-      try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-        if (cancelled) return;
-
-        if (error || !data.session?.access_token) {
-          router.replace(loginErrorUrl("auth_exchange_failed"));
-          return;
-        }
-
-        try {
-          await fetchViewer(data.session.access_token);
-        } catch (viewerError) {
-          if (
-            viewerError instanceof ApiAuthError ||
-            viewerError instanceof ApiApplicationError ||
-            viewerError instanceof Error
-          ) {
-            router.replace(loginErrorUrl("viewer_bootstrap_failed"));
-            return;
-          }
-
-          router.replace(loginErrorUrl("viewer_bootstrap_failed"));
-          return;
-        }
-
-        if (!cancelled) {
-          router.replace("/home");
-        }
-      } catch {
-        if (!cancelled) {
-          router.replace(loginErrorUrl("auth_exchange_failed"));
-        }
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [router, searchParams]);
-
-  return <LoadingScreen />;
-}
 
 export default function AuthCallbackPage() {
-  return (
-    <Suspense fallback={<LoadingScreen />}>
-      <AuthCallbackPageContent />
-    </Suspense>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/login?reason=auth_callback_retired");
+  }, [router]);
+
+  return <LoadingScreen />;
 }

@@ -5,16 +5,31 @@
  * and to allow tree-shaking of unused helpers.
  */
 
+import { getSupabaseOrigin } from "../../lib/env";
+
 /** Regex patterns for detecting image URLs in markdown content */
 const IMAGE_URL_RE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
-const SUPABASE_STORAGE_RE = /supabase\.\w+\/storage\/v1\//i;
+/** Public, signed and transformed object paths of Supabase storage. */
+const STORAGE_OBJECT_PATH_RE = /^\/storage\/v1\/(object|render\/image)\//;
+
+/** An object URL on the configured Supabase storage (any domain, self-hosted included). */
+function isOwnStorageUrl(url: string): boolean {
+  const origin = getSupabaseOrigin();
+  if (!origin) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === origin && STORAGE_OBJECT_PATH_RE.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Check if a URL points to an image resource.
- * Matches common image extensions and Supabase storage URLs.
+ * Matches common image extensions and objects on our own Supabase storage.
  */
 export function isImageUrl(url: string): boolean {
-  return IMAGE_URL_RE.test(url) || SUPABASE_STORAGE_RE.test(url);
+  return IMAGE_URL_RE.test(url) || isOwnStorageUrl(url);
 }
 
 /** Tool display configuration */

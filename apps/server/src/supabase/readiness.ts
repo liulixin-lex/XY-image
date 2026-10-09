@@ -2,6 +2,15 @@ import pg from "pg";
 import type { ServerEnv } from "../config/env.js";
 import { createSupabaseFetch } from "./transport.js";
 export type ReadinessResult = { ok: boolean; checks: Record<string, boolean> };
+// Reported but not required: no client or server path subscribes to
+// Realtime, and public Nginx no longer exposes it. Make it required again
+// before shipping a feature that pushes job updates over Realtime.
+const OPTIONAL_CHECKS = new Set(["realtime"]);
+export function isReady(checks: Record<string, boolean>): boolean {
+  return Object.entries(checks).every(
+    ([name, passed]) => passed || OPTIONAL_CHECKS.has(name),
+  );
+}
 export function createReadinessProbe(env: ServerEnv) {
   const pool = env.supabaseDbUrl
     ? new pg.Pool({
@@ -94,7 +103,7 @@ export function createReadinessProbe(env: ServerEnv) {
         } catch {}
       })(),
     ]);
-    return { ok: Object.values(checks).every(Boolean), checks };
+    return { ok: isReady(checks), checks };
   }
   return {
     async check() {

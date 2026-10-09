@@ -6,39 +6,14 @@
  *   openai:<model>                main site, billed to the xy2api balance
  *   custom:<providerId>:<model>   the user's own provider, billed by it
  * Model names may contain ":" or "/", so only the first two colons split.
- *
- * TODO(agent03): when `parseChatModelRef` lands in @loomic/shared, re-export
- * it from here and delete the local copy; the behaviour must stay identical.
+ * Parsing and formatting come from @loomic/shared so the web and the agent
+ * runtime (model-resolver.ts) can never disagree on an id.
  */
+import { type ChatModelRef, formatChatModelRef, parseChatModelRef } from "@loomic/shared";
+
 import type { AccountPreferences, PreferencesPatch } from "./xy2api-api";
 
-export type ChatModelRef =
-  | { source: "xy2api"; model: string }
-  | { source: "custom"; providerId: string; model: string };
-
-const XY2API_PREFIX = "openai:";
-const CUSTOM_PREFIX = "custom:";
-
-export function parseChatModelRef(id: string): ChatModelRef | null {
-  if (id.startsWith(XY2API_PREFIX)) {
-    const model = id.slice(XY2API_PREFIX.length);
-    return model ? { source: "xy2api", model } : null;
-  }
-  if (id.startsWith(CUSTOM_PREFIX)) {
-    const rest = id.slice(CUSTOM_PREFIX.length);
-    const sep = rest.indexOf(":");
-    if (sep <= 0) return null;
-    const model = rest.slice(sep + 1);
-    return model ? { source: "custom", providerId: rest.slice(0, sep), model } : null;
-  }
-  return null;
-}
-
-export function formatChatModelRef(ref: ChatModelRef): string {
-  return ref.source === "xy2api"
-    ? `${XY2API_PREFIX}${ref.model}`
-    : `${CUSTOM_PREFIX}${ref.providerId}:${ref.model}`;
-}
+export { type ChatModelRef, formatChatModelRef, parseChatModelRef };
 
 /**
  * The saved default as a model id. Preferences keep the bare model name plus

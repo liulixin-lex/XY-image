@@ -1,6 +1,6 @@
 # agent03 后端增量交接（2026-10-08）
 
-2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共34份应用迁移，真实联调仍未执行。本文件保留首轮功能交付记录；自建收尾与发布状态见 [发布验收表](XY_IMAGE_RELEASE.md)。
+2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共35份应用迁移（10-09 agent01 新增 `20261009000004`）；实验环境联调见 handoff 第 5 节。本文件保留首轮功能交付记录；自建收尾与发布状态见 [发布验收表](XY_IMAGE_RELEASE.md)。
 执行目录 `/workspace/XY-image`，容器 `claude-module-02`，分支 `feat/server-agent03`，基于 `c7dcf6f`。本文件首轮成果已提交 `6e67855`；用户现已授权全部无冲突改动提交、推送并合并，最终记录见发布验收表。
 
 用户最新指示：主站为 **gguuai.com**，主站镜像源码为 `https://github.com/liulixin-lex/xy2api`；Supabase 暂未创建，其它环境资料暂不提供；**先开发，开发完成后再做真实测试**。本轮只有离线单测、内存 PostgreSQL 迁移检查，未访问真实主站、使用真实凭据、执行付费调用或部署。
@@ -59,7 +59,7 @@ Key 使用现有 `LOOMIC_SECRET_KEY` 的 AES-256-GCM，加密 AAD 为 `loomic:ch
 
 ## 迁移、类型与部署准备
 
-首轮新增 `supabase/migrations/20261009000001_user_chat_providers.sql`，后续自建增加 `20261009000002` 和 `20261009000003`，当前共34份。自建栈初始化后按文件名顺序执行全部，必须在新版API启动前完成。
+首轮新增 `supabase/migrations/20261009000001_user_chat_providers.sql`，后续自建增加 `20261009000002`、`20261009000003` 和 `20261009000004`，当前共35份。自建栈初始化后按文件名顺序执行全部，必须在新版API启动前完成。
 
 新表 RLS 开启，没有客户端 policy，撤销 anon/authenticated 全部表权限，仅 service_role 访问。加密主密钥 API / Worker 必须一致，不能发布时重新生成。
 
@@ -90,8 +90,8 @@ Key 使用现有 `LOOMIC_SECRET_KEY` 的 AES-256-GCM，加密 AAD 为 `loomic:ch
 
 在 `/workspace/XY-IMAGE-HANDOFF.md` 第 9 节已留言：
 
-1. 删除 `models-tab.tsx` 向工作区 `defaultModel` 的过渡双写。
-2. `lib/chat-models.ts` 的模型引用解析/格式化可改为从 shared 导出，删除本地副本。
+1. ~~删除 `models-tab.tsx` 向工作区 `defaultModel` 的过渡双写。~~ 10-09 agent01 已完成（L2）。
+2. ~~`lib/chat-models.ts` 的模型引用解析/格式化可改为从 shared 导出，删除本地副本。~~ 10-09 agent01 已完成（L2）。
 3. 获准开始真实测试且环境具备后，验证设置 CRUD、手动列表404、刷新失败、停用/删除默认、分组选择器、provider 错误中心和字体跨域。
 
 后端已不读取双写值，因此前两项清理不阻塞这版运行时。按角色边界，本轮未改 `apps/web`。

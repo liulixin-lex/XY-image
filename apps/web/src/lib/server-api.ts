@@ -24,7 +24,6 @@ import type {
   SkillUpdateRequest,
   UploadResponse,
   ViewerResponse,
-  WorkspaceSettingsResponse,
   WorkspaceSkillListResponse,
 } from "@loomic/shared";
 
@@ -311,29 +310,6 @@ export async function updateProfile(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProfileUpdateResponse;
-}
-
-export async function fetchWorkspaceSettings(
-  accessToken: string,
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
-}
-
-export async function updateWorkspaceSettings(
-  accessToken: string,
-  data: { defaultModel: string },
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
 }
 
 // --- Models (scoped to the user's selected xy2api keys) ---

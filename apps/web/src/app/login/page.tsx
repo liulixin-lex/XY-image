@@ -11,10 +11,7 @@ import { safeNextPath } from "../../lib/pending-prompt";
 
 const NOTICE_COPY: Record<string, string> = {
   expired: "登录已过期，请重新登录。",
-  auth_callback_missing_code: "登录链接不完整，请重新登录。",
-  auth_exchange_failed: "登录链接校验失败，请重新登录。",
-  viewer_bootstrap_failed: "账号已验证，但工作台没有准备好，请重新登录。",
-  auth_callback_timeout: "登录超时，请重新登录。",
+  auth_callback_retired: "这个登录链接已不再使用，请用主站账号登录。",
 };
 
 function LoginPageContent() {
