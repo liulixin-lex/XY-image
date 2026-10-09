@@ -13,6 +13,10 @@ import { randomUUID } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import { loadServerEnv } from "./config/env.js";
 import { validateProductionEnv } from "./config/production.js";
+import {
+  createCanvasFilesSweeper,
+  createSweepStore,
+} from "./features/canvas/canvas-files-sweeper.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import {
@@ -82,6 +86,18 @@ async function main() {
     : undefined;
   reconciler?.start();
 
+  // Deletes canvas image objects no canvas references (canvas-files-sweeper.ts).
+  const sweeper =
+    env.canvasFilesSweep === "off"
+      ? undefined
+      : createCanvasFilesSweeper({
+          store: createSweepStore(env.supabaseDbUrl),
+          remove: (paths) =>
+            getAdminClient().storage.from("project-assets").remove(paths),
+          dryRun: env.canvasFilesSweep === "dry-run",
+        });
+  sweeper?.start();
+
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
@@ -145,6 +161,7 @@ async function main() {
       await Promise.allSettled(allTasks);
     }
     await reconciler?.stop();
+    await sweeper?.stop();
     await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
     await deliveries.close();

@@ -63,8 +63,8 @@ const CANVAS_FILES_BUCKET = "project-assets";
 // the files of deleted images and the page sends them all) and then deletes
 // the objects of dropped files from this canvas's own folder; see
 // removeUnusedFiles. Archived projects keep their canvases and files.
-// TODO: a sweep for objects no canvas references (an upload whose save then
-// failed) would compare canvas-files/ against canvases.content->files.
+// Objects no canvas references (an upload whose save then failed) are swept
+// by the worker once they are 3 days old; see canvas-files-sweeper.ts.
 const SAFE_FILE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // The types the upload route accepts into the same bucket.
 const STORABLE_TYPES = new Set([

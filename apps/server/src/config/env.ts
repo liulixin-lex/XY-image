@@ -79,6 +79,11 @@ export type ServerEnv = {
   workerMaxBatchSize?: number;
   /** Worker settles 待核对 image jobs from the xy2api usage list (default on). */
   xy2apiBillingReconcile?: boolean;
+  /**
+   * Worker deletes canvas image objects no canvas references (default "on";
+   * "dry-run" only logs them). features/canvas/canvas-files-sweeper.ts
+   */
+  canvasFilesSweep?: "on" | "dry-run" | "off";
 };
 
 export function loadServerEnv(
@@ -227,6 +232,11 @@ export function loadServerEnv(
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),
     workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 3),
     xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
+    canvasFilesSweep:
+      source.CANVAS_FILES_SWEEP === "off" ||
+      source.CANVAS_FILES_SWEEP === "dry-run"
+        ? source.CANVAS_FILES_SWEEP
+        : "on",
     ...overrides,
   };
 }
