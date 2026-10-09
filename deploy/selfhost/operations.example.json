@@ -13,6 +13,7 @@
   "maxBackupAgeHours": 30,
   "minFreeGiB": 10,
   "reminderMinutes": 60,
+  "billingUnknownHours": 30,
   "readyUrl": "http://127.0.0.1:3101/api/ready",
   "requiredServices": [
     "db",

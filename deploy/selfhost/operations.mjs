@@ -111,6 +111,13 @@ export async function loadConfig(file) {
   ])
     if (!Number.isInteger(config[key]) || config[key] < 1)
       fail("invalid_threshold");
+  // Optional; older configs get the default.
+  config.billingUnknownHours ??= 30;
+  if (
+    !Number.isInteger(config.billingUnknownHours) ||
+    config.billingUnknownHours < 1
+  )
+    fail("invalid_threshold");
   if (
     !Array.isArray(config.requiredServices) ||
     config.requiredServices.length === 0 ||
@@ -392,6 +399,38 @@ export async function monitor(config, dependencies = {}) {
       }
     } catch {
       problems.push("docker_unavailable");
+    }
+    // Paid work that needs a person (docs/XY2API_OPERATIONS.md): images whose
+    // upload ran out of retries (kept in xy2api_pending_deliveries for manual
+    // recovery), and 待核对 jobs the reconciler could not settle in a day (no
+    // request id, or it kept failing). Counts only leave the database.
+    try {
+      const hours = config.billingUnknownHours ?? 30;
+      const text = await run("docker", [
+        ...composeArgs(config),
+        "exec",
+        "-T",
+        "db",
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+        "-AtX",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        `SELECT (SELECT count(*) FROM public.xy2api_pending_deliveries d JOIN public.background_jobs j ON j.id = d.job_id WHERE j.status = 'dead_letter'), (SELECT count(*) FROM public.background_jobs WHERE billing_status = 'unknown' AND updated_at < now() - interval '${Number(hours)} hours')`,
+      ]);
+      const [held, unknown] = text.trim().split("|").map(Number);
+      if (!Number.isInteger(held) || !Number.isInteger(unknown))
+        problems.push("billing_check_unknown");
+      else {
+        if (held > 0) problems.push("images_held_for_recovery");
+        if (unknown > 0) problems.push("billing_unknown_stale");
+      }
+    } catch {
+      problems.push("billing_check_unknown");
     }
     try {
       const result = await fetcher(config.readyUrl, {
