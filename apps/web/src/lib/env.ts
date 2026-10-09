@@ -19,6 +19,20 @@ export function getXy2apiWebUrl(): string | null {
   return configuredUrl ? configuredUrl.replace(/\/+$/, "") : null;
 }
 
+/**
+ * Origin of the configured Supabase project (self-hosted or supabase.co), or
+ * null when unset or malformed. Used to recognise our own storage URLs.
+ */
+export function getSupabaseOrigin(): string | null {
+  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!configuredUrl) return null;
+  try {
+    return new URL(configuredUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
 export type WebEnv = {
   serverBaseUrl: string;
   supabaseAnonKey: string;
