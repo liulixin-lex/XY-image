@@ -25,3 +25,23 @@ do $$ begin
 end $$;
 rollback;
 select 'retired_rpc_and_permission_drift_checks_passed' as result;
+
+do $$ begin
+  if exists (select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname like 'canvases_%')
+    or exists (select 1 from storage.buckets where id='canvases' and public) then
+    raise exception 'canvases bucket not locked down';
+  end if;
+end $$;
+begin;
+create policy drift_anon_read on storage.objects for select to anon using (true);
+do $$ begin
+  if public.xy_runtime_permissions() then raise exception 'anonymous storage policy drift not detected'; end if;
+end $$;
+rollback;
+begin;
+update storage.buckets set public = true where id = 'canvases';
+do $$ begin
+  if public.xy_runtime_permissions() then raise exception 'public canvases bucket drift not detected'; end if;
+end $$;
+rollback;
+select 'canvases_bucket_lockdown_checks_passed' as result;

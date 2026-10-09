@@ -26,6 +26,7 @@ for _ in 1 2; do
   sql < "$repo_dir/supabase/migrations/20261009000001_user_chat_providers.sql"
   sql < "$repo_dir/supabase/migrations/20261009000002_selfhost_runtime_checks.sql"
   sql < "$repo_dir/supabase/migrations/20261009000003_retired_rpc_permissions.sql"
+  sql < "$repo_dir/supabase/migrations/20261009000004_canvases_bucket_lockdown.sql"
 done
 sql < "$script_dir/fixtures/xy2api-migration-assert.sql"
 sql < "$script_dir/fixtures/chat-provider-migration-assert.sql"

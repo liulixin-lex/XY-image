@@ -1,6 +1,11 @@
 create schema storage;
-create table storage.buckets(id text primary key);
-insert into storage.buckets values ('project-assets'),('brand-kit-assets'),('canvases'),('user-avatars');
+create table storage.buckets(id text primary key, public boolean not null default false);
+insert into storage.buckets values ('project-assets',true),('brand-kit-assets',false),('canvases',true),('user-avatars',false);
+create table storage.objects(bucket_id text, name text);
+alter table storage.objects enable row level security;
+-- Deliberately vulnerable defaults reproduce the open canvases bucket.
+create policy "canvases_insert_authenticated" on storage.objects for insert to authenticated with check (bucket_id = 'canvases');
+create policy "canvases_select_public" on storage.objects for select to public using (bucket_id = 'canvases');
 create schema langgraph;
 create table langgraph.checkpoints(id int);
 create table langgraph.store(id int);
