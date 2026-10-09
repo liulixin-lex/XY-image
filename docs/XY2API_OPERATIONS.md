@@ -73,7 +73,7 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
 
 ## 上线门槛与运行
 
-- 真实账号完成密码、TOTP、Turnstile、错误密码、10 次限流、退出及普通 Supabase 用户拒绝检查。
+- 真实账号完成密码、TOTP、Turnstile、错误密码、限流（同一邮箱连续 10 次失败后 429；成功登录不计数）、退出及普通 Supabase 用户拒绝检查。
 - 主站创建/删除 Key、同步、切换 OpenAI/Gemini、额度用完、IP 白名单、余额为零检查。
 - Turnstile：Cloudflare 里 site key 的 hostname 白名单要包含生图站域名，否则生图站登录拿不到 token（xy2api 本身不校验 hostname）。生产已开内容审计：用命中规则的提示词各试一次 OpenAI 和 Gemini 生图，应提示修改输入（safety_filter）、主站不扣费，并且之后同一个 Key 仍能正常生图。
 - 读取主站 `/api/v1/settings/public` 的 `version`，必须在 `XY2API_VERIFIED_VERSIONS` 内；不在则先按 [xy2api 版本兼容](XY2API_COMPAT.md) 录制并回放通过。上线后关注 `[xy2api-compat]` 告警与漂移日志。

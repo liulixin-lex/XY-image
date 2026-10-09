@@ -87,7 +87,7 @@
 - **冷却**：上游返回 429、5xx 或空的 200 后，xy2api 会让该上游账号冷却约 1 分钟。冷却期间同组所有请求都返回 `503 No available compatible accounts`，管理端的 clear-rate-limit 和 clear-error 都解不开。上游 400（包括安全拒绝）和未知模型不会触发冷却。本站不自动重试，这类错误提示"主站繁忙"。
 - **计费**：生图按张收费，按分组配置的 1K/2K/4K 单价计价，不传尺寸时按 2K 算。
 - **Gemini 安全拦截会扣费**：返回 200 加 `promptFeedback.blockReason` 时，主站按 1 张计费。本站把这种情况标为"待核对"（`billing: unknown`），并保存 request id。OpenAI 路径的安全拒绝（400）不扣费。
-- **余额不足**：OpenAI 路径返回 403 `INSUFFICIENT_BALANCE`；Gemini 路径返回 403 `PERMISSION_DENIED`，消息是 "Insufficient account balance"，需要靠消息兜底识别。
+- **余额不足**：OpenAI 路径返回 403 `INSUFFICIENT_BALANCE`；Gemini 路径返回 403 `PERMISSION_DENIED`，消息是 "Insufficient account balance"，需要靠消息兜底识别。余额为 0 的账号连 `/v1/models` 和 `/v1beta/models` 也返回这个 403（先查余额，再看 Key），但 `/v1/usage` 正常返回 `balance: 0`。
 - **未知模型**：xy2api 不校验模型名，会直接转发。OpenAI 生图返回 502 "Upstream request failed"。Gemini 在 0.2.2 透传上游的 404，在 0.2.5 则由计费预检返回 503 "Billing service temporarily unavailable"。两种情况都不扣费，也不冷却。本站只发送从该 Key 的 `/v1/models` 发现到的模型。
 - **`/v1/models`**：返回 xy2api 内置的静态列表，不能证明上游真有这个模型。
 - **Request id**：客户端传的 `X-Client-Request-ID` 会被忽略。xy2api 自己生成一个，放在响应头里返回；用量记录的 `request_id` 是 `client:<该值>`，可以用来对账。
@@ -103,11 +103,12 @@
 - Gemini 路径的余额不足被归为 `key_unavailable`。现在按消息文本兜底识别。
 - Gemini 安全拦截实际扣了费，原来却报"未扣费"。现在改为"待核对"，并记录 request id。
 - 实验室录制曾把测试账号密码写进 fixture。现在录制器会把密码和 TOTP 换成占位值。
+- **余额为 0 的新用户被告知"先选 Key"**（lab e2e 发现，影响生产）：Key 同步时 `/v1/models` 返回 403 余额不足，同步把它当成 Key 失效。结果所有 Key 都不能生图，没有默认 Key，余额显示"未选 Key"，充值后也要手动同步。现在模型发现失败时，只有 Key 级证据（`key_unavailable`、`key_ip_restricted`、`xy2api_reauth_required`）才让 Key 失效。其他情况（余额不足、识别不了的 403、5xx、网络错误）保留该 Key 上次发现的模型（分组没变时）；从未发现过的，按平台回退到目录。Key 仍可选、自动设为默认，余额显示 $0，生图返回 402 并引导充值，不建任务、不扣费。对话模型只能靠发现，余额不足时 `/api/models` 报 `insufficient_balance`。用户充值后，`GET /api/account` 读到正余额会自动重新同步（每用户至少间隔 15 秒，进程内记录，其他实例在下次登录或手动同步时补上），前端随后重新拉对话模型。
 - **内容审计的 403 被当成 Key 失效**（影响生产）：被拦截后，`image-runner` 会把用户的 Key 标为不可用，用户之后每次生图都要先重新同步 Key。现在的规则是：`content_policy_violation` 一律归为 `safety_filter`，不看状态码；只有能明确识别的 Key 问题才归为 `key_unavailable`；识别不了的 403 和其他 4xx 归为新码 `request_rejected`，不会让 Key 失效，并把主站给的原因脱敏后（去掉 `sk-…` 和长 token，最多 120 字）显示给用户。Gemini 路径的 Key 类错误也改为按消息识别（已过期、分组不可用、无订阅、额度用完、认证失败过多）。
 
 ## 错误归类原则
 
-- 只有拿到明确证据（错误 id 或已知消息），才把错误归为 `key_unavailable` 或 `key_ip_restricted`，因为这两类会让 Key 失效。
+- 只有拿到明确证据（错误 id 或已知消息），才把错误归为 `key_unavailable` 或 `key_ip_restricted`，因为这两类会让 Key 失效。Key 同步发现模型时同理：拿不到模型列表不等于 Key 坏了。
 - 内容审计和安全拦截一律归为 `safety_filter`，按状态码、type 或消息任意一项识别。
 - 识别不了的拒绝归为 `request_rejected`，提示用户到主站查看，不改动 Key 或账号状态。新版本出现新的错误 id 时，回放测试"every recorded gateway error has an expected mapping"会失败，提醒补规则。
 
