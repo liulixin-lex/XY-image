@@ -164,12 +164,14 @@ export function createCanvasFilesSweeper(deps: {
   let running: Promise<unknown> | undefined;
   let stopped = false;
 
+  // One line per sweep (every 6 hours), also when there was nothing to do,
+  // so the log shows the sweeper is alive.
   async function sweep() {
+    const started = Date.now();
     const counts = await sweepCanvasFiles(deps);
-    if (counts.orphaned || counts.failed)
-      console.info(
-        `[canvas-files-sweep] ${deps.dryRun ? "dry run: " : ""}workspaces=${counts.workspaces} orphaned=${counts.orphaned} removed=${counts.removed} failed=${counts.failed}`,
-      );
+    console.info(
+      `[canvas-files-sweep] ${deps.dryRun ? "dry run: " : ""}workspaces=${counts.workspaces} orphaned=${counts.orphaned} removed=${counts.removed} failed=${counts.failed} ms=${Date.now() - started}`,
+    );
     return counts;
   }
 
