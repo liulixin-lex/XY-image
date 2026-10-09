@@ -11,10 +11,10 @@ import type { ThreadService } from "./thread-service.js";
 
 export class ChatServiceError extends Error {
   readonly statusCode: number;
-  readonly code: "chat_error" | "session_not_found";
+  readonly code: "canvas_not_found" | "chat_error" | "session_not_found";
 
   constructor(
-    code: "chat_error" | "session_not_found",
+    code: "canvas_not_found" | "chat_error" | "session_not_found",
     message: string,
     statusCode: number,
   ) {
@@ -111,6 +111,9 @@ export function createChatService(options: {
         .select("id, title, updated_at")
         .single();
 
+      if (isNotVisible(error)) {
+        throw new ChatServiceError("canvas_not_found", "Canvas not found.", 404);
+      }
       if (error || !data) {
         throw new ChatServiceError("chat_error", "Failed to create session.", 500);
       }
@@ -124,13 +127,16 @@ export function createChatService(options: {
 
     async updateSessionTitle(user, sessionId, title) {
       const client = options.createUserClient(user.accessToken);
-      const { error } = await client
+      const { error, count } = await client
         .from("chat_sessions")
-        .update({ title })
+        .update({ title }, { count: "exact" })
         .eq("id", sessionId);
 
       if (error) {
         throw new ChatServiceError("chat_error", "Failed to update session title.", 500);
+      }
+      if (count === 0) {
+        throw new ChatServiceError("session_not_found", "Session not found.", 404);
       }
     },
 
@@ -205,6 +211,9 @@ export function createChatService(options: {
         .select("id, role, content, tool_activities, content_blocks, created_at")
         .single();
 
+      if (isNotVisible(error)) {
+        throw new ChatServiceError("session_not_found", "Session not found.", 404);
+      }
       if (error || !data) {
         throw new ChatServiceError("chat_error", "Failed to save message.", 500);
       }
@@ -233,4 +242,12 @@ export function createChatService(options: {
       };
     },
   };
+}
+
+/**
+ * An insert that RLS refuses (42501: the canvas or session is not the user's)
+ * or whose parent row is gone (23503) — answered as not found, not as a 500.
+ */
+function isNotVisible(error: { code?: string } | null) {
+  return error?.code === "42501" || error?.code === "23503";
 }

@@ -108,6 +108,7 @@ export const billingErrorCodeSchema = z.enum([
   "upstream_too_large",
   "upstream_unknown",
   "storage_failed",
+  "storage_retrying",
   "insufficient_credits",
   "model_not_accessible",
   "resolution_not_allowed",

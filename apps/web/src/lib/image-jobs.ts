@@ -72,6 +72,20 @@ export function isFailedJob(job: Pick<ImageJobView, "status">) {
   return job.status === "failed" || job.status === "dead_letter";
 }
 
+/**
+ * Charged, but storage refused the image; the server keeps it and retries
+ * the upload (server M6). Still active, but no longer uses a generation slot
+ * and can no longer be canceled.
+ */
+export function isSavingJob(job: Pick<ImageJobView, "status" | "errorCode">) {
+  return isActiveJob(job) && job.errorCode === "storage_retrying";
+}
+
+/** STATUS_LABEL, with 保存中 for a job waiting for a storage retry. */
+export function jobStatusLabel(job: Pick<ImageJobView, "status" | "errorCode">) {
+  return isSavingJob(job) ? "保存中" : STATUS_LABEL[job.status];
+}
+
 export const STATUS_LABEL: Record<ImageJobView["status"], string> = {
   queued: "排队中",
   running: "生成中",

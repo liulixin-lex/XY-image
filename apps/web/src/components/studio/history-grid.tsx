@@ -10,13 +10,14 @@ import {
   groupByDay,
   isActiveJob,
   isFailedJob,
+  isSavingJob,
 } from "@/lib/image-jobs";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
 
 import { LiveDot } from "../ambient/live-dot";
 import { RevealImage } from "../ambient/reveal-image";
-import { BillingBadge, needsReconcile } from "../billing/billing-badge";
+import { BillingBadge, isBillingSettled, needsReconcile } from "../billing/billing-badge";
 
 /**
  * Every result, grouped by day. Clicking a finished picture puts it on the
@@ -102,8 +103,9 @@ function HistoryTile({
   onCancel: () => void;
   onDownload: () => void;
 }) {
-  const running = job.status === "running";
-  const queued = job.status === "queued";
+  const saving = isSavingJob(job);
+  const running = job.status === "running" && !saving;
+  const queued = job.status === "queued" && !saving;
   const failed = isFailedJob(job);
   const done = job.status === "succeeded" && Boolean(job.url);
   const issue = failed ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage) : null;
@@ -169,6 +171,13 @@ function HistoryTile({
               请求已发往主站，慢的模型要几分钟
             </span>
           </div>
+        ) : saving ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-line-strong p-4 text-center">
+            <span className="text-[13px] font-medium text-fg-soft">保存中</span>
+            <span className="max-w-[14em] text-[11.5px] leading-snug text-fg-muted">
+              图片已生成并扣费，存好后会自动出现
+            </span>
+          </div>
         ) : queued ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 rounded-[14px] border border-dashed border-line-strong p-4 text-center">
             <span className="text-[13px] font-medium text-fg-soft">排队中</span>
@@ -194,7 +203,11 @@ function HistoryTile({
             </span>
             {failed ? (
               <span className="line-clamp-2 text-[11.5px] leading-snug text-fg-soft">
-                {issue?.maybeCharged || reconcile ? "可能已扣费，点开核对" : issue?.message}
+                {reconcile || (issue?.maybeCharged && !isBillingSettled(job.billing))
+                  ? "可能已扣费，点开核对"
+                  : job.billing === "charged"
+                    ? "主站已扣费，点开查看"
+                    : issue?.message}
               </span>
             ) : null}
           </button>

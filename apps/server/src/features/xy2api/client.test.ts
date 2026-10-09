@@ -102,4 +102,95 @@ describe("xy2api client", () => {
     ]);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("reads one key by id and flags a masked one", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response(remoteKey(7)))
+      .mockResolvedValueOnce(response(remoteKey(7, "sk-****")))
+      .mockResolvedValueOnce(response(remoteKey(8)));
+    const client = new Xy2apiClient("https://example.com", fetcher);
+    expect(await client.getKey("synthetic", 7)).toMatchObject({
+      id: 7,
+      masked: false,
+    });
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://example.com/api/v1/keys/7",
+    );
+    expect((await client.getKey("synthetic", 7)).masked).toBe(true);
+    // A different key in the answer is never trusted.
+    await expect(client.getKey("synthetic", 7)).rejects.toMatchObject({
+      id: "INVALID_RESPONSE",
+    });
+  });
+});
+
+describe("xy2api usage lookup", () => {
+  const usageRow = (id: number, requestId: unknown) => ({
+    id,
+    request_id: requestId,
+    actual_cost: 0.04,
+  });
+  const lookup = {
+    requestId: "req-1",
+    from: new Date("2026-10-08T23:00:00Z"),
+    to: new Date("2026-10-10T01:00:00Z"),
+  };
+  it("finds the row by client request id within UTC days", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({ items: [usageRow(1, "client:other")], pages: 2 }),
+      )
+      .mockResolvedValueOnce(
+        response({ items: [usageRow(2, "client:req-1")], pages: 2 }),
+      );
+    const result = await new Xy2apiClient(
+      "https://example.com",
+      fetcher,
+    ).findUsage("synthetic", { ...lookup, apiKeyId: 9 });
+    expect(result).toEqual({ kind: "found", usageId: 2, actualCost: 0.04 });
+    const url = new URL(fetcher.mock.calls[0]?.[0]);
+    expect(url.pathname).toBe("/api/v1/usage");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      page: "1",
+      start_date: "2026-10-08",
+      end_date: "2026-10-10",
+      timezone: "UTC",
+      api_key_id: "9",
+    });
+  });
+  it("reports absent only after reading every page", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(response({ items: [usageRow(1, "client:x")] }));
+    const client = new Xy2apiClient("https://example.com", fetcher);
+    expect(await client.findUsage("synthetic", lookup)).toEqual({
+      kind: "absent",
+    });
+    expect(
+      new URL(fetcher.mock.calls[0]?.[0]).searchParams.has("api_key_id"),
+    ).toBe(false);
+  });
+  it("draws no conclusion past the page cap or without request ids", async () => {
+    const full = Array.from({ length: 100 }, (_, i) =>
+      usageRow(i, `client:${i}`),
+    );
+    const capped = vi.fn(async () => response({ items: full, pages: 9 }));
+    expect(
+      await new Xy2apiClient("https://example.com", capped).findUsage(
+        "synthetic",
+        { ...lookup, maxPages: 2 },
+      ),
+    ).toEqual({ kind: "incomplete" });
+    expect(capped).toHaveBeenCalledTimes(2);
+    const drifted = vi
+      .fn()
+      .mockResolvedValue(response({ items: [{ id: 1 }], pages: 1 }));
+    expect(
+      await new Xy2apiClient("https://example.com", drifted).findUsage(
+        "synthetic",
+        lookup,
+      ),
+    ).toEqual({ kind: "incomplete" });
+  });
 });

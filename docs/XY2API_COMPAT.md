@@ -14,6 +14,8 @@
 | B 主站 Web API | `/api/v1/auth/*`、`/api/v1/settings/public`、`/api/v1/keys`、`/api/v1/user/totp/*` | xy2api 自定义，最可能变化 | `features/xy2api/client.ts` |
 | C xy2api 专有网关扩展 | `/v1/usage` | xy2api 自定义 | `client.getUsage` |
 
+B 层用到的 Key 和用量接口：`GET /api/v1/keys`（列表）、`GET /api/v1/keys/:id`（列表给掩码时补取，`client.getKey`）、`GET /api/v1/usage`（“待核对”自动核对，`client.findUsage`，参数 `page`、`page_size`、`start_date`、`end_date`、`timezone`、`api_key_id`）。0.2.2 和 0.2.5 的源码里这几个接口和参数相同。
+
 规则：
 
 - 只有 `client.ts` 认识 B、C 两层的路径和 JSON；错误归类集中在 `errors.ts`。其他代码只用这两处导出的类型。新功能优先用 A 层。
@@ -28,7 +30,8 @@
 - **可选字段补默认值，并记录漂移**。`user.status` 缺失时按 `active` 处理。`refresh_token` 缺失时保留旧的。`expires_in` 缺失时先读 JWT 的 `exp`，读不到再按 900 秒处理。每次补值都调用 `reportWireDrift()`，日志格式是 `[xy2api-compat] wire drift scope=… detail=…`，同一个键 10 分钟内最多打印一条，计数照常累加。
 - **信封宽容**。`code` 为 `0` 或 `"0"` 都算成功。没有 `code` 但响应体是对象时，照常接受并记录漂移。响应体不是对象时报 `INVALID_RESPONSE`。
 - **列表逐条解析**。Key 列表里坏掉的条目会跳过并记录漂移，不会让整页失败。分页依次看 `pages`、`total`，都没有时以短页为准。
-- **掩码 Key**。如果主站以后只返回掩码（含 `*`、`•`、`…`、`...`，或长度小于 16），该 Key 标为 `key_unavailable`，并告警，不会拿掩码去请求网关。TODO：改用 `GET /api/v1/keys/:id` 补取。
+- **掩码 Key**。0.2.2 和 0.2.5 的列表都返回完整 Key。如果以后列表只给掩码（含 `*`、`•`、`…`、`...`，或长度小于 16），同步时逐个调用 `GET /api/v1/keys/:id` 取完整值（每次同步最多 20 个，三个并发）。单个接口也只给掩码时，沿用上次同步存下的完整 Key：xy2api 不会改同一个 Key ID 背后的值，万一改了，下一步拉模型列表会失败，Key 照常标为不可用。都没有时标为 `key_unavailable` 并告警，绝不拿掩码去请求网关。日志：`arrived masked from the key list`、`using the copy from the last full sync`。
+- **用量记录**。按请求 ID 找用量记录时，记录缺 `request_id` 字段算“无法判断”（记录漂移 `usage.list request_id_missing`），只有完整翻完、每条都能读才算“没有记录”。日期按 UTC 传，并前后各多查一天，防止新版本不认 `timezone` 参数时漏掉跨日记录。
 - **错误识别**。先看错误 id。id 是通用值（比如 `FORBIDDEN`）时，再按消息文本兜底，覆盖余额不足、Key 停用、Key 无效、用户停用、IP 拒绝五种情况。
 - **模型列表**。`{data:[{id}]}` 和 `{models:[{name}]}` 两种格式都接受。
 - **验证码**。主站启用了本站不支持的验证码类型（`*captcha*_enabled` 中除腾讯、阿里外的任何一种）时，直接提示"请联系管理员"，不发注定失败的登录请求。
@@ -114,6 +117,5 @@
 
 ## 待办
 
-- 掩码 Key 改用 `GET /api/v1/keys/:id` 补取。
-- "待核对"任务按 request id 自动查 `/api/v1/usage`，确认是否扣费。
-- 维护者设置仓库变量后，CI 才会开始跑。
+- 主站还没响应就超时的“待核对”任务没有请求 ID（xy2api 不接受客户端自带的 ID），仍需用户到主站核对。若以后 xy2api 接受客户端请求 ID，可在发请求前生成并保存，再交给 `billing-reconciler.ts` 核对。
+- 每日契约 CI 已于 10-09 开启（仓库变量 `XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE=1`）。

@@ -27,7 +27,7 @@
 - **会话**：`lib/auth-context.tsx`。所有受保护请求一旦返回 401，就调用 `emitAuthExpired()`（`lib/server-api.ts`）。AuthProvider 对同一次过期只处理一次：本地退出（`signOut({ scope: "local" })`），然后跳转到 `/login?reason=expired`。WebSocket 连续两次以 4001 关闭也走同一个事件（`hooks/use-websocket.ts`）。页面里不要自己调用 `signOut` 处理 401。
 - **账户**：`lib/account-context.tsx` 统一提供账户、余额、Key、图像模型和对话模型。生成结束后调用 `notifyGenerationSettled()` 刷新余额。`balance === null` 表示读不到，界面要显示「暂不可读」或「未选择 Key」，不能显示 `$0`。
 - **错误**：`lib/generation-errors.ts` 是错误码目录，`components/issues/issue-provider.tsx` 负责路由。余额不足、Key 不可用、「可能已扣费」这类阻断性问题弹对话框，并只给一个能解决问题的动作（充值、去设置、去主站用量页）；临时性问题用 toast。调用方只需 `report(error)` 或 `reportCode(code, message)`，不要自己写这类文案。
-- **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中表示「结算中」，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。
+- **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中表示「结算中」，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。已扣费但 Storage 暂时写不进去的任务是 `queued` 加 `error_code = storage_retrying`：`isSavingJob` 为真，界面显示「保存中」，不能取消，不占并发名额（`busyCount`），本页提交的任务会弹一次提示；服务端补传成功后自动变成已完成（服务端 M6）。
 - **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 id（主站 `openai:<model>`，自己的服务商 `custom:<providerId>:<model>`），为空表示用设置里的默认；列表里已经没有的 id（换了 Key、服务商停用或删除）会自动回到默认。
 
 ## 计费安全规则（改代码前必读）

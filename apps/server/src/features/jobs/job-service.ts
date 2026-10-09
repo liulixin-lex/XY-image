@@ -80,6 +80,17 @@ export type JobService = {
   incrementAttempt(
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
+  /**
+   * A charged image is held for another storage attempt (M6): back to queued,
+   * keeping the code/message so the UI shows "保存中" rather than a failure.
+   */
+  markRetrying(
+    jobId: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<void>;
+  /** Puts an existing job on its queue after `delaySeconds` (sync route storage retry). */
+  scheduleRedelivery(jobId: string, delaySeconds: number): Promise<void>;
 };
 
 export function createJobService(options: {
@@ -137,6 +148,18 @@ export function createJobService(options: {
         input.jobType !== "image_generation"
       )
         throw new JobServiceError("job_create_failed", "无法创建生图任务", 403);
+      // The foreign keys accept anyone's project / canvas / session, and a
+      // stranger's id on a job would also confirm that it exists.
+      if (!(await referencesInWorkspace(client, input))) {
+        console.warn(
+          `[job-service] user ${user.id} referenced a project/canvas/session outside workspace ${input.workspaceId}`,
+        );
+        throw new JobServiceError(
+          "job_create_failed",
+          "找不到这个项目或画布，请刷新后重试",
+          404,
+        );
+      }
       const queueName = QUEUE_MAP[input.jobType];
 
       const { data: job, error } = await client
@@ -242,6 +265,8 @@ export function createJobService(options: {
         .eq("id", jobId)
         .eq("created_by", user.id)
         .in("status", ["queued", "running"])
+        // A charged image waiting for storage is already paid for; keep it.
+        .neq("billing_status", "charged")
         .select(SELECT_COLS)
         .maybeSingle();
 
@@ -302,6 +327,9 @@ export function createJobService(options: {
         .update({
           status: "succeeded",
           result: result as Json,
+          // Clears storage_retrying left by a held image's earlier attempts.
+          error_code: null,
+          error_message: null,
           completed_at: new Date().toISOString(),
         })
         .eq("id", jobId);
@@ -336,6 +364,43 @@ export function createJobService(options: {
       checkStoreError(error);
     },
 
+    async markRetrying(jobId, errorCode, errorMessage) {
+      const admin = options.getAdminClient();
+      const { error } = await admin
+        .from("background_jobs")
+        .update({
+          status: "queued",
+          error_code: errorCode,
+          error_message: errorMessage,
+        })
+        .eq("id", jobId)
+        .in("status", ["queued", "running"]);
+      checkStoreError(error);
+    },
+
+    async scheduleRedelivery(jobId, delaySeconds) {
+      const { data: job, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .select("id, queue_name, job_type, workspace_id, canvas_id, session_id")
+        .eq("id", jobId)
+        .single();
+      checkStoreError(error);
+      if (!job)
+        throw new JobServiceError("job_not_found", "Job not found.", 404);
+      await options.pgmq.send(
+        job.queue_name,
+        {
+          job_id: job.id,
+          job_type: job.job_type,
+          workspace_id: job.workspace_id,
+          ...(job.canvas_id ? { canvas_id: job.canvas_id } : {}),
+          ...(job.session_id ? { session_id: job.session_id } : {}),
+        },
+        delaySeconds,
+      );
+    },
+
     async incrementAttempt(jobId) {
       const admin = options.getAdminClient();
       // NOTE: increment_job_attempt may not be in generated Supabase types yet
@@ -365,3 +430,53 @@ export function createJobService(options: {
     },
   };
 }
+
+/**
+ * True when every project, canvas and session the job points at lives in the
+ * job's workspace (canvas → project, session → canvas → project).
+ */
+async function referencesInWorkspace(
+  client: ReturnType<typeof integrationClient>,
+  input: Pick<
+    CreateJobInput,
+    "workspaceId" | "projectId" | "canvasId" | "sessionId"
+  >,
+): Promise<boolean> {
+  const projects = new Set<string>();
+  const canvases = new Set<string>();
+  if (input.projectId) projects.add(input.projectId);
+  if (input.canvasId) canvases.add(input.canvasId);
+  if (input.sessionId) {
+    const { data, error } = await client
+      .from("chat_sessions")
+      .select("canvas_id")
+      .eq("id", input.sessionId)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+    canvases.add(data.canvas_id);
+  }
+  for (const id of canvases) {
+    const { data, error } = await client
+      .from("canvases")
+      .select("project_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+    projects.add(data.project_id);
+  }
+  for (const id of projects) {
+    const { data, error } = await client
+      .from("projects")
+      .select("id")
+      .eq("id", id)
+      .eq("workspace_id", input.workspaceId)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+  }
+  return true;
+}
+const lookupFailed = () =>
+  new JobServiceError("job_create_failed", "Failed to create job record.", 500);

@@ -3,8 +3,12 @@ import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { JobService } from "../features/jobs/job-service.js";
-import { BillingGuardError } from "../features/xy2api/errors.js";
+import {
+  BillingGuardError,
+  DeliveryPendingError,
+} from "../features/xy2api/errors.js";
 import { executeImageJob } from "../features/xy2api/image-runner.js";
+import type { PendingDeliveryStore } from "../features/xy2api/pending-delivery.js";
 import type { Xy2apiServices } from "../features/xy2api/services.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
@@ -26,6 +30,8 @@ export function registerGenerateRoutes(
     xy2api: Xy2apiServices;
     env: ServerEnv;
     getAdminClient: () => AdminSupabaseClient;
+    /** Charged images held after a storage failure; the worker retries them (M6). */
+    deliveries?: PendingDeliveryStore;
   },
 ) {
   app.post("/api/agent/generate-image", async (request, reply) => {
@@ -75,7 +81,27 @@ export function registerGenerateRoutes(
         width: result.width,
         height: result.height,
       };
-    } catch (error) {
+    } catch (caught) {
+      let error = caught;
+      if (jobId && error instanceof DeliveryPendingError && options.jobService)
+        try {
+          // The image is charged and held; hand the storage retries to the worker.
+          await options.jobService.markRetrying(
+            jobId,
+            error.code,
+            error.message,
+          );
+          await options.jobService.scheduleRedelivery(
+            jobId,
+            error.retryInSeconds,
+          );
+          return sendAccountError(reply, error);
+        } catch {
+          console.error(
+            `[generate-image] job ${jobId} storage retry not scheduled; image stays held for manual recovery`,
+          );
+          error = new BillingGuardError("storage_failed", 502);
+        }
       if (jobId)
         await options.jobService
           ?.markDeadLetter(

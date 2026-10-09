@@ -114,6 +114,7 @@ export const gatewayMessages = {
   run_image_limit: "本轮生图次数已达上限，请开启新一轮对话",
   concurrency_limit: "当前生图任务已达上限，请等待完成",
   storage_failed: "图片已生成但保存失败，请联系管理员并到主站核对用量",
+  storage_retrying: "图片已生成并扣费，正在重新保存，稍后会出现在生成记录里",
 } as const;
 export type GatewayCode = keyof typeof gatewayMessages;
 export type GatewayFailure = {
@@ -218,6 +219,18 @@ export class BillingGuardError extends Error {
   }
 }
 
+/**
+ * Not a failure: the image is charged and held in xy2api_pending_deliveries
+ * because storage refused it. The worker retries the upload after
+ * `retryInSeconds` (M6); xy2api is never called again.
+ */
+export class DeliveryPendingError extends BillingGuardError {
+  constructor(readonly retryInSeconds: number) {
+    super("storage_retrying", 502);
+    this.name = "DeliveryPendingError";
+  }
+}
+
 export class GatewayError extends BillingGuardError {
   constructor(readonly failure: GatewayFailure) {
     super(
@@ -252,4 +265,19 @@ export function sanitizeGatewayError(error: unknown): GatewayError {
       body: e.error ? { error: e.error } : undefined,
     }),
   );
+}
+
+/**
+ * xy2api answered this call (its X-Client-Request-ID arrived), so a 待核对
+ * outcome can be settled later from the usage list (billing-reconciler.ts).
+ * Keeps the mapped failure and adds the id.
+ */
+export function withRequestId(
+  error: unknown,
+  requestId: string | null | undefined,
+): GatewayError {
+  const gateway = sanitizeGatewayError(error);
+  return requestId && !gateway.failure.requestId
+    ? new GatewayError({ ...gateway.failure, requestId })
+    : gateway;
 }

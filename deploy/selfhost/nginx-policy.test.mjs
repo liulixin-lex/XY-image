@@ -7,6 +7,7 @@ import net from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { realIpBlock } from "./prepare.mjs";
 import { createTestDirectory } from "./test-sandbox.mjs";
 
 async function unusedLoopbackPort() {
@@ -75,9 +76,11 @@ test(
   async () => {
     const root = await createTestDirectory("nginx-policy-");
     const forwarded = [];
+    const clientAddresses = [];
     const upstream = http.createServer((incoming, response) => {
       incoming.resume();
       forwarded.push({ method: incoming.method, url: incoming.url });
+      clientAddresses.push(incoming.headers["x-forwarded-for"]);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(forwarded.at(-1)));
     });
@@ -107,6 +110,8 @@ test(
         .replaceAll("listen 443 ssl;", `listen 127.0.0.1:${nginxPort};`)
         .replaceAll("__API_HOST__", "api.test.invalid")
         .replaceAll("__SUPABASE_HOST__", "supabase.test.invalid")
+        // The Cloudflare variant, so its realip block is checked too.
+        .replace("# __REAL_IP__", realIpBlock("cloudflare"))
         .replace(/^\s*ssl_certificate(?:_key)?\s+[^;]+;\s*$/gm, "")
         .replaceAll("http://127.0.0.1:3101", `http://127.0.0.1:${upstreamPort}`)
         .replaceAll(
@@ -291,6 +296,16 @@ test(
         api.status,
         200,
         "The independent application API virtual host remains available",
+      );
+      await request(nginxPort, "POST", "/api/synthetic", {
+        host: "api.test.invalid",
+        "cf-connecting-ip": "203.0.113.9",
+        "x-forwarded-for": "203.0.113.9",
+      });
+      assert.equal(
+        clientAddresses.at(-1),
+        "127.0.0.1",
+        "Only CDN edges may name the client; a direct caller cannot",
       );
       assert.equal(
         (

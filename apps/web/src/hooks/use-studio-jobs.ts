@@ -18,6 +18,7 @@ import {
   type ImageJobView,
   isActiveJob,
   isFailedJob,
+  isSavingJob,
   toImageJobView,
 } from "@/lib/image-jobs";
 import {
@@ -48,6 +49,7 @@ export function useStudioJobs() {
   // their failures are announced. Older rows stay quiet.
   const sessionJobs = useRef(new Set<string>());
   const settled = useRef(new Set<string>());
+  const announcedSaving = useRef(new Set<string>());
   const [justDeveloped, setJustDeveloped] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -62,6 +64,10 @@ export function useStudioJobs() {
       const developed: string[] = [];
       for (const job of views) {
         if (!sessionJobs.current.has(job.id) || settled.current.has(job.id)) continue;
+        if (isSavingJob(job) && !announcedSaving.current.has(job.id)) {
+          announcedSaving.current.add(job.id);
+          reportCode("storage_retrying", job.errorMessage);
+        }
         if (isActiveJob(job)) continue;
         settled.current.add(job.id);
         notifyGenerationSettled();
@@ -89,6 +95,12 @@ export function useStudioJobs() {
   }, [session?.user.id]);
 
   const activeCount = useMemo(() => jobs.filter(isActiveJob).length, [jobs]);
+  // Jobs holding a generation slot. A saving job is already paid and only
+  // waits for storage; the server does not count it toward the limit either.
+  const busyCount = useMemo(
+    () => jobs.filter((job) => isActiveJob(job) && !isSavingJob(job)).length,
+    [jobs],
+  );
 
   // Poll while something develops; pause when the tab is hidden.
   useEffect(() => {
@@ -169,6 +181,7 @@ export function useStudioJobs() {
     submitting,
     cancel,
     activeCount,
+    busyCount,
     justDeveloped,
   };
 }

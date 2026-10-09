@@ -8,6 +8,7 @@ import {
   matchImageModels,
 } from "./catalog.js";
 import type { RemoteKey, Xy2apiClient } from "./client.js";
+import { isMaskedKey } from "./compat.js";
 import {
   BillingGuardError,
   type GatewayCode,
@@ -42,6 +43,8 @@ const KEY_LEVEL_DISCOVERY_FAILURES = new Set<GatewayCode>([
 ]);
 // Minimum gap between automatic re-discovery attempts for one user.
 const REDISCOVERY_GAP_MS = 15_000;
+// GET /api/v1/keys/:id reads per sync when the list returns masked keys.
+const MAX_KEY_DETAIL_READS = 20;
 
 export type ImageCredential = {
   keyId: number;
@@ -112,8 +115,8 @@ export class KeyService {
     return work;
   }
   private async sync(userId: string): Promise<void> {
-    const remote = await this.accounts.withAccess(userId, (token) =>
-      this.client.listKeys(token),
+    const remote = await this.accounts.withAccess(userId, async (token) =>
+      this.unmask(token, await this.client.listKeys(token)),
     );
     const previous = new Map(
       (await this.rows(userId)).map((row) => [row.key_id, row]),
@@ -186,6 +189,42 @@ export class KeyService {
           : (chat?.chat_models[0] ?? null),
     });
   }
+  /**
+   * xy2api 0.2.2 and 0.2.5 list full keys. If a release starts masking the
+   * list, read each masked key from GET /api/v1/keys/:id (three at a time, at
+   * most MAX_KEY_DETAIL_READS per sync). Keys that stay masked are handled in
+   * syncRow.
+   */
+  private async unmask(token: string, keys: RemoteKey[]): Promise<RemoteKey[]> {
+    const masked = keys
+      .filter((key) => key.masked)
+      .slice(0, MAX_KEY_DETAIL_READS);
+    if (!masked.length) return keys;
+    const full = new Map<number, RemoteKey>();
+    for (let index = 0; index < masked.length; index += 3)
+      for (const key of await Promise.all(
+        masked
+          .slice(index, index + 3)
+          .map((key) =>
+            this.client.getKey(token, key.id).catch(() => undefined),
+          ),
+      ))
+        if (key && !key.masked) full.set(key.id, key);
+    console.warn(
+      `[xy2api] ${masked.length} key(s) arrived masked from the key list; ${full.size} read in full from GET /api/v1/keys/:id`,
+    );
+    return keys.map((key) => full.get(key.id) ?? key);
+  }
+  /** The full key stored by an earlier sync, if there is one. */
+  private keptSecret(previous: KeyRow | undefined): string | null {
+    if (!previous) return null;
+    try {
+      const secret = this.box.openSecret(previous.secret_enc);
+      return isMaskedKey(secret) ? null : secret;
+    } catch {
+      return null;
+    }
+  }
   private async syncRow(
     userId: string,
     key: RemoteKey,
@@ -204,11 +243,18 @@ export class KeyService {
     let invalid: string | null = null;
     // Why model discovery could not run this time (key itself not at fault).
     let deferred: string | null = null;
-    if (key.masked) {
-      // TODO(xy2api-compat): if a future xy2api only returns masked keys from
-      // the list endpoint, fetch the full key via GET /api/v1/keys/:id here.
+    // Neither the list nor GET /api/v1/keys/:id gave the full key. xy2api
+    // never changes the value behind a key id, so an earlier full copy still
+    // works; a wrong one fails discovery below like any revoked key.
+    const kept = key.masked ? this.keptSecret(previous) : null;
+    const secret = kept ?? key.key;
+    if (kept)
       console.warn(
-        `[xy2api] key ${key.id} arrived masked from the main site; marking unusable`,
+        `[xy2api] key ${key.id} arrived masked from the main site; using the copy from the last full sync`,
+      );
+    if (isMaskedKey(secret)) {
+      console.warn(
+        `[xy2api] key ${key.id} arrived masked from the main site and no full copy is stored; marking unusable`,
       );
       invalid = "key_unavailable";
     } else if (
@@ -217,7 +263,7 @@ export class KeyService {
       group?.status === "active"
     ) {
       try {
-        models = await this.client.listModels(key.key);
+        models = await this.client.listModels(secret);
       } catch (error) {
         const code =
           error instanceof Xy2apiError && [401, 403].includes(error.status)
@@ -253,10 +299,10 @@ export class KeyService {
       key_id: key.id,
       name: key.name,
       masked_key:
-        key.key.length > 10
-          ? `${key.key.slice(0, 6)}…${key.key.slice(-4)}`
+        secret.length > 10
+          ? `${secret.slice(0, 6)}…${secret.slice(-4)}`
           : "••••••",
-      secret_enc: this.box.sealSecret(key.key),
+      secret_enc: this.box.sealSecret(secret),
       status: key.status,
       group_id: group?.id ?? null,
       group_name: group?.name ?? null,

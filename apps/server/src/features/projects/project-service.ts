@@ -61,6 +61,7 @@ export type ProjectService = {
 export class ProjectServiceError extends Error {
   readonly statusCode: number;
   readonly code:
+    | "brand_kit_not_found"
     | "project_create_failed"
     | "project_delete_failed"
     | "project_not_found"
@@ -70,6 +71,7 @@ export class ProjectServiceError extends Error {
 
   constructor(
     code:
+      | "brand_kit_not_found"
       | "project_create_failed"
       | "project_delete_failed"
       | "project_not_found"
@@ -336,9 +338,33 @@ export function createProjectService(options: {
         return;
       }
 
+      // The foreign key accepts any user's kit; RLS on brand_kits only shows
+      // the caller's own, so check it here.
+      if (input.brand_kit_id) {
+        const { data: kit, error: kitError } = await client
+          .from("brand_kits")
+          .select("id")
+          .eq("id", input.brand_kit_id)
+          .maybeSingle();
+        if (kitError) {
+          throw new ProjectServiceError(
+            "project_update_failed",
+            PROJECT_UPDATE_FAILED_MESSAGE,
+            500,
+          );
+        }
+        if (!kit) {
+          throw new ProjectServiceError(
+            "brand_kit_not_found",
+            "Brand kit not found.",
+            404,
+          );
+        }
+      }
+
       const { error: updateError, count } = await client
         .from("projects")
-        .update(payload)
+        .update(payload, { count: "exact" })
         .eq("id", projectId);
 
       if (updateError) {

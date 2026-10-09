@@ -32,6 +32,13 @@ export type CanvasService = {
  */
 const OSS_MARKER_PREFIX = "oss://";
 const CANVAS_FILES_BUCKET = "project-assets";
+// TODO(agent01): extraction never succeeds today. project-assets RLS only
+// accepts paths whose first folder is a workspace id the user administers,
+// and `canvas-files/<canvasId>/…` is not, so every upload is refused and the
+// image stays inline as base64 in canvases.content (lab, 10-09: 0 objects
+// under canvas-files/, 2 canvases with inline data URLs). Fix by writing to
+// `<workspaceId>/canvas-files/<canvasId>/…` (canvas → project → workspace)
+// and keep reading the old markers.
 
 export function createCanvasService(options: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
@@ -68,13 +75,19 @@ export function createCanvasService(options: {
       // Extract base64 files to Storage, replacing dataURLs with oss:// markers
       const leanContent = await extractFilesToStorage(client, canvasId, content);
 
-      const { error } = await client
+      const { data, error } = await client
         .from("canvases")
         .update({ content: leanContent as unknown as Json })
-        .eq("id", canvasId);
+        .eq("id", canvasId)
+        .select("id");
 
       if (error) {
         throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+      }
+      // RLS hides canvases the user cannot write (another user's, or deleted
+      // in another tab): nothing was saved, so do not report success.
+      if (!data?.length) {
+        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
       }
     },
   };

@@ -15,6 +15,12 @@ import { loadServerEnv } from "./config/env.js";
 import { validateProductionEnv } from "./config/production.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import {
+  createBillingReconciler,
+  createReconcileStore,
+} from "./features/xy2api/billing-reconciler.js";
+import { createPendingDeliveryStore } from "./features/xy2api/pending-delivery.js";
+import { createXy2apiServices } from "./features/xy2api/services.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { closeSupabaseTransport } from "./supabase/transport.js";
@@ -61,12 +67,28 @@ async function main() {
     pgmq,
   });
 
+  const deliveries = createPendingDeliveryStore(env.supabaseDbUrl);
+
+  // Settles 待核对 image jobs from the xy2api usage list (billing-reconciler.ts).
+  const reconcileServices = env.xy2apiBillingReconcile
+    ? createXy2apiServices(env, getAdminClient)
+    : undefined;
+  const reconciler = reconcileServices
+    ? createBillingReconciler({
+        store: createReconcileStore(env.supabaseDbUrl),
+        client: reconcileServices.client,
+        accounts: reconcileServices.accounts,
+      })
+    : undefined;
+  reconciler?.start();
+
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
     pgmq,
     getAdminClient,
     env,
+    deliveries,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {
@@ -122,7 +144,10 @@ async function main() {
     if (allTasks.length > 0) {
       await Promise.allSettled(allTasks);
     }
+    await reconciler?.stop();
+    await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
+    await deliveries.close();
     await closeSupabaseTransport();
     console.log(`${tag} Shutdown complete.`);
     process.exit(0);

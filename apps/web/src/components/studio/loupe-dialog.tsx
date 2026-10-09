@@ -10,7 +10,7 @@ import {
 
 import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, STATUS_LABEL, isActiveJob, isFailedJob } from "@/lib/image-jobs";
+import { type ImageJobView, isActiveJob, isFailedJob, jobStatusLabel } from "@/lib/image-jobs";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 
 import { BillingBadge, needsReconcile } from "../billing/billing-badge";
@@ -62,7 +62,7 @@ export function LoupeDialog({
                 />
               ) : (
                 <p className="text-sm text-fg-muted">
-                  {issue ? issue.title : STATUS_LABEL[job.status]}
+                  {issue ? issue.title : jobStatusLabel(job)}
                 </p>
               )}
             </div>
@@ -70,7 +70,7 @@ export function LoupeDialog({
             <div className="flex min-h-0 flex-col border-t border-line md:border-t-0 md:border-l">
               <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3.5 pr-14 text-[12.5px] text-fg-soft">
                 <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 font-medium text-fg">
-                  {STATUS_LABEL[job.status]}
+                  {jobStatusLabel(job)}
                 </span>
                 <span className="truncate">{modelName}</span>
                 <span className="shrink-0 font-mono text-[12px] text-fg-muted">
@@ -105,7 +105,7 @@ export function LoupeDialog({
 
                 <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-[13px]">
                   <dt className="text-fg-muted">状态</dt>
-                  <dd className="text-fg">{STATUS_LABEL[job.status]}</dd>
+                  <dd className="text-fg">{jobStatusLabel(job)}</dd>
                   <dt className="text-fg-muted">模型</dt>
                   <dd className="text-fg">{modelName}</dd>
                   <dt className="text-fg-muted">规格</dt>

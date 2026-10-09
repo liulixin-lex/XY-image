@@ -3,9 +3,21 @@ import type { ServerEnv } from "../../config/env.js";
 import { generateImage } from "../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../generation/providers/registry.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import { createSupabaseFetch } from "../../supabase/transport.js";
+import { describeErrorForLog } from "../../utils/error-sanitizer.js";
 import { imagePayloadSchema } from "./billing-guard.js";
 import { findImageModel } from "./catalog.js";
-import { BillingGuardError, GatewayError, mapGatewayError } from "./errors.js";
+import {
+  BillingGuardError,
+  DeliveryPendingError,
+  GatewayError,
+  mapGatewayError,
+} from "./errors.js";
+import {
+  MAX_DELIVERY_ATTEMPTS,
+  type PendingDeliveryStore,
+  deliveryRetrySeconds,
+} from "./pending-delivery.js";
 import type { Xy2apiServices } from "./services.js";
 import { checkStoreError, integrationClient } from "./store.js";
 
@@ -16,8 +28,10 @@ export async function executeImageJob(
     env: ServerEnv;
     xy2api: Xy2apiServices;
     renewVt?: (seconds: number) => Promise<void>;
+    /** Keeps charged images whose storage write failed (M6). Without it they fail as storage_failed. */
+    deliveries?: PendingDeliveryStore;
   },
-) {
+): Promise<ImageJobResult> {
   const admin = options.getAdminClient();
   const db = integrationClient(admin);
   const { data: row, error } = await db
@@ -35,6 +49,9 @@ export async function executeImageJob(
   )
     throw new BillingGuardError("invalid_input");
   if (["pending", "charged", "unknown"].includes(row.billing_status)) {
+    // A charged image held after a storage failure: upload the held copy.
+    if (row.billing_status === "charged" && options.deliveries)
+      return redeliver(jobId, row, options.deliveries, admin);
     // Preserve confirmed billing after a crash during storage/result persistence.
     // Only a still-pending dispatch has an uncertain outcome.
     if (row.billing_status === "pending") {
@@ -107,7 +124,10 @@ export async function executeImageJob(
           apiKey: credential.apiKey,
           baseUrl: options.env.xy2apiBaseUrl,
           ...(options.env.supabaseUrl
-            ? { assetOrigin: options.env.supabaseUrl }
+            ? {
+                assetOrigin: options.env.supabaseUrl,
+                assetFetch: createSupabaseFetch(options.env),
+              }
             : {}),
         },
       );
@@ -165,46 +185,203 @@ export async function executeImageJob(
         : generated.mimeType === "image/webp"
           ? "webp"
           : "png";
-    const objectPath = `${row.workspace_id}/generated/${jobId}.${extension}`;
-    let uploaded = false;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const result = await admin.storage
-          .from("project-assets")
-          .upload(objectPath, bytes, {
-            contentType: generated.mimeType,
-            upsert: true,
-          });
-        if (!result.error) {
-          uploaded = true;
-          break;
-        }
-      } catch {
-        /* Retry storage only; never regenerate the image. */
-      }
-    }
-    if (!uploaded) throw new BillingGuardError("storage_failed", 502);
-    const assetId = randomUUID();
-    const { error: assetError } = await admin.from("asset_objects").insert({
-      id: assetId,
-      workspace_id: row.workspace_id,
-      bucket: "project-assets",
-      object_path: objectPath,
-      mime_type: generated.mimeType,
-      byte_size: bytes.length,
-      created_by: row.created_by,
-    });
-    if (assetError) throw new BillingGuardError("storage_failed", 502);
-    return {
-      asset_id: assetId,
-      signed_url: admin.storage.from("project-assets").getPublicUrl(objectPath)
-        .data.publicUrl,
-      object_path: objectPath,
+    const image = {
+      workspaceId: row.workspace_id,
+      createdBy: row.created_by,
+      objectPath: `${row.workspace_id}/generated/${jobId}.${extension}`,
+      mimeType: generated.mimeType,
       width: generated.width,
       height: generated.height,
-      mime_type: generated.mimeType,
+      bytes,
     };
+    try {
+      return await deliver(admin, image);
+    } catch (error) {
+      const reason = describeErrorForLog(error);
+      console.error(
+        `[image-runner] job ${jobId} storage write failed: ${reason}`,
+      );
+      throw await holdForRetry(jobId, image, reason, options.deliveries);
+    }
   } finally {
     clearInterval(timer);
+  }
+}
+
+export type ImageJobResult = {
+  asset_id: string;
+  signed_url: string;
+  object_path: string;
+  width: number;
+  height: number;
+  mime_type: string;
+};
+
+type DeliveryImage = {
+  workspaceId: string;
+  createdBy: string;
+  objectPath: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  bytes: Buffer;
+};
+
+/**
+ * Writes a generated image to project-assets and records its asset row.
+ * Safe to repeat for the same path: the upload overwrites and an existing
+ * asset row is reused, so a retried delivery never duplicates anything.
+ */
+async function deliver(
+  admin: AdminSupabaseClient,
+  image: DeliveryImage,
+): Promise<ImageJobResult> {
+  let uploadError: unknown;
+  let uploaded = false;
+  for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
+    try {
+      const result = await admin.storage
+        .from("project-assets")
+        .upload(image.objectPath, image.bytes, {
+          contentType: image.mimeType,
+          upsert: true,
+        });
+      uploaded = !result.error;
+      uploadError = result.error;
+    } catch (error) {
+      /* Retry storage only; never regenerate the image. */
+      uploadError = error;
+    }
+  }
+  if (!uploaded) throw new StorageWriteError("upload", uploadError);
+  const { data: existing, error: findError } = await admin
+    .from("asset_objects")
+    .select("id")
+    .eq("bucket", "project-assets")
+    .eq("object_path", image.objectPath)
+    .maybeSingle();
+  if (findError) throw new StorageWriteError("asset lookup", findError);
+  let assetId = existing?.id;
+  if (!assetId) {
+    assetId = randomUUID();
+    const { error: assetError } = await admin.from("asset_objects").insert({
+      id: assetId,
+      workspace_id: image.workspaceId,
+      bucket: "project-assets",
+      object_path: image.objectPath,
+      mime_type: image.mimeType,
+      byte_size: image.bytes.length,
+      created_by: image.createdBy,
+    });
+    if (assetError) throw new StorageWriteError("asset row", assetError);
+  }
+  return {
+    asset_id: assetId,
+    signed_url: admin.storage
+      .from("project-assets")
+      .getPublicUrl(image.objectPath).data.publicUrl,
+    object_path: image.objectPath,
+    width: image.width,
+    height: image.height,
+    mime_type: image.mimeType,
+  };
+}
+
+class StorageWriteError extends Error {
+  constructor(step: string, cause: unknown) {
+    super(
+      `${step}: ${
+        cause && typeof cause === "object" && "message" in cause
+          ? String(cause.message)
+          : String(cause)
+      }`,
+    );
+    this.name = "StorageWriteError";
+  }
+}
+
+/** Keeps a charged image whose first delivery failed; returns the error to throw. */
+async function holdForRetry(
+  jobId: string,
+  image: DeliveryImage,
+  reason: string,
+  deliveries: PendingDeliveryStore | undefined,
+): Promise<BillingGuardError> {
+  if (!deliveries) return new BillingGuardError("storage_failed", 502);
+  try {
+    await deliveries.hold(
+      {
+        jobId,
+        objectPath: image.objectPath,
+        mimeType: image.mimeType,
+        width: image.width,
+        height: image.height,
+        bytes: image.bytes,
+      },
+      reason,
+    );
+  } catch (error) {
+    console.error(
+      `[image-runner] job ${jobId} charged image could not be held, it is lost: ${describeErrorForLog(error)}`,
+    );
+    return new BillingGuardError("storage_failed", 502);
+  }
+  const wait = deliveryRetrySeconds(1);
+  console.warn(
+    `[image-runner] job ${jobId} image held; storage retry 2/${MAX_DELIVERY_ATTEMPTS} in ${wait}s`,
+  );
+  return new DeliveryPendingError(wait);
+}
+
+/**
+ * Uploads the held copy of a charged image. The held row is removed by the
+ * worker only after the job's success is recorded, so a crash in between
+ * just delivers the same bytes once more.
+ */
+async function redeliver(
+  jobId: string,
+  row: { workspace_id: string; created_by: string },
+  deliveries: PendingDeliveryStore,
+  admin: AdminSupabaseClient,
+): Promise<ImageJobResult> {
+  let held: Awaited<ReturnType<PendingDeliveryStore["get"]>>;
+  try {
+    held = await deliveries.get(jobId);
+  } catch (error) {
+    // The database is unreachable; try again later rather than give up on a paid image.
+    console.error(
+      `[image-runner] job ${jobId} held image unreadable: ${describeErrorForLog(error)}`,
+    );
+    throw new DeliveryPendingError(60);
+  }
+  // Charged without a held copy: a crash before the hold. Billing is kept for reconciliation.
+  if (!held) throw new GatewayError(mapGatewayError({}));
+  try {
+    const result = await deliver(admin, {
+      ...held,
+      workspaceId: row.workspace_id,
+      createdBy: row.created_by,
+    });
+    console.log(
+      `[image-runner] job ${jobId} delivered on storage attempt ${held.attempts + 1}`,
+    );
+    return result;
+  } catch (error) {
+    const reason = describeErrorForLog(error);
+    const attempts = await deliveries
+      .recordFailure(jobId, reason)
+      .catch(() => held.attempts + 1);
+    if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+      // TODO(agent01): alerting on this line; recovery steps in docs/XY2API_OPERATIONS.md.
+      console.error(
+        `[image-runner] job ${jobId} storage failed ${attempts} times; image kept in xy2api_pending_deliveries for manual recovery: ${reason}`,
+      );
+      throw new BillingGuardError("storage_failed", 502);
+    }
+    const wait = deliveryRetrySeconds(attempts);
+    console.warn(
+      `[image-runner] job ${jobId} storage attempt ${attempts}/${MAX_DELIVERY_ATTEMPTS} failed, next in ${wait}s: ${reason}`,
+    );
+    throw new DeliveryPendingError(wait);
   }
 }

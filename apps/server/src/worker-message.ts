@@ -3,7 +3,10 @@ import {
   type ExecutorContext,
   getExecutor,
 } from "./features/jobs/job-executor.js";
-import { BillingGuardError } from "./features/xy2api/errors.js";
+import {
+  BillingGuardError,
+  DeliveryPendingError,
+} from "./features/xy2api/errors.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
 
 const QUEUE_TO_TYPE: Record<string, BackgroundJobType> = {
@@ -63,6 +66,16 @@ export async function processMessage(
   try {
     result = await executor(jobId, msg.message as Record<string, unknown>, ctx);
   } catch (err) {
+    if (err instanceof DeliveryPendingError) {
+      // The charged image is held in the database. Keep the message and let it
+      // come back for the next storage attempt; xy2api is not called again.
+      await ctx.jobService.markRetrying(jobId, err.code, err.message);
+      await ctx.pgmq.setVt(queue, msg.msg_id, err.retryInSeconds);
+      console.warn(
+        `${tag} Job ${jobId} image held; storage retry in ${err.retryInSeconds}s`,
+      );
+      return;
+    }
     const errorCode =
       err instanceof BillingGuardError ? err.code : "upstream_unknown";
     const errorMessage =
@@ -78,6 +91,12 @@ export async function processMessage(
   // A persistence or queue-ack failure must never overwrite a generated result
   // with a failed job. Redelivery reads durable state and never resends billing.
   await ctx.jobService.markSucceeded(jobId, result);
+  // Already charged when this delivery started: the result came from a held
+  // image, whose copy can go now that success is recorded.
+  if (current.billing_status === "charged")
+    await ctx.deliveries?.remove(jobId).catch(() => {
+      console.error(`${tag} Job ${jobId} held image not removed`);
+    });
   await ctx.pgmq.deleteMsg(queue, msg.msg_id);
   console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
 }

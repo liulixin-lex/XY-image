@@ -9,6 +9,7 @@ import {
   GatewayError,
   mapGatewayError,
   record,
+  withRequestId,
 } from "../../features/xy2api/errors.js";
 import type {
   GeneratedImage,
@@ -56,6 +57,9 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         },
       });
     }
+    // xy2api's id for this call, kept on every failure after it answered so a
+    // 待核对 job can be matched to its usage row.
+    let requestId: string | undefined;
     try {
       const response = await client.models.generateContent({
         model: params.model,
@@ -73,8 +77,7 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         },
       });
       const candidate = response.candidates?.[0];
-      const requestId =
-        response.sdkHttpResponse?.headers?.["x-client-request-id"];
+      requestId = response.sdkHttpResponse?.headers?.["x-client-request-id"];
       if (
         response.promptFeedback?.blockReason ||
         /SAFETY|PROHIBITED|RECITATION/.test(candidate?.finishReason ?? "")
@@ -87,7 +90,6 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
           billing: "unknown",
           userMessage:
             "内容未通过审核，主站可能已计费，请修改提示词，并到主站用量页核对",
-          ...(requestId ? { requestId } : {}),
         });
       const inline = candidate?.content?.parts?.find(
         (part) => part.inlineData?.data,
@@ -106,6 +108,7 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
+      if (error instanceof GatewayError) throw withRequestId(error, requestId);
       if (error instanceof BillingGuardError) throw error;
       const e = record(error);
       let body: unknown;
@@ -114,11 +117,14 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
       } catch {
         body = undefined;
       }
-      throw new GatewayError(
-        mapGatewayError({
-          status: typeof e.status === "number" ? e.status : undefined,
-          body,
-        }),
+      throw withRequestId(
+        new GatewayError(
+          mapGatewayError({
+            status: typeof e.status === "number" ? e.status : undefined,
+            body,
+          }),
+        ),
+        requestId,
       );
     }
   }

@@ -15,6 +15,7 @@ import {
   isActiveJob,
   isFailedJob,
   jobAspect,
+  jobStatusLabel,
 } from "@/lib/image-jobs";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
@@ -270,7 +271,7 @@ export function RecentStrip({
               <span
                 key={job.id}
                 role="img"
-                aria-label={job.status === "running" ? "生成中" : "排队中"}
+                aria-label={jobStatusLabel(job)}
                 className="flex h-[72px] w-14 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.06] shadow-[0_0_0_1px_rgb(var(--amb)/0.5)]"
               >
                 <svg viewBox="0 0 36 36" className="size-7 animate-spin [animation-duration:1.4s] motion-reduce:animate-none" aria-hidden>

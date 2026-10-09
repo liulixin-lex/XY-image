@@ -24,6 +24,46 @@ function token(role, secret) {
   const body = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ role, iss: "supabase", iat: now, exp: now + 10 * 365 * 86400 })}`;
   return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
 }
+// Cloudflare's published edge ranges (https://www.cloudflare.com/ips/, read
+// 2026-10-09). TODO: refresh when Cloudflare announces a change. A stale list
+// only leaves some edges untrusted (they share one limiter budget); it never
+// lets a client choose its own address.
+const CLOUDFLARE_RANGES = [
+  "173.245.48.0/20",
+  "103.21.244.0/22",
+  "103.22.200.0/22",
+  "103.31.4.0/22",
+  "141.101.64.0/18",
+  "108.162.192.0/18",
+  "190.93.240.0/20",
+  "188.114.96.0/20",
+  "197.234.240.0/22",
+  "198.41.128.0/17",
+  "162.158.0.0/15",
+  "104.16.0.0/13",
+  "104.24.0.0/14",
+  "172.64.0.0/13",
+  "131.0.72.0/22",
+  "2400:cb00::/32",
+  "2606:4700::/32",
+  "2803:f800::/32",
+  "2405:b500::/32",
+  "2405:8100::/32",
+  "2a06:98c0::/29",
+  "2c0f:f248::/32",
+];
+/** Nginx realip settings for the CDN in front of the public hosts (M3). */
+export function realIpBlock(cdn) {
+  if (!cdn)
+    return "# No CDN: $remote_addr is the client. Behind Cloudflare, prepare with --cdn cloudflare.";
+  if (cdn !== "cloudflare")
+    throw new Error("Unsupported cdn; use cloudflare or omit it");
+  return [
+    "# Cloudflare in front (prepare --cdn cloudflare).",
+    ...CLOUDFLARE_RANGES.map((range) => `set_real_ip_from ${range};`),
+    "real_ip_header CF-Connecting-IP;",
+  ].join("\n");
+}
 const envText = (values) =>
   `${Object.entries(values)
     .map(([k, v]) => {
@@ -42,6 +82,7 @@ export async function prepare(options) {
   const web = origin(options.webOrigin, "web-origin");
   const api = origin(options.apiOrigin, "api-origin");
   const supabase = origin(options.supabaseOrigin, "supabase-origin");
+  const realIp = realIpBlock(options.cdn);
   if (new Set([web, api, supabase]).size !== 3)
     throw new Error(
       "Use three distinct public origins with this deployment template",
@@ -304,6 +345,7 @@ export async function prepare(options) {
           web,
           api,
           supabase,
+          cdn: options.cdn ?? null,
         },
         null,
         2,
@@ -314,7 +356,8 @@ export async function prepare(options) {
       await readFile(path.join(here, "nginx.conf.template"), "utf8")
     )
       .replaceAll("__API_HOST__", new URL(api).hostname)
-      .replaceAll("__SUPABASE_HOST__", new URL(supabase).hostname);
+      .replaceAll("__SUPABASE_HOST__", new URL(supabase).hostname)
+      .replace("# __REAL_IP__", realIp);
     await writeFile(path.join(target, "nginx.conf"), nginx, { mode: 0o600 });
     return {
       directory: target,
@@ -348,6 +391,7 @@ if (
         "supabase-origin": { type: "string" },
         "sso-domain": { type: "string" },
         project: { type: "string" },
+        cdn: { type: "string" },
       },
     });
     for (const k of [
@@ -367,6 +411,7 @@ if (
           supabaseOrigin: values["supabase-origin"],
           ssoDomain: values["sso-domain"],
           project: values.project,
+          cdn: values.cdn,
         }),
       ),
     );

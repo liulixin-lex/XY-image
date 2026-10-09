@@ -33,6 +33,15 @@ export function needsReconcile(status: BillingStatus | null | undefined, active 
   return status === "pending" || status === "unknown";
 }
 
+/**
+ * True when billing is known for sure: xy2api answered, or the server matched
+ * a 待核对 job against the main-site usage list. Error codes that only guess
+ * "maybe charged" must then give way to the real outcome.
+ */
+export function isBillingSettled(status: BillingStatus | null | undefined) {
+  return status === "charged" || status === "not_charged";
+}
+
 export function BillingBadge({
   status,
   active = false,

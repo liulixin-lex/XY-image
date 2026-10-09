@@ -10,10 +10,10 @@ const PUBLIC_BUCKETS = new Set(["project-assets"]);
 
 export class UploadServiceError extends Error {
   readonly statusCode: number;
-  readonly code: "upload_failed" | "asset_not_found";
+  readonly code: "upload_failed" | "asset_not_found" | "project_not_found";
 
   constructor(
-    code: "upload_failed" | "asset_not_found",
+    code: "upload_failed" | "asset_not_found" | "project_not_found",
     message: string,
     statusCode: number,
   ) {
@@ -57,6 +57,31 @@ export function createUploadService(options: {
   return {
     async uploadFile(user, input) {
       const client = options.createUserClient(user.accessToken);
+
+      // asset_objects only accepts a project of the same workspace; check it
+      // first so nothing is stored for a project that is not the user's.
+      if (input.projectId) {
+        const { data: project, error: projectError } = await client
+          .from("projects")
+          .select("id")
+          .eq("id", input.projectId)
+          .eq("workspace_id", input.workspaceId)
+          .maybeSingle();
+        if (projectError) {
+          throw new UploadServiceError(
+            "upload_failed",
+            "Failed to check the project.",
+            500,
+          );
+        }
+        if (!project) {
+          throw new UploadServiceError(
+            "project_not_found",
+            "Project not found.",
+            404,
+          );
+        }
+      }
 
       const objectPath = buildObjectPath(
         input.workspaceId,

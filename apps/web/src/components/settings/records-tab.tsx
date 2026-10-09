@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, useImageModels } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, isActiveJob, isFailedJob, toImageJobView } from "@/lib/image-jobs";
+import { type ImageJobView, isActiveJob, isFailedJob, isSavingJob, toImageJobView } from "@/lib/image-jobs";
 import { QUALITY_LABEL, findModelMeta } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -178,7 +178,7 @@ export function RecordsTab() {
                         {modelName(job.model)}
                         <span className="text-fg-muted"> · {QUALITY_LABEL[job.quality]}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-fg">{STATUS[job.status]}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-fg">{isSavingJob(job) ? "保存中" : STATUS[job.status]}</td>
                       <td className="px-4 py-3">
                         <BillingBadge status={job.billing} active={isActiveJob(job)} />
                       </td>

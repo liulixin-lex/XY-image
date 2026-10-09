@@ -27,7 +27,9 @@ describe("custom chat run wiring", () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const db = memoryDatabase({
       canvases: [{ id: "canvas-1", content: { elements: [] } }],
-      workspaces: [{ id: "workspace-1", type: "personal" }],
+      workspaces: [
+        { id: "workspace-1", type: "personal", owner_user_id: userId },
+      ],
     });
     const services = createXy2apiServices(env, () => db.admin);
     vi.spyOn(services.providers.network, "listModels").mockResolvedValue([

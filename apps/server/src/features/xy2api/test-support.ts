@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import {
+  type HeldImage,
+  MAX_DELIVERY_ATTEMPTS,
+  type PendingDeliveryStore,
+} from "./pending-delivery.js";
 
 type Row = Record<string, unknown>;
 export function memoryDatabase(initial: Record<string, Row[]>) {
@@ -134,5 +139,36 @@ export function memoryDatabase(initial: Record<string, Row[]>) {
     failClaim: () => {
       failedClaim = true;
     },
+  };
+}
+
+/** In-memory store for tests. */
+export function memoryPendingDeliveries(): PendingDeliveryStore & {
+  rows: Map<string, HeldImage & { lastError: string }>;
+} {
+  const rows = new Map<string, HeldImage & { lastError: string }>();
+  return {
+    rows,
+    async hold(image, error) {
+      if (!rows.has(image.jobId))
+        rows.set(image.jobId, { ...image, attempts: 1, lastError: error });
+    },
+    async get(jobId) {
+      const row = rows.get(jobId);
+      if (!row) return null;
+      const { lastError: _, ...held } = row;
+      return { ...held };
+    },
+    async recordFailure(jobId, error) {
+      const row = rows.get(jobId);
+      if (!row) return MAX_DELIVERY_ATTEMPTS;
+      row.attempts += 1;
+      row.lastError = error;
+      return row.attempts;
+    },
+    async remove(jobId) {
+      rows.delete(jobId);
+    },
+    async close() {},
   };
 }

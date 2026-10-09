@@ -8,6 +8,7 @@ import {
 } from "../features/chat-providers/model-resolver.js";
 import { chatRunError } from "../features/chat-providers/run-error.js";
 import { fetchReferenceImage } from "../generation/providers/xy2api-reference.js";
+import { createSupabaseFetch } from "../supabase/transport.js";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -570,11 +571,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // Look up personal workspace directly — the viewer is already
           // bootstrapped from the normal auth flow, so we skip ensureViewer
           // to avoid its strict email validation on the profile schema.
+          // Filter by owner: RLS also shows workspaces the user is only a
+          // member of (an owner can add anyone), and the image must never be
+          // stored in someone else's workspace.
           const client = createClient(accessToken) as UserSupabaseClient;
           const { data: ws } = await client
             .from("workspaces")
             .select("id")
+            .eq("owner_user_id", userId)
             .eq("type", "personal")
+            .order("created_at", { ascending: true })
             .limit(1)
             .single();
           if (!ws?.id) throw new Error("No personal workspace found");
@@ -704,6 +710,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
             }
 
+            // Charged, but storage refused it: the worker keeps retrying the
+            // upload for up to about 75 minutes. Don't hold the run that long.
+            // TODO(agent01): a late delivery reaches history but not this canvas.
+            if (current.error_code === "storage_retrying") {
+              jobLap("job_poll_done", {
+                pollCount,
+                status: "storage_retrying",
+              });
+              return {
+                jobId: job.id,
+                error: current.error_message ?? "图片已生成，正在保存",
+              };
+            }
+
             if (
               current.status === "dead_letter" ||
               current.status === "canceled"
@@ -790,10 +810,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .replace(/^-|-$/g, "");
               const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
+              // Owner filter: see the personal workspace lookup above.
               const { data: ws } = await client
                 .from("workspaces")
                 .select("id")
+                .eq("owner_user_id", run.userId ?? "")
                 .eq("type", "personal")
+                .order("created_at", { ascending: true })
                 .limit(1)
                 .single();
               const workspaceId = ws?.id ?? "default";
@@ -981,7 +1004,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     apiKey: "",
                     baseUrl: options.env.xy2apiBaseUrl,
                     ...(options.env.supabaseUrl
-                      ? { assetOrigin: options.env.supabaseUrl }
+                      ? {
+                          assetOrigin: options.env.supabaseUrl,
+                          assetFetch: createSupabaseFetch(options.env),
+                        }
                       : {}),
                   });
                   const mime = reference.mimeType;

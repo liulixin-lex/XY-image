@@ -9,7 +9,7 @@ import {
   BillingGuardError,
   GatewayError,
   mapGatewayError,
-  sanitizeGatewayError,
+  withRequestId,
 } from "../../features/xy2api/errors.js";
 import type {
   GeneratedImage,
@@ -67,6 +67,9 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
     // Keep the raw error body of this call so mapping sees what xy2api sent;
     // otherwise a definite refusal would surface as "可能已扣费".
     let errorBody: unknown;
+    // xy2api's id for this call, kept on every failure after it answered so a
+    // 待核对 job can be matched to its usage row.
+    let requestId: string | undefined;
     const client = new OpenAI({
       apiKey: ctx.apiKey,
       baseURL: `${ctx.baseUrl}/v1`,
@@ -75,6 +78,7 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       defaultHeaders: { "User-Agent": "LoomicServer/1.0" },
       fetch: async (input, init) => {
         const response = await fetch(input, init);
+        requestId = response.headers.get("x-client-request-id") ?? requestId;
         if (!response.ok)
           errorBody = await response
             .clone()
@@ -130,7 +134,6 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
       const mimeType = `image/${metadata.format === "jpg" ? "jpeg" : (metadata.format ?? this.env.imageOutputFormat)}`;
-      const requestId = result.response.headers.get("x-client-request-id");
       return {
         url: `data:${mimeType};base64,${bytes.toString("base64")}`,
         mimeType,
@@ -139,16 +142,20 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
+      if (error instanceof GatewayError) throw withRequestId(error, requestId);
       if (error instanceof BillingGuardError) throw error;
       if (
         errorBody !== undefined &&
         error instanceof OpenAI.APIError &&
         typeof error.status === "number"
       )
-        throw new GatewayError(
-          mapGatewayError({ status: error.status, body: errorBody }),
+        throw withRequestId(
+          new GatewayError(
+            mapGatewayError({ status: error.status, body: errorBody }),
+          ),
+          requestId,
         );
-      throw sanitizeGatewayError(error);
+      throw withRequestId(error, requestId);
     }
   }
 }
