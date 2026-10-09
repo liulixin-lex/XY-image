@@ -89,4 +89,37 @@ describe("assistant draft", () => {
     });
     expect(draft.blocks[0]).not.toHaveProperty("output");
   });
+
+  it("leaves a line when a failed run had no reply", () => {
+    const refused = draftOf([
+      {
+        ...events.failed(),
+        error: {
+          code: "run_failed",
+          message: "内容未通过审核，请修改提示词",
+          details: { gatewayCode: "safety_filter" },
+        },
+      },
+    ]);
+    expect(refused.blocks).toEqual([
+      { type: "text", text: "没能完成：内容未通过审核，请修改提示词" },
+    ]);
+    expect(refused.text.join("")).toBe(
+      "没能完成：内容未通过审核，请修改提示词",
+    );
+
+    expect(draftOf([events.failed()]).blocks).toEqual([
+      { type: "text", text: "抱歉，处理过程中遇到问题，请重试。" },
+    ]);
+    // A partial reply is kept as it is.
+    expect(draftOf([events.delta("好的"), events.failed()]).blocks).toEqual([
+      { type: "text", text: "好的" },
+    ]);
+  });
+
+  it("leaves a line when a run was stopped before any reply", () => {
+    const stopped = draftOf([events.canceled()]);
+    expect(stopped.blocks).toEqual([{ type: "text", text: "已停止。" }]);
+    expect(stopped.text.join("")).toBe("已停止。");
+  });
 });

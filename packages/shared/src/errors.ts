@@ -29,3 +29,20 @@ export const loomicErrorSchema = z.object({
 
 export type LoomicErrorCode = z.infer<typeof errorCodeSchema>;
 export type LoomicError = z.infer<typeof loomicErrorSchema>;
+
+/**
+ * The line a failed run leaves in the conversation, the same on the page
+ * (apps/web use-chat-stream) and in the saved message (apps/server
+ * ws/assistant-draft). A main-site refusal (`details.gatewayCode`: moderation,
+ * balance, Key, ...) says what happened; anything else stays generic.
+ */
+export function runFailureText(
+  error: Pick<LoomicError, "message" | "details">,
+): string {
+  return typeof error.details?.gatewayCode === "string"
+    ? `没能完成：${error.message}`
+    : "抱歉，处理过程中遇到问题，请重试。";
+}
+
+/** The line a run stopped before any reply leaves (page and saved message). */
+export const RUN_STOPPED_TEXT = "已停止。";

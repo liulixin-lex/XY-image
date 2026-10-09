@@ -189,16 +189,22 @@ export function ChatSidebar({
   const { reportCode } = useIssues();
   const { notifyGenerationSettled, refreshImageModels, refreshChatModels } = useAccount();
 
-  // Errors from the user's own chat provider (plan §6.5) arrive as
-  // `run.failed` with a `provider_*` code; the issue center has copy and a
-  // way to the provider settings. Other run failures keep the inline note.
-  // TODO(agent03): add the provider_* codes to errorCodeValues in
-  // @loomic/shared so `run.failed` can carry them.
-  const reportProviderFailure = useCallback(
-    (code: string, message: string) => {
-      if (!code.startsWith("provider_")) return;
-      reportCode(code, message);
-      if (code === "provider_model_not_found") void refreshChatModels();
+  // Run failures with a known cause go to the issue center, which has copy
+  // and a way to fix them: the user's own chat provider (plan §6.5, a
+  // `provider_*` code) and refusals from the main site (`details.gatewayCode`:
+  // balance, Key, moderation, ...; server chat-providers/run-error.ts). Other
+  // failures keep only the line in the conversation.
+  const reportRunFailure = useCallback(
+    (error: { code: string; message: string; details?: Record<string, unknown> | undefined }) => {
+      const gatewayCode = error.details?.gatewayCode;
+      if (typeof gatewayCode === "string") {
+        reportCode(gatewayCode, error.message);
+        if (gatewayCode === "model_not_accessible") void refreshChatModels();
+        return;
+      }
+      if (!error.code.startsWith("provider_")) return;
+      reportCode(error.code, error.message);
+      if (error.code === "provider_model_not_found") void refreshChatModels();
     },
     [reportCode, refreshChatModels],
   );
@@ -566,7 +572,7 @@ export function ChatSidebar({
 
           // Preview model hint: suggest switching when run fails
           if (event.type === "run.failed") {
-            reportProviderFailure(event.error.code, event.error.message);
+            reportRunFailure(event.error);
             const currentModel = agentModelRef.current ?? "";
             if (currentModel.includes("preview")) {
               showToast(
@@ -691,7 +697,7 @@ export function ChatSidebar({
       onStreamEvent,
       readyAttachments,
       reportCode,
-      reportProviderFailure,
+      reportRunFailure,
       refreshImageModels,
       notifyGenerationSettled,
       showToast,
@@ -919,7 +925,7 @@ export function ChatSidebar({
               }
             }
             if (evt.type === "billing.error") reportCode(evt.code, evt.message);
-            if (evt.type === "run.failed") reportProviderFailure(evt.error.code, evt.error.message);
+            if (evt.type === "run.failed") reportRunFailure(evt.error);
 
             if (evt.type === "canvas.sync" && onCanvasSync) {
               onCanvasSync();
@@ -952,7 +958,7 @@ export function ChatSidebar({
     activeSessionIdRef,
     reloadMessages,
     reportCode,
-    reportProviderFailure,
+    reportRunFailure,
     notifyGenerationSettled,
     updateSessionMessages,
     setStreaming,

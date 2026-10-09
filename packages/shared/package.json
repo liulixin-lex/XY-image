@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "tsc --build tsconfig.json --force",
-    "test": "vitest run src/contracts.test.ts src/credits.test.ts src/chat-models.test.ts",
+    "test": "vitest run src/contracts.test.ts src/credits.test.ts src/chat-models.test.ts src/errors.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

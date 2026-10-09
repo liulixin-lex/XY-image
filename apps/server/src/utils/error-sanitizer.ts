@@ -1,10 +1,13 @@
 import { BillingGuardError } from "../features/xy2api/errors.js";
 
 // Provider errors may contain credentials or response bodies. Never log them.
+/** What a client sees for a failure it should not see the details of. */
+export const GENERIC_CLIENT_ERROR = "请求处理失败，请稍后再试";
+
 export function sanitizeErrorForClient(error: unknown): string {
   return error instanceof BillingGuardError
     ? error.message
-    : "请求处理失败，请稍后再试";
+    : GENERIC_CLIENT_ERROR;
 }
 
 /**
