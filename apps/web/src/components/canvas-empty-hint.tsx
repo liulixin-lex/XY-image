@@ -80,14 +80,19 @@ export function CanvasEmptyHint({
 
   if (hasElements) return null;
 
+  // The `C` shortcut needs a keyboard: phones and tablets get the button
+  // instead, in a line that wraps inside the screen.
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-      <p className="flex items-center gap-2 text-sm text-fg-muted">
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-8">
+      <p className="hidden items-center gap-2 text-sm text-fg-muted md:pointer-fine:flex">
         按
         <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-frame glass px-1.5 font-mono text-xs text-fg-soft shadow-subtle">
           C
         </kbd>
         把想法告诉助手，或用底部工具栏的「生成」直接出图
+      </p>
+      <p className="max-w-xs text-center text-sm leading-relaxed text-fg-muted md:pointer-fine:hidden">
+        点右上角的对话按钮把想法告诉助手，或用底部工具栏的「生成」直接出图
       </p>
     </div>
   );
