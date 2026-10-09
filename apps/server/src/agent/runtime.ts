@@ -644,10 +644,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           let pollCount = 0;
 
           while (Date.now() - start < MAX_WAIT) {
-            await delay(POLL_INTERVAL);
+            // Wakes at once when the run is stopped (handled just below).
+            await delay(POLL_INTERVAL, undefined, {
+              signal: run.controller.signal,
+            }).catch(() => {});
             pollCount++;
 
             if (run.controller.signal.aborted) {
+              // Stopped by the user. A job the worker has not picked up is
+              // canceled (nothing sent, nothing charged); one already running
+              // finishes and the worker puts it on the canvas, where the page
+              // picks it up (use-job-fallback-polling watches its jobs).
+              const canceled = await jobSvc
+                .cancelUnsentJobAdmin(job.id)
+                .catch(() => false);
+              jobLap("job_poll_done", {
+                pollCount,
+                status: canceled ? "canceled_unsent" : "stopped_running",
+              });
               throw new Error("Run was canceled");
             }
 

@@ -76,6 +76,15 @@ export async function processMessage(
       );
       return;
     }
+    // Stopped (an agent run, or the studio) between this worker's status
+    // check and the dispatch: nothing was sent, so there is nothing to record
+    // as failed or to reconcile. Keep it canceled.
+    const latest = await ctx.jobService.getJobAdmin(jobId).catch(() => null);
+    if (latest?.status === "canceled" && latest.billing_status === "none") {
+      await ctx.pgmq.archive(queue, msg.msg_id);
+      console.log(`${tag} Job ${jobId} canceled before it was sent`);
+      return;
+    }
     const errorCode =
       err instanceof BillingGuardError ? err.code : "upstream_unknown";
     const errorMessage =

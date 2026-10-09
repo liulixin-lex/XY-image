@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CircleAlert, Clock3 } from "lucide-react";
+import { CircleAlert, Clock3, SquareIcon } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -180,6 +180,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       : undefined;
   const mediaPending =
     isImageTool && mediaError ? imagePendingNotice(mediaOutput) : null;
+  // Closed by a stopped run (use-chat-stream, server ws/assistant-draft).
+  const stopped = isCompleted && mediaOutput?.stopped === true;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
   const aspectRatio =
@@ -206,6 +208,13 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
         ) : mediaPending ? (
           <Clock3 aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : stopped ? (
+          <SquareIcon
+            aria-hidden
+            className="h-3 w-3 text-muted-foreground"
+            fill="currentColor"
+            strokeWidth={0}
+          />
         ) : mediaError ? (
           <CircleAlert aria-hidden className="h-3.5 w-3.5 text-alert" />
         ) : (
@@ -233,9 +242,17 @@ export const ToolBlockView = React.memo(function ToolBlockView({
         />
       )}
 
-      {/* Layer 2b-err: Media generation failed, or an image still on its way */}
+      {/* Layer 2b-err: Media generation failed, stopped, or an image still on its way */}
       {mediaPending ? (
-        <MediaPendingCard {...mediaPending} />
+        <MediaNoticeCard icon="pending" {...mediaPending} />
+      ) : isMediaTool && stopped ? (
+        <MediaNoticeCard
+          icon="stopped"
+          title="已停止"
+          message={
+            isImageTool ? "已经开始生成的图片仍会放到画布上。" : undefined
+          }
+        />
       ) : (
         isMediaTool && isCompleted && !imageArtifact && mediaError && (
           <MediaErrorCard
@@ -254,7 +271,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           hasDetails={!!hasDetails}
           onOpenPanel={handleOpenPanel}
         />
-      ) : showCard && !mediaError ? (
+      ) : showCard && !mediaError && !(isMediaTool && stopped) ? (
         /* Layer 2: Generic output card (non-image tools); failed media
            generations already have their own error card above. */
         <div className="rounded-xl border-[0.5px] border-border p-3">
@@ -420,7 +437,7 @@ const MediaErrorCard = React.memo(function MediaErrorCard({
 });
 
 /* ------------------------------------------------------------------ */
-/*  MediaPendingCard                                                   */
+/*  MediaNoticeCard                                                    */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -447,22 +464,31 @@ function imagePendingNotice(
   return null;
 }
 
-const MediaPendingCard = React.memo(function MediaPendingCard({
+/** Neutral card for media results that are not failures (pending, stopped). */
+const MediaNoticeCard = React.memo(function MediaNoticeCard({
+  icon,
   title,
   message,
 }: {
+  icon: "pending" | "stopped";
   title: string;
-  message: string;
+  message?: string | undefined;
 }) {
   return (
     <div className="rounded-xl border-[0.5px] border-border p-3">
       <div className="flex items-start gap-2.5">
         <div className="mt-0.5 shrink-0 rounded-lg bg-muted p-1.5 text-muted-foreground">
-          <Clock3 aria-hidden className="h-4 w-4" />
+          {icon === "pending" ? (
+            <Clock3 aria-hidden className="h-4 w-4" />
+          ) : (
+            <SquareIcon aria-hidden className="h-4 w-4 p-0.5" fill="currentColor" strokeWidth={0} />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-foreground">{title}</div>
-          <div className="mt-0.5 text-[12px] text-muted-foreground">{message}</div>
+          {message ? (
+            <div className="mt-0.5 text-[12px] text-muted-foreground">{message}</div>
+          ) : null}
         </div>
       </div>
     </div>

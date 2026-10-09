@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 
-import type { ImageArtifact } from "@loomic/shared";
+import type { ImageArtifact, StreamEvent } from "@loomic/shared";
 import { RotateCwIcon } from "lucide-react";
 
 import { AccountChip } from "../../components/account/account-chip";
@@ -13,6 +13,7 @@ import { Button, buttonVariants } from "../../components/ui/button";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { LoadingScreen } from "../../components/loading-screen";
+import { useToast } from "../../components/toast";
 import { useAuth } from "../../lib/auth-context";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
@@ -153,13 +154,48 @@ function CanvasPageContent() {
   // When the agent's tool times out but the worker eventually succeeds,
   // the backend will have already inserted the element into the canvas.
   // This hook detects completion and triggers a canvas re-fetch.
-  const { checkForTimedOutJobs } = useJobFallbackPolling({
+  const { checkForTimedOutJobs, watchCanvasJobs } = useJobFallbackPolling({
     accessTokenRef,
     onJobSucceeded: useCallback((_jobId: string, _jobType: string) => {
       // Element was inserted by backend — just refresh the canvas
       handleCanvasSync();
     }, [handleCanvasSync]),
   });
+  const { toast: showToast } = useToast();
+
+  // Images of this canvas still being generated when the page opens (it was
+  // reloaded mid-generation): keep watching them so they appear when ready.
+  const watchedCanvasRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = canvasData?.id;
+    if (!id || watchedCanvasRef.current === id) return;
+    watchedCanvasRef.current = id;
+    void watchCanvasJobs(id);
+  }, [canvasData?.id, watchCanvasJobs]);
+
+  const handleStreamEvent = useCallback(
+    (event: StreamEvent) => {
+      checkForTimedOutJobs(event);
+      // A stopped or failed run leaves no tool result for an image the
+      // worker is still generating. Look a moment later, once the run has
+      // canceled a job that was not sent yet (agent/runtime.ts), and only at
+      // jobs created before the run ended (a newer run reports its own).
+      const id = canvasData?.id;
+      if (id && (event.type === "run.canceled" || event.type === "run.failed")) {
+        const endedAt = Date.parse(event.timestamp);
+        setTimeout(() => {
+          void watchCanvasJobs(id, {
+            ...(Number.isNaN(endedAt) ? {} : { createdBefore: endedAt }),
+          }).then((count) => {
+            if (count > 0) {
+              showToast(`还有 ${count} 张图在生成，好了会自动放到画布上。`, "info");
+            }
+          });
+        }, 3_000);
+      }
+    },
+    [checkForTimedOutJobs, watchCanvasJobs, canvasData?.id, showToast],
+  );
 
   const handleSessionChange = useCallback(
     (sessionId: string) => {
@@ -337,7 +373,7 @@ function CanvasPageContent() {
         onToggle={handleToggleChat}
         onImageGenerated={handleImageGenerated}
         onCanvasSync={handleCanvasSync}
-        onStreamEvent={checkForTimedOutJobs}
+        onStreamEvent={handleStreamEvent}
         initialPrompt={initialPrompt}
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}

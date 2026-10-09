@@ -62,6 +62,12 @@ export type JobService = {
     filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
   ): Promise<BackgroundJob[]>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
+  /**
+   * Cancels a job the worker has not picked up (queued, nothing sent to the
+   * main site, so nothing charged). False when it is already running or
+   * done: that job runs to the end. Used when an agent run is stopped.
+   */
+  cancelUnsentJobAdmin(jobId: string): Promise<boolean>;
   getJobAdmin(jobId: string): Promise<BackgroundJob>;
 
   // Admin-only methods (use admin client, no user auth)
@@ -285,6 +291,29 @@ export function createJobService(options: {
         );
       }
       return mapJobRow(job as unknown as Record<string, unknown>);
+    },
+
+    async cancelUnsentJobAdmin(jobId) {
+      const { data, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .update({ status: "canceled", canceled_at: new Date().toISOString() })
+        .eq("id", jobId)
+        // Only before the worker's markRunning: after it, the dispatch may be
+        // under way and the job must finish (the worker drops a job canceled
+        // in between, see worker-message.ts).
+        .eq("status", "queued")
+        .eq("billing_status", "none")
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        throw new JobServiceError(
+          "job_cancel_failed",
+          "Failed to cancel job.",
+          500,
+        );
+      }
+      return Boolean(data);
     },
 
     async getJobAdmin(jobId) {
