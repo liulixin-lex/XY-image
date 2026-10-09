@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -43,7 +43,8 @@ describe("FontPickerDialog", () => {
     mockFetchGoogleFonts.mockResolvedValueOnce([]);
     renderPicker();
 
-    expect(await screen.findByRole("status")).toHaveTextContent("手动输入字体名称");
+    // The loading notice is a status too; wait for the empty-library one.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("手动输入字体名称"));
   });
 
   it("previews each font with a subset of its own name, then adds the chosen one", async () => {
