@@ -1,12 +1,12 @@
 # xy2api 后端部署与验收
 
-2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共34份应用迁移，真实联调仍未执行。运维自动化见 [监控与异地备份](XY_IMAGE_OPERATIONS_AUTOMATION.md)，上线放行记录见 [发布验收表](XY_IMAGE_RELEASE.md)。
+2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共35份应用迁移（10-09 agent01 新增 `20261009000004`）；实验环境联调见 handoff 第 5 节。运维自动化见 [监控与异地备份](XY_IMAGE_OPERATIONS_AUTOMATION.md)，上线放行记录见 [发布验收表](XY_IMAGE_RELEASE.md)。
 2026-10-08 更新：前端 F1–F8 已交付；agent03 新增字体代理和自定义对话服务商，详见 [后端增量交接](XY_IMAGE_BACKEND_AGENT03.md)。用户要求先开发，真实测试延后；Supabase 尚未创建。生产放行仍要求完整迁移、真实主站和服务商验收，离线测试不代表真实计费已打通。
 
 ## 配置与准备
 
 1. 按自建运行手册准备官方固定版本Supabase容器栈；先完整执行应用迁移，确保Auth、Storage、PGMQ、Realtime和Agent持久化表可用。
-2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行34份迁移；新增 `20261009000002` 和 `20261009000003` 必须在本轮API前执行。
+2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行35份迁移；新增 `20261009000002`、`20261009000003` 和 `20261009000004` 必须在本轮API前执行。
 3. 自建Auth环境关闭开放注册、匿名/电话/Google登录；保留email provider和Admin createUser/generateLink/verifyOtp能力。使用生成器的配置，本地config.toml不会自动配置自建容器。无需发送合成邮箱邮件。
 4. 从根目录 `.env.example` 创建服务器私有环境文件，权限 `600`。设置 Supabase URL、anon key、service role、Postgres URL、xy2api API/Web URL、SSO_EMAIL_DOMAIN、LOOMIC_WEB_ORIGIN。用 `openssl rand -base64 32` 离线生成 LOOMIC_SECRET_KEY，API/Worker 完全一致。不要执行旧的种子账号脚本；普通 Supabase 用户不通过集成鉴权。
 5. 为主站 Key 分组启用图像能力，确认余额、Key 限额、模型、平台和出口 IP 白名单。主站设置或部署由负责人执行；本开发没有修改 xy2api 仓库。
@@ -39,7 +39,7 @@ bash apps/server/scripts/check-xy2api-migrations.sh
 
 ## 构建和预发
 
-统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、34份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
+统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、35份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
 
 构建强制 shared build 和 server typecheck；`.dockerignore` 排除真实 env、凭据目录及前端。SERVICE_MODE 区分同一镜像的 API/Worker；非root、只读根文件系统、tmpfs临时文件。API固定单实例。`GET /api/health` 只验证进程，内部 `/api/ready` 验证依赖且由公网反代隐藏。
 

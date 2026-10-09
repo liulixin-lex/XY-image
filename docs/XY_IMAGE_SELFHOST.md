@@ -8,7 +8,7 @@
 - PostgreSQL、Auth、Storage、PostgREST、Realtime、Studio 等采用官方 Supabase Docker 配置，固定至 `ff80bb14991e68667c04f74248b954e8babe6fde`。来源、SHA-256 和 Apache-2.0 LICENSE 在 `deploy/selfhost/vendor/`。`compose.base.json` 是该版本 YAML 的等价 JSON，不含自定义秘密。
 - 当前固定版本默认网关为 Envoy；不沿用旧版本 Kong 的服务名假设。镜像有固定版本标签，升级时重新审核官方变更并固定 image digest；不能自动追随 master/latest。官方镜像实际拉取、目标架构和 Docker 构建仍待验收。
 - API 与 Worker 同镜像，API 固定单实例。Supabase 网关绑定宿主机 `127.0.0.1:18000`，XY API 绑定 `127.0.0.1:3101`；数据库无宿主机端口。可选 Supavisor 置于 `pooler` profile，默认不启动、不暴露端口。API/Worker 使用 Docker 内网直连 DB。
-- 对外只由宿主机 Nginx 提供 TLS。Studio 通过 SSH 隧道访问本机网关并使用随机管理员密码；公网反代只允许受限 Auth、REST、Storage、Realtime 路径，拒绝 Studio、meta 和 Auth admin 管理路径。Auth按方法/路径/完整query明确放行：POST verify、POST refresh_token、GET user、POST logout及OPTIONS；设置密码、password/PKCE grant、注册/邮件登录等入口全部拒绝，避免影子用户绕过主站认证。Realtime保留官方网关所需的网络DNS别名和tenant Host重写。
+- 对外只由宿主机 Nginx 提供 TLS。Studio 通过 SSH 隧道访问本机网关并使用随机管理员密码；公网反代只允许受限 Auth 和对象读取（`project-assets` 的公开 URL、各桶的签名 URL，仅 GET/HEAD）；REST、Storage 写入与列举、Realtime、Studio、meta 和 Auth admin 都不对公网开放（10-09 agent01，H2：浏览器不用这些路径，API 走 `SUPABASE_INTERNAL_URL`）。新增公开桶时要同步改 Nginx 模板里的桶名。Auth按方法/路径/完整query明确放行：POST verify、POST refresh_token、GET user、POST logout及OPTIONS；设置密码、password/PKCE grant、注册/邮件登录等入口全部拒绝，避免影子用户绕过主站认证。Realtime保留官方网关所需的网络DNS别名和tenant Host重写。
 - `SUPABASE_URL` 是浏览器可达的公网 HTTPS 地址；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 仅路由服务端 SDK 网络请求，SDK 生成的 Storage 公共/签名 URL 仍以公网域名为基础。内部调用不经过外部 HTTP 代理。
 - 主站账号仍在 gguuai.com 验证，Supabase 使用服务端创建的影子用户。`DISABLE_SIGNUP=true`，匿名/电话/Google 登录关闭；保留 email provider 是为了 Admin generateLink + verifyOtp 的影子会话，不能随意关闭此 provider。不会配置邮件发送。
 - API/Worker 以非 root 运行、只读根文件系统，临时运行文件仅存在容器 tmpfs。所有开发文件仍在 claude-module-02 的 `/workspace`。
@@ -17,9 +17,9 @@
 
 1. 鉴权签名密钥与缓存改为实例内，不再跨实例共享。显式限定算法、audience 和 issuer，验证 exp/iat/sub/role；本地验证不使用会越过 exp 的缓存，远程验证缓存不超过令牌到期时间或一分钟。无效令牌/远程错误不记原文。
 2. 生产启动前校验必需 Supabase 配置和公开 HTTPS 地址。`SUPABASE_JWT_ISSUER` 与自建 Auth 的 `API_EXTERNAL_URL` 保持一致。
-3. `/api/health` 只代表进程存活；`/api/ready` 探测 DB 连接、业务/Agent 表、PGMQ 队列、Storage 桶、Realtime publication、权限、Auth 与 Storage API。5 秒合并缓存，3 秒单项超时，失败 503，不返回连接串；公网 Nginx 隐藏此路由。Realtime 项检查 publication 配置，不等同真实 WebSocket 推送验收。
+3. `/api/health` 只代表进程存活；`/api/ready` 探测 DB 连接、业务/Agent 表、PGMQ 队列、Storage 桶、Realtime publication、权限、Auth 与 Storage API。5 秒合并缓存，3 秒单项超时，失败 503，不返回连接串；公网 Nginx 隐藏此路由。Realtime 项检查 publication 配置，不等同真实 WebSocket 推送验收；它只报告、不影响 `ok`（10-09 起：没有任何代码订阅 Realtime，公网也已关闭；以后要用 Realtime 推送时再改回必需项）。
 4. Worker 满并发时休眠，数据库轮询故障指数退避至30秒；停止后不接收刚返回的新任务，等待已发送任务落库，停止宽限720秒。API排空已接收WebSocket Agent及最终消息落库；队列ACK失败不覆盖成功状态，已知charged在恢复时不退成unknown。健康文件反映轮询/运行状态；Docker unhealthy 不会自动重启，部署方需告警。没有增加任何生图重试。
-5. 新增 `20261009000002`（就绪检查/Realtime publication）和 `20261009000003`（权限加固），共34份应用迁移。旧积分扣减/退款/每日领取/套餐发放 RPC 仅 service_role 可调用；旧账单表客户端权限关闭，Agent/密文表和 langgraph schema 不对客户端开放。保留历史表，不做删表。`increment_job_attempt` 仍允许 Worker 的 service_role 调用。
+5. 新增 `20261009000002`（就绪检查/Realtime publication）、`20261009000003`（权限加固）和 `20261009000004`（`canvases` 存储桶改为私有并删除开放策略，权限检查增加匿名存储策略和公开 canvases 的漂移检测），共35份应用迁移。旧积分扣减/退款/每日领取/套餐发放 RPC 仅 service_role 可调用；旧账单表客户端权限关闭，Agent/密文表和 langgraph schema 不对客户端开放。保留历史表，不做删表。`increment_job_attempt` 仍允许 Worker 的 service_role 调用。
 6. Nginx 日志只记 `$uri`，不记查询和请求头；生成的 Envoy 日志把整个路径和 Referer 替换为固定脱敏标记，避免 Realtime query token 进入网关日志。应用/Worker 数据库错误不输出连接串。其他上游容器的错误日志还需上线前敏感信息抽检。
 
 ## 生成部署目录（离线，不启动服务）
@@ -106,6 +106,7 @@ node deploy/selfhost/verify-backup.mjs /workspace/xy-backups/backup-20261009
 - 五份增量SQL在独立PGlite重复两次，已有计费边界、服务商归属/数量、就绪权限、Realtime publication、旧RPC权限与权限漂移断言通过。它使用最小夹具，**不是34份完整迁移或真实Supabase验收**。
 - CI新增部署工具、真实本地Nginx策略、隔离SQL与生产镜像构建/非root依赖冒烟；其实际运行结果以PR检查为准。共享包现有类型红项仍未隐藏或伪造修复。
 - 尚待真实环境：自建栈启动、完整迁移、真实类型生成、Nginx TLS、真实图片/登录/Realtime/队列、停机恢复、备份还原演练、目标服务器容量及告警送达。
+- 10-09 agent01（P0 修正，host-studio 实验环境）：Nginx 策略测试改为 47 拒绝 + 15 放行 + HEAD 放行 + Realtime 升级 404，在容器里的 Debian nginx 上通过，旧模板会在 `GET /rest/v1` 处失败。隔离迁移检查加入 `20261009000004`，canvases 锁定和两种漂移检测通过。实验环境库已执行该迁移：越权上传 400、匿名列举 0 条、旧对象公开读取 400。边缘代理按新规则收窄后，readiness 8/8，三套端到端全部通过，期间 226 次图片读取都是 200。
 
 ## 官方依据
 

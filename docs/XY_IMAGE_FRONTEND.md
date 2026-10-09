@@ -36,7 +36,7 @@
 2. **未知不等于没扣费。** `upstream_unknown`、网络中断或状态不明的任务一律标「待核对」，并给出主站请求 ID 和用量页链接。画布上残留的「生成中」占位如果已经没有对应的请求，就显示「结果未知」，不会重新发送。
 3. **主站的秘密不进浏览器存储。** 密码、TOTP challenge、tokenHash、主站 JWT 和 API Key 都不写入 storage，也不打印到日志（`test/login.test.tsx` 有断言）。Supabase 影子用户的 `user.email` 是合成地址，不要展示；真实邮箱从 `useAccount()` 取。用户自己服务商的 API Key 只写不读：只在添加 / 编辑弹窗的表单状态里存在，保存或关闭后丢弃，接口只返回末 4 位 `keyHint`，日志只记服务商 id 和路径（`test/chat-providers-api.test.ts` 有断言）。
 4. **规格只有两档：** 1K（`standard`）和 2K（`hd`），由模型的 `maxQuality` 决定能否选 2K。没有 4K、视频、积分和支付入口。
-5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）；同时写入工作区设置时用完整 id（`openai:<model>` 或 `custom:<providerId>:<model>`，原因见下文「后端缺口」）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
+5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）。10-09 起不再写工作区设置（运行时已改读账户偏好，`model-resolver.ts`）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
 6. **自己的服务商不走主站计费。** 用自定义服务商对话时费用由服务商收取，不从主站余额扣，界面要写明；`provider_*` 错误码一律 `maybeCharged: false`，文案不对服务商那边的扣费下任何结论。生图（生图页、画布生图、助手的生图工具）仍然只走主站。
 
 ## 自定义对话模型服务商（前端已完成，等后端）
@@ -93,7 +93,7 @@ cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 
 | 事项 | 现状 | 建议 |
 | --- | --- | --- |
-| 默认对话模型 | 后端 Agent 运行时读的是工作区设置里的 `defaultModel`，不读账户偏好 `default_chat_model` | 前端两边都写（`components/settings/models-tab.tsx`，工作区里存完整 id）。agent03 在方案 4-H 里改为读账户偏好（6.5），之后删掉前端双写和 `workspaceModel` |
+| 默认对话模型 | **已解决**：运行时读账户偏好（`model-resolver.ts`） | 10-09 agent01 删掉了前端双写和 `workspaceModel`，模型 id 解析改用 shared 的 `parseChatModelRef` |
 | 自定义对话模型服务商 | 前端已按方案 6.4 / 6.4.1 完成；后端接口、表、加密、SSRF 防护、运行时都还没做 | agent03 实现方案第 6 节；`provider_*` 错误码要加进 `@loomic/shared` 的 `errorCodeValues`，`run.failed` 才能带出来；`parseChatModelRef` 进 shared 后前端改为复用（`lib/chat-models.ts` 有 TODO） |
 | Key 额度单位 | `quota` 和 `quotaUsed` 按美元显示，`quota <= 0` 显示为「额度不限」 | 和主站确认单位（`keys-tab.tsx` 里有 TODO） |
 | 示例图版权 | `public/images/showcase/` 中 3/8/9/12 已换成 Unsplash License 图片（出处见 `components/landing/showcase.ts`）；其余 8 张继承自上游，来源未核实 | 上线前把其余 8 张换成本站生成或有授权的图 |
