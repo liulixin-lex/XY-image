@@ -9,6 +9,14 @@ import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { useCanvasTheme } from "../hooks/use-canvas-theme";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import {
+  buildFilesPayload,
+  forgetStoredFiles,
+  loadCanvasFiles,
+  markFilesStored,
+  resetStoredFiles,
+  type ServerCanvasFile,
+} from "../lib/canvas-files";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { CanvasToolMenu } from "./canvas-tool-menu";
@@ -64,7 +72,15 @@ type CanvasEditorProps = {
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
 };
 
+type SaveContent = {
+  elements: Record<string, unknown>[];
+  appState: Record<string, unknown>;
+  files: Record<string, Record<string, unknown>>;
+};
+
 const SAVE_DEBOUNCE_MS = 1500;
+// Resends per file after the server reports it missing (see persist).
+const MAX_FILE_RESENDS = 2;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 400;
 
@@ -86,6 +102,8 @@ export function CanvasEditor({
   const canvasIdRef = useRef(canvasId);
   canvasIdRef.current = canvasId;
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const excalidrawApiRef = useRef<any>(null);
+  excalidrawApiRef.current = excalidrawApi;
   const prevSelectedIdsRef = useRef<string>("");
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
@@ -110,62 +128,70 @@ export function CanvasEditor({
   const initialFilesRef = useRef(initialContent.files);
   initialFilesRef.current = initialContent.files;
 
+  // Every file the canvas loaded with is on the server: saves send the data
+  // of new files only (lib/canvas-files.ts).
+  useEffect(() => {
+    resetStoredFiles(canvasId, Object.keys(initialContent.files));
+  }, [canvasId, initialContent.files]);
+
   // Separate inline files (ready) from storage URLs (need async fetch)
-  const { inlineFiles, pendingUrls } = useMemo(() => {
+  const { inlineFiles, storageFiles } = useMemo(() => {
     const inline: Record<string, Record<string, unknown>> = {};
-    const pending: Array<{ fileId: string; url: string; meta: Record<string, unknown> }> = [];
+    const remote: Record<string, ServerCanvasFile> = {};
     for (const [fileId, fileData] of Object.entries(initialContent.files)) {
       if (typeof fileData.storageUrl === "string" && fileData.storageUrl) {
-        pending.push({ fileId, url: fileData.storageUrl, meta: fileData });
+        remote[fileId] = fileData;
       } else {
         inline[fileId] = fileData;
       }
     }
-    return { inlineFiles: inline, pendingUrls: pending };
+    return { inlineFiles: inline, storageFiles: remote };
   }, [initialContent.files]);
 
-  // Lazily resolve storage URLs and inject into Excalidraw
+  // Lazily resolve storage URLs and inject into Excalidraw. A save made before
+  // they arrive leaves them out; the server keeps its stored copies.
   useEffect(() => {
-    if (!excalidrawApi || pendingUrls.length === 0) return;
+    if (!excalidrawApi || Object.keys(storageFiles).length === 0) return;
     let cancelled = false;
-
-    async function resolveFiles() {
-      const resolved: Record<string, any> = {};
-      await Promise.all(
-        pendingUrls.map(async ({ fileId, url, meta }) => {
-          try {
-            const resp = await fetch(url);
-            if (!resp.ok) {
-              console.warn(`[canvas-editor] Failed to fetch file ${fileId}: ${resp.status}`);
-              return;
-            }
-            const blob = await resp.blob();
-            const reader = new FileReader();
-            const dataURL = await new Promise<string>((resolve, reject) => {
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-            resolved[fileId] = {
-              id: meta.id ?? fileId,
-              mimeType: meta.mimeType ?? blob.type,
-              created: meta.created ?? Date.now(),
-              dataURL,
-            };
-          } catch (err) {
-            console.warn(`[canvas-editor] Failed to resolve file ${fileId}:`, err);
-          }
-        }),
-      );
-      if (!cancelled && Object.keys(resolved).length > 0) {
-        excalidrawApi.addFiles(Object.values(resolved));
-        console.log(`[canvas-editor] Resolved ${Object.keys(resolved).length} storage files`);
-      }
-    }
-
-    resolveFiles();
+    loadCanvasFiles(storageFiles).then((loaded) => {
+      if (cancelled || loaded.length === 0) return;
+      excalidrawApi.addFiles(loaded);
+      console.log(`[canvas-editor] Resolved ${loaded.length} storage files`);
+    });
     return () => { cancelled = true; };
-  }, [excalidrawApi, pendingUrls]);
+  }, [excalidrawApi, storageFiles]);
+
+  // Saves one payload, then marks its new files stored. When the server lacks
+  // data for files an image still uses (e.g. another tab's save dropped them),
+  // they are sent again with their data, at most MAX_FILE_RESENDS times each.
+  const resendCountRef = useRef(new Map<string, number>());
+  const persist = useCallback(
+    async (content: SaveContent, sentWithData: string[]): Promise<void> => {
+      const id = canvasIdRef.current;
+      const { missingFileIds } = await saveCanvas(accessTokenRef.current, id, content);
+      markFilesStored(id, sentWithData);
+      if (missingFileIds.length === 0) return;
+      forgetStoredFiles(id, missingFileIds);
+      const sceneFiles = (excalidrawApiRef.current?.getFiles() ?? {}) as Record<
+        string,
+        { dataURL?: string }
+      >;
+      const counts = resendCountRef.current;
+      const resend = missingFileIds.filter(
+        (fileId) =>
+          typeof sceneFiles[fileId]?.dataURL === "string" &&
+          (counts.get(fileId) ?? 0) < MAX_FILE_RESENDS,
+      );
+      console.warn(
+        `[canvas-editor] server lacks ${missingFileIds.length} file(s); resending ${resend.length}`,
+      );
+      if (resend.length === 0) return;
+      for (const fileId of resend) counts.set(fileId, (counts.get(fileId) ?? 0) + 1);
+      const next = buildSavePayloadRef.current();
+      if (next) await persist(next.content, next.sentWithData);
+    },
+    [],
+  );
 
   const handleExcalidrawApi = useCallback(
     (api: any) => {
@@ -197,17 +223,19 @@ export function CanvasEditor({
             captureUpdate: "NONE",
           });
           // Persist normalized elements to DB
-          const files: Record<string, Record<string, unknown>> = {};
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
-          for (const [id, file] of Object.entries(rawFiles)) {
-            files[id] = { id: file.id, dataURL: file.dataURL, mimeType: file.mimeType, created: file.created };
-          }
+          const { files, sentWithData } = buildFilesPayload(
+            canvasIdRef.current,
+            excalidrawApi.getFiles() as Record<string, any>,
+          );
           const appState = excalidrawApi.getAppState();
-          saveCanvas(accessTokenRef.current, canvasIdRef.current, {
-            elements: mutableElements.filter((el: any) => !el.isDeleted),
-            appState: { viewBackgroundColor: appState.viewBackgroundColor, gridModeEnabled: appState.gridModeEnabled },
-            files,
-          }).catch((err: Error) => console.warn("[canvas-editor] normalization save failed:", err));
+          persist(
+            {
+              elements: mutableElements.filter((el: any) => !el.isDeleted),
+              appState: { viewBackgroundColor: appState.viewBackgroundColor, gridModeEnabled: appState.gridModeEnabled },
+              files,
+            },
+            sentWithData,
+          ).catch((err: Error) => console.warn("[canvas-editor] normalization save failed:", err));
         }
       } catch (err) {
         console.warn("[canvas-editor] normalization failed:", err);
@@ -220,7 +248,7 @@ export function CanvasEditor({
       hydratedRef.current = true;
     });
     return () => cic(idleHandle);
-  }, [excalidrawApi]);
+  }, [excalidrawApi, persist]);
 
   const handleChange = useCallback(
     (elements: readonly any[], appState: any) => {
@@ -237,19 +265,12 @@ export function CanvasEditor({
       pendingSaveRef.current = { elements: [] as any, appState: {}, files: {} };
 
       saveTimerRef.current = setTimeout(() => {
-        // Build the full payload only when the debounce fires
-        const files: Record<string, Record<string, unknown>> = {};
-        if (excalidrawApi) {
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
-          for (const [id, file] of Object.entries(rawFiles)) {
-            files[id] = {
-              id: file.id,
-              dataURL: file.dataURL,
-              mimeType: file.mimeType,
-              created: file.created,
-            };
-          }
-        }
+        // Build the full payload only when the debounce fires. Files the
+        // server already has go without their data.
+        const { files, sentWithData } = buildFilesPayload(
+          canvasId,
+          (excalidrawApi?.getFiles() ?? {}) as Record<string, any>,
+        );
         const content = {
           elements: elements.filter(
             (el: any) => !el.isDeleted,
@@ -262,7 +283,7 @@ export function CanvasEditor({
         };
         pendingSaveRef.current = content;
 
-        saveCanvas(accessTokenRef.current, canvasId, content)
+        persist(content, sentWithData)
           .then(() => {
             if (pendingSaveRef.current === content) {
               pendingSaveRef.current = null;
@@ -351,7 +372,7 @@ export function CanvasEditor({
         }
       }
     },
-    [canvasId, projectId, excalidrawApi],
+    [canvasId, projectId, excalidrawApi, persist],
   );
 
   // Register screenshot RPC handler so the server can request canvas captures
@@ -453,16 +474,8 @@ export function CanvasEditor({
         console.warn("[canvas-editor] skipping save: 0 elements but loaded with", initialElementCountRef.current);
         return null;
       }
-      const files: Record<string, Record<string, unknown>> = {};
-      for (const [id, file] of Object.entries(rawFiles)) {
-        files[id] = {
-          id: file.id,
-          dataURL: file.dataURL,
-          mimeType: file.mimeType,
-          created: file.created,
-        };
-      }
-      return {
+      const { files, sentWithData } = buildFilesPayload(canvasIdRef.current, rawFiles);
+      const content: SaveContent = {
         elements: sceneElements.filter((el: any) => !el.isDeleted),
         appState: {
           viewBackgroundColor: appState.viewBackgroundColor,
@@ -470,6 +483,7 @@ export function CanvasEditor({
         },
         files,
       };
+      return { content, sentWithData };
     } catch (err) {
       console.warn("[canvas-editor] failed to build save payload on flush:", err);
       return null;
@@ -490,9 +504,9 @@ export function CanvasEditor({
       if (!payload) return;
 
       // Use fetch with keepalive to ensure the request survives page teardown.
-      // keepalive requests are limited to 64 KiB total in-flight per page; for
-      // canvases with very large embedded files this may exceed the limit, but
-      // it's the best-effort approach -- sendBeacon has the same constraint.
+      // keepalive requests are limited to 64 KiB total in-flight per page.
+      // Stored files go without their data, so this only fails when the
+      // canvas has large new images that were never saved.
       const url = `${getServerBaseUrl()}/api/canvases/${canvasIdRef.current}`;
       try {
         fetch(url, {
@@ -501,7 +515,7 @@ export function CanvasEditor({
             Authorization: `Bearer ${accessTokenRef.current}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ content: payload }),
+          body: JSON.stringify({ content: payload.content }),
           keepalive: true,
         });
       } catch {
@@ -523,9 +537,7 @@ export function CanvasEditor({
       if (pendingSaveRef.current) {
         const payload = buildSavePayloadRef.current();
         if (payload) {
-          saveCanvas(accessTokenRef.current, canvasIdRef.current, payload).catch(
-            console.error,
-          );
+          persist(payload.content, payload.sentWithData).catch(console.error);
         }
         pendingSaveRef.current = null;
       }

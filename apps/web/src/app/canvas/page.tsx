@@ -31,6 +31,11 @@ import {
   fetchCanvas,
   fetchProject,
 } from "../../lib/server-api";
+import {
+  loadCanvasFiles,
+  markFilesStored,
+  type ServerCanvasFile,
+} from "../../lib/canvas-files";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
@@ -112,11 +117,19 @@ function CanvasPageContent() {
       const { canvas } = await fetchCanvas(token, canvasData.id);
       const elements = canvas.content.elements ?? [];
       const files = (canvas.content as Record<string, unknown>).files as
-        Record<string, { id: string; dataURL: string; mimeType: string; created: number }> | undefined;
+        Record<string, ServerCanvasFile> | undefined;
 
-      // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
+      // Sync files into Excalidraw. Backend-inserted images arrive as storage
+      // URLs (the agent writer stores a marker to the generated image); only
+      // files the editor does not have yet are downloaded.
       if (files && Object.keys(files).length > 0) {
-        api.addFiles(Object.values(files));
+        markFilesStored(canvasData.id, Object.keys(files));
+        const present = api.getFiles() as Record<string, unknown>;
+        const absent = Object.fromEntries(
+          Object.entries(files).filter(([fileId]) => !present[fileId]),
+        );
+        const loaded = await loadCanvasFiles(absent);
+        if (loaded.length > 0) api.addFiles(loaded);
       }
 
       api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
