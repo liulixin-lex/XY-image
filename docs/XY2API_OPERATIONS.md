@@ -190,13 +190,13 @@ order by inline_bytes desc
 limit 20;
 ```
 
-API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。画布不再用的图片和已删除画布的图片目前不会自动清理（代码里有 TODO）。
+API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。保存时只留下画面上图片用到的文件（Excalidraw 会一直留着删掉的图片的文件，页面每次都发上来）；不再用的文件如果存在这块画布自己的目录里，保存成功后删掉对象。生成记录里的图（`generated/`）和别的画布目录里的对象不删。保存后画布是空的就不删任何对象，免得一次误清空把图也删掉。用户撤销删除时，页面手里还有数据，服务端回 `missingFileIds` 后页面重新上传。删除项目只是归档（`archived_at`），画布和图片都保留，目前没有清理归档项目的策略。日志：`N unused file(s) not kept`、`removed N unused file(s)`、`unused file(s) not removed`（删除失败只记日志，对象留着）。还没做的：保存失败后留下、没有任何画布引用的对象，需要一次对照 `canvas-files/` 和 `canvases.content->files` 的清扫（代码里有 TODO）。
 
 用户在对话里点“停止”时，Agent 正在等的生图任务如果 Worker 还没取走（`queued`、`billing_status = none`），会直接取消，主站没有收到请求、不扣费；已经取走的照常跑完并放到画布上。Worker 刚取走、还没发出时任务被取消（和停止撞上），Worker 丢掉这条消息，任务保持“已取消”，不会记成失败。日志：API `[submitImageJob] job_poll_done {"status":"canceled_unsent"}` / `"stopped_running"`，Worker `canceled before it was sent`。停止或失败的对话里还在跑的工具保存成“已停止 / 处理失败”，刷新后不会一直转圈（`ws/assistant-draft.ts`）。
 
 Agent 生的图由 Worker 放到画布上（任务带 `canvas_id` 的才放，生图面板的任务不带）。所以 Agent 等超时、或者图片在 Storage 补传期间才保存好，图也会回到画布。每个任务只放一次：元素的 `customData.jobId` 记着任务 ID，消息重投或 Agent 运行时再放一次都只返回已有的元素。写画布和保存都是条件写（`canvases.updated_at` 没变才写入，变了就重读再写），Worker 放图不会被同时进行的保存覆盖。页面保存时带上用户删掉的“Agent 放的图”的 ID（`deletedElementIds`）；库里有、页面还没加载、也没被删的 Agent 图，保存时会保留下来。不带 `deletedElementIds` 的旧页面仍然整份覆盖。日志：Worker `[image-generation] job … placed on canvas` / `already on canvas` / `not placed on canvas`（放图失败只记日志，图片仍在生成记录里），API `[canvas-service] … kept N placed image(s) the client has not loaded`、`changed during save, retry`，写入方 `[canvas-element-writer] … changed while inserting, retry`。
 
-实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步、画布生图面板，检查保存请求的大小和库里的标记）；`~/xy-lab/e2e/late-delivery.sh`（停掉 Storage 让 Agent 生图，恢复后检查 Worker 放图、页面没加载时的保存不丢图、合并时保留未保存的修改、删除后不再回来）；`~/xy-lab/e2e/run.sh 06-chat.mjs`（对话：回复、生图、刷新、多个对话、停止回复、生图途中停止、被拒的回复）。
+实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步、画布生图面板、删掉一张图后对象被删、撤销后重新上传、清空画布不删对象，检查保存请求的大小、库里的标记和存储里的对象）；`~/xy-lab/e2e/late-delivery.sh`（停掉 Storage 让 Agent 生图，恢复后检查 Worker 放图、页面没加载时的保存不丢图、合并时保留未保存的修改、删除后不再回来）；`~/xy-lab/e2e/run.sh 06-chat.mjs`（对话：回复、生图、刷新、多个对话、停止回复、生图途中停止、被拒的回复）。
 
 `GET /api/proxy-image?url=…`（画布把生成结果放上去时用）只读本站 Storage：地址必须和 `SUPABASE_URL` 同源、在 `/storage/v1/object/public/` 或 `/sign/` 下、不含编码的 `.`、`/`、`\`；走内网（`SUPABASE_INTERNAL_URL`），不跟随重定向，只返回 png/jpeg/webp/gif（25 MB 以内，带 `nosniff`），每个 IP 每分钟 240 次。2026-10-09 之前它会抓取任何以 `supabase.co`、`replicate.*` 结尾的域名并跟随重定向，可以被当成开放代理，也能借重定向访问内网。日志前缀 `[image-proxy]`，只记拒绝原因和路径前几段，不记查询串。实验环境探针：`~/xy-lab/e2e/isolation.sh probe-image-proxy.mjs`。
 

@@ -26,6 +26,7 @@ function fakeClient(
     stored?: Files;
     visible?: boolean;
     refuse?: (path: string) => boolean;
+    removeError?: string;
   } = {},
 ) {
   const uploads: Array<{
@@ -35,6 +36,7 @@ function fakeClient(
   }> = [];
   const saved: Array<{ files: Files; elements: unknown[] }> = [];
   const downloads: string[] = [];
+  const removed: string[][] = [];
   const visible = options.visible ?? true;
   const row = {
     id: "canvas-1",
@@ -77,6 +79,12 @@ function fakeClient(
           ? { error: { message: "new row violates row-level security policy" } }
           : { error: null };
       },
+      remove: async (paths: string[]) => {
+        removed.push(paths.map((path) => `${bucket}/${path}`));
+        return options.removeError
+          ? { data: null, error: { message: options.removeError } }
+          : { data: [], error: null };
+      },
       download: async (path: string) => {
         downloads.push(path);
         return { data: null, error: { message: "not expected" } };
@@ -88,7 +96,13 @@ function fakeClient(
       }),
     }),
   };
-  return { client: { from, storage } as never, uploads, saved, downloads };
+  return {
+    client: { from, storage } as never,
+    uploads,
+    saved,
+    downloads,
+    removed,
+  };
 }
 
 function save(
@@ -261,5 +275,68 @@ describe("canvas images in storage", () => {
     expect(files[0]?.dataURL).toBe(
       "oss://project-assets/ws-1/generated/job-1.png",
     );
+  });
+});
+
+describe("files a canvas no longer uses", () => {
+  const own = (fileId: string) =>
+    `oss://project-assets/ws-1/canvas-files/canvas-1/${fileId}.png`;
+  const stored = () => ({
+    f1: { id: "f1", dataURL: own("f1") },
+    f2: { id: "f2", dataURL: own("f2") },
+    // An agent image (the user's history) and another canvas's file: their
+    // entries go, their objects are not this canvas's to delete.
+    g1: { id: "g1", dataURL: "oss://project-assets/ws-1/generated/job-1.png" },
+    o1: {
+      id: "o1",
+      dataURL: "oss://project-assets/ws-1/canvas-files/other-canvas/o1.png",
+    },
+  });
+  const sent = { f1: { id: "f1" }, f2: { id: "f2" }, g1: { id: "g1" }, o1: { id: "o1" } };
+
+  it("drops them and deletes this canvas's copies once the save lands", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const fake = fakeClient({ stored: stored() });
+    await expect(save(fake, sent, [image("f1")])).resolves.toEqual({
+      missingFileIds: [],
+    });
+    expect(Object.keys(fake.saved[0]?.files ?? {})).toEqual(["f1"]);
+    expect(fake.removed).toEqual([
+      ["project-assets/ws-1/canvas-files/canvas-1/f2.png"],
+    ]);
+  });
+
+  it("does not upload a new file no image uses", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const fake = fakeClient();
+    await save(fake, { f9: { id: "f9", dataURL: PNG, mimeType: "image/png" } }, []);
+    expect(fake.uploads).toEqual([]);
+    expect(fake.saved[0]?.files).toEqual({});
+  });
+
+  it("deletes nothing when the save leaves the canvas empty", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const fake = fakeClient({ stored: stored() });
+    await save(fake, sent, []);
+    expect(fake.saved[0]?.files).toEqual({});
+    expect(fake.removed).toEqual([]);
+  });
+
+  it("deletes nothing when the save does not land", async () => {
+    const fake = fakeClient({ stored: stored(), visible: false });
+    await expect(save(fake, sent, [image("f1")])).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(fake.removed).toEqual([]);
+  });
+
+  it("still saves when the delete fails", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fake = fakeClient({ stored: stored(), removeError: "storage down" });
+    await expect(save(fake, sent, [image("f1")])).resolves.toEqual({
+      missingFileIds: [],
+    });
+    expect(String(warn.mock.calls[0]?.[0])).toContain("not removed: storage down");
   });
 });

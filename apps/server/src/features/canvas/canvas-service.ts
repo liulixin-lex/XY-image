@@ -59,9 +59,12 @@ const CANVAS_FILES_BUCKET = "project-assets";
 // Excalidraw file ids are the SHA-1 of the file (nanoid without WebCrypto) and
 // the agent writer uses short random ids, so an id never changes content.
 // Anything that would not make a plain path segment stays inline.
-// TODO: objects of files a canvas no longer uses (and of deleted canvases)
-// stay in storage; a sweep would compare canvas-files/ against
-// canvases.content->files.
+// A save keeps only the files its live image elements use (Excalidraw keeps
+// the files of deleted images and the page sends them all) and then deletes
+// the objects of dropped files from this canvas's own folder; see
+// removeUnusedFiles. Archived projects keep their canvases and files.
+// TODO: a sweep for objects no canvas references (an upload whose save then
+// failed) would compare canvas-files/ against canvases.content->files.
 const SAFE_FILE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // The types the upload route accepts into the same bucket.
 const STORABLE_TYPES = new Set([
@@ -143,7 +146,7 @@ export function createCanvasService(options: {
           canvas.elements,
           saveOptions.deletedElementIds,
         );
-        const { files, missingFileIds, summary } = await storeCanvasFiles(client, {
+        const { files, missingFileIds, unused, summary } = await storeCanvasFiles(client, {
           workspaceId,
           canvasId,
           content: { ...pending, elements },
@@ -166,7 +169,10 @@ export function createCanvasService(options: {
         if (error) {
           throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
         }
-        if (data?.length) return { missingFileIds };
+        if (data?.length) {
+          await removeUnusedFiles(client, canvasId, unused);
+          return { missingFileIds };
+        }
         if (attempt >= SAVE_ATTEMPTS) {
           // RLS hides canvases the user cannot write: nothing was saved, so do
           // not report success.
@@ -249,12 +255,21 @@ async function storeCanvasFiles(
     content: CanvasContent;
     stored: CanvasFileRecord;
   },
-): Promise<{ files: CanvasFileRecord; missingFileIds: string[]; summary: string | null }> {
+): Promise<{
+  files: CanvasFileRecord;
+  missingFileIds: string[];
+  /** Object paths of stored files no image uses any more (this canvas's folder). */
+  unused: string[];
+  summary: string | null;
+}> {
   const incoming = asFileRecord((input.content as { files?: unknown }).files);
   const folder = `${input.workspaceId}/canvas-files/${input.canvasId}/`;
+  // Only files a live image element uses are kept (and uploaded).
+  const used = imageFileIds(input.content);
   const files: CanvasFileRecord = {};
   const uploads: PendingUpload[] = [];
   let reused = 0;
+  let dropped = 0;
 
   const keepStored = (fileId: string) => {
     const previous = input.stored[fileId];
@@ -268,6 +283,10 @@ async function storeCanvasFiles(
   };
 
   for (const [fileId, fileData] of Object.entries(incoming)) {
+    if (!used.has(fileId)) {
+      dropped++;
+      continue;
+    }
     const dataURL = typeof fileData.dataURL === "string" ? fileData.dataURL : undefined;
     if (dataURL?.startsWith("data:")) {
       const previous = input.stored[fileId]?.dataURL;
@@ -288,9 +307,22 @@ async function storeCanvasFiles(
   }
 
   const missingFileIds: string[] = [];
-  for (const fileId of imageFileIds(input.content)) {
+  for (const fileId of used) {
     if (!files[fileId] && !keepStored(fileId)) missingFileIds.push(fileId);
   }
+
+  // Stored files no image uses any more. Only objects this canvas's saves
+  // wrote are deleted: a generated/ image (agent placement) is the user's
+  // history, and another canvas's folder is not this canvas's to clean. A
+  // save that leaves the canvas empty deletes nothing: an accidental wipe
+  // must not take the images with it (the files map still drops them).
+  const unused =
+    (input.content.elements?.length ?? 0) === 0
+      ? []
+      : Object.entries(input.stored)
+          .filter(([fileId]) => !used.has(fileId))
+          .map(([fileId, file]) => ownObjectPath(file.dataURL, folder, fileId))
+          .filter((path): path is string => path !== null);
 
   let moved = 0;
   const inline: string[] = [];
@@ -314,9 +346,47 @@ async function storeCanvasFiles(
     missingFileIds.length
       ? `${missingFileIds.length} missing, client asked to resend (${missingFileIds.slice(0, 5).join(", ")})`
       : "",
+    dropped ? `${dropped} unused file(s) not kept` : "",
   ].filter(Boolean);
   if (parts.length && reused) parts.push(`${reused} already stored`);
-  return { files, missingFileIds, summary: parts.length ? parts.join("; ") : null };
+  return {
+    files,
+    missingFileIds,
+    unused,
+    summary: parts.length ? parts.join("; ") : null,
+  };
+}
+
+/** The object path of a marker this canvas's saves wrote for `fileId`, else null. */
+function ownObjectPath(dataURL: unknown, folder: string, fileId: string): string | null {
+  const bucketPrefix = `${OSS_MARKER_PREFIX}${CANVAS_FILES_BUCKET}/`;
+  if (typeof dataURL !== "string" || !dataURL.startsWith(`${bucketPrefix}${folder}${fileId}.`)) {
+    return null;
+  }
+  return dataURL.slice(bucketPrefix.length);
+}
+
+/**
+ * Deletes the objects of files the saved canvas no longer uses, once the save
+ * has landed. Best effort: a failure only logs and the object stays, unused.
+ * An image brought back (undo, another tab) is sent again by the page, which
+ * still holds its data (missingFileIds), and stored anew.
+ */
+async function removeUnusedFiles(
+  client: UserSupabaseClient,
+  canvasId: string,
+  paths: string[],
+): Promise<void> {
+  if (paths.length === 0) return;
+  try {
+    const { error } = await client.storage.from(CANVAS_FILES_BUCKET).remove(paths);
+    if (error) throw error;
+    console.info(`[canvas-service] canvas ${canvasId}: removed ${paths.length} unused file(s)`);
+  } catch (error) {
+    console.warn(
+      `[canvas-service] canvas ${canvasId}: ${paths.length} unused file(s) not removed: ${String((error as Error)?.message ?? error).slice(0, 200)}`,
+    );
+  }
 }
 
 /** Uploads one data URL; the oss:// marker on success, null to keep it inline. */
