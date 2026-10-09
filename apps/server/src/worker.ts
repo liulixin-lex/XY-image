@@ -19,6 +19,7 @@ import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { closeSupabaseTransport } from "./supabase/transport.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
+import { describeErrorForLog } from "./utils/error-sanitizer.js";
 import { processMessage } from "./worker-message.js";
 
 // Import executors to trigger registration via side effects
@@ -206,6 +207,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[worker] Fatal startup or lifecycle error");
+  // Without the reason a crash-looping worker cannot be diagnosed; the
+  // description is credential-free (see describeErrorForLog).
+  console.error(
+    `[worker] Fatal startup or lifecycle error: ${describeErrorForLog(err)}`,
+  );
   process.exit(1);
 });
