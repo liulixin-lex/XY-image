@@ -192,7 +192,9 @@ limit 20;
 
 API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。画布不再用的图片和已删除画布的图片目前不会自动清理（代码里有 TODO）。
 
-实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步，检查保存请求的大小和库里的标记）。
+实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步、画布生图面板，检查保存请求的大小和库里的标记）。
+
+`GET /api/proxy-image?url=…`（画布把生成结果放上去时用）只读本站 Storage：地址必须和 `SUPABASE_URL` 同源、在 `/storage/v1/object/public/` 或 `/sign/` 下、不含编码的 `.`、`/`、`\`；走内网（`SUPABASE_INTERNAL_URL`），不跟随重定向，只返回 png/jpeg/webp/gif（25 MB 以内，带 `nosniff`），每个 IP 每分钟 240 次。2026-10-09 之前它会抓取任何以 `supabase.co`、`replicate.*` 结尾的域名并跟随重定向，可以被当成开放代理，也能借重定向访问内网。日志前缀 `[image-proxy]`，只记拒绝原因和路径前几段，不记查询串。实验环境探针：`~/xy-lab/e2e/isolation.sh probe-image-proxy.mjs`。
 
 ## 回滚
 
