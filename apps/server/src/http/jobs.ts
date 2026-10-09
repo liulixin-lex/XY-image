@@ -56,6 +56,8 @@ export async function registerJobRoutes(
       });
       return reply.code(201).send(jobResponseSchema.parse({ job }));
     } catch (error) {
+      if (error instanceof JobServiceError)
+        return sendJobError(error, reply, "job_create_failed");
       return sendAccountError(reply, error);
     }
   });

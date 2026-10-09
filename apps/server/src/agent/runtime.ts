@@ -571,11 +571,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // Look up personal workspace directly — the viewer is already
           // bootstrapped from the normal auth flow, so we skip ensureViewer
           // to avoid its strict email validation on the profile schema.
+          // Filter by owner: RLS also shows workspaces the user is only a
+          // member of (an owner can add anyone), and the image must never be
+          // stored in someone else's workspace.
           const client = createClient(accessToken) as UserSupabaseClient;
           const { data: ws } = await client
             .from("workspaces")
             .select("id")
+            .eq("owner_user_id", userId)
             .eq("type", "personal")
+            .order("created_at", { ascending: true })
             .limit(1)
             .single();
           if (!ws?.id) throw new Error("No personal workspace found");
@@ -805,10 +810,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .replace(/^-|-$/g, "");
               const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
+              // Owner filter: see the personal workspace lookup above.
               const { data: ws } = await client
                 .from("workspaces")
                 .select("id")
+                .eq("owner_user_id", run.userId ?? "")
                 .eq("type", "personal")
+                .order("created_at", { ascending: true })
                 .limit(1)
                 .single();
               const workspaceId = ws?.id ?? "default";

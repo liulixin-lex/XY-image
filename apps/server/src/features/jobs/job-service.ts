@@ -148,6 +148,18 @@ export function createJobService(options: {
         input.jobType !== "image_generation"
       )
         throw new JobServiceError("job_create_failed", "无法创建生图任务", 403);
+      // The foreign keys accept anyone's project / canvas / session, and a
+      // stranger's id on a job would also confirm that it exists.
+      if (!(await referencesInWorkspace(client, input))) {
+        console.warn(
+          `[job-service] user ${user.id} referenced a project/canvas/session outside workspace ${input.workspaceId}`,
+        );
+        throw new JobServiceError(
+          "job_create_failed",
+          "找不到这个项目或画布，请刷新后重试",
+          404,
+        );
+      }
       const queueName = QUEUE_MAP[input.jobType];
 
       const { data: job, error } = await client
@@ -418,3 +430,53 @@ export function createJobService(options: {
     },
   };
 }
+
+/**
+ * True when every project, canvas and session the job points at lives in the
+ * job's workspace (canvas → project, session → canvas → project).
+ */
+async function referencesInWorkspace(
+  client: ReturnType<typeof integrationClient>,
+  input: Pick<
+    CreateJobInput,
+    "workspaceId" | "projectId" | "canvasId" | "sessionId"
+  >,
+): Promise<boolean> {
+  const projects = new Set<string>();
+  const canvases = new Set<string>();
+  if (input.projectId) projects.add(input.projectId);
+  if (input.canvasId) canvases.add(input.canvasId);
+  if (input.sessionId) {
+    const { data, error } = await client
+      .from("chat_sessions")
+      .select("canvas_id")
+      .eq("id", input.sessionId)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+    canvases.add(data.canvas_id);
+  }
+  for (const id of canvases) {
+    const { data, error } = await client
+      .from("canvases")
+      .select("project_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+    projects.add(data.project_id);
+  }
+  for (const id of projects) {
+    const { data, error } = await client
+      .from("projects")
+      .select("id")
+      .eq("id", id)
+      .eq("workspace_id", input.workspaceId)
+      .maybeSingle();
+    if (error) throw lookupFailed();
+    if (!data) return false;
+  }
+  return true;
+}
+const lookupFailed = () =>
+  new JobServiceError("job_create_failed", "Failed to create job record.", 500);

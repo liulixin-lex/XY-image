@@ -11,6 +11,12 @@ create table langgraph.checkpoints(id int);
 create table langgraph.store(id int);
 create schema pgmq;
 create table pgmq.q_image_generation_jobs(id int);
+-- Deliberately vulnerable defaults reproduce self-service workspace membership.
+create table public.workspace_members(workspace_id uuid, user_id uuid, role text);
+alter table public.workspace_members enable row level security;
+create policy "workspace_members_insert_owner" on public.workspace_members for insert to authenticated with check (true);
+create policy "workspace_members_update_owner" on public.workspace_members for update to authenticated using (true) with check (true);
+grant all on public.workspace_members to anon, authenticated;
 create table public.agent_runs(id uuid primary key);
 alter table public.agent_runs enable row level security;
 create table public.subscriptions(id uuid);

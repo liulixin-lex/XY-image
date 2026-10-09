@@ -88,3 +88,19 @@ do $$ begin
   end if;
 end $$;
 select 'billing_reconcile_checks_passed' as result;
+
+do $$ begin
+  if exists (select 1 from pg_policies where schemaname='public' and tablename='workspace_members' and cmd in ('INSERT','UPDATE'))
+    or has_table_privilege('authenticated','public.workspace_members','INSERT,UPDATE')
+    or has_table_privilege('anon','public.workspace_members','INSERT,UPDATE')
+    or not has_table_privilege('authenticated','public.workspace_members','SELECT,DELETE') then
+    raise exception 'workspace membership still self-service';
+  end if;
+end $$;
+begin;
+grant insert on public.workspace_members to authenticated;
+do $$ begin
+  if public.xy_runtime_permissions() then raise exception 'workspace membership grant drift not detected'; end if;
+end $$;
+rollback;
+select 'workspace_members_checks_passed' as result;
