@@ -17,7 +17,7 @@ NEXT_PUBLIC_XY2API_WEB_URL=https://api.example.com
 
 请由前端执行方更新 `apps/web/.env.local.example`、`lib/env.ts`、`next.config.ts`；本次没有修改这些文件。后端 `LOOMIC_WEB_ORIGIN` 必须等于浏览器页面的 origin。允许该 origin 读取 `Retry-After`。
 
-除公开登录配置、登录和健康检查外，本文接口均带 `Authorization: Bearer <Supabase access_token>`。不能发送主站 JWT 或主站 API Key。普通 Supabase 用户即使登录成功也不能访问，需要影子账号的 `app_metadata.provider = xy2api` 和有效映射。
+除公开登录配置、登录和健康检查外，本文接口均带 `Authorization: Bearer <Supabase access_token>`。不能发送主站 JWT 或主站 API Key。普通 Supabase 用户即使登录成功也不能访问，需要影子账号的 `app_metadata.xy2api_user_id`（与映射表一致的正整数）和有效映射。不能用 `app_metadata.provider` 判断：GoTrue 在每次 magic-link 登录时都会把它改成 `email`，用它判断会让所有用户第一次登录后就进不来（lab e2e 发现，2026-10-09 修复）。
 
 受保护接口返回 401 时触发一次 `loomic:auth-expired`，本地退出并跳转 `/login?reason=expired`；避免重复跳转和退出递归。登录接口的 `invalid_credentials` 401 是表单错误，直接展示。
 
@@ -44,7 +44,7 @@ const { data, error } = await supabase.auth.verifyOtp({
 
 开启 Turnstile 时使用配置中的公钥，提交 `turnstileToken`。`captchaUnsupported=true` 时禁用登录并提示联系管理员。注册和忘记密码使用配置返回的 URL，新标签页打开。删除独立 Magic Link/Google 登录入口。
 
-登录错误统一为 `{ error: { code, message } }`：`invalid_credentials` 401、`account_disabled` 403、`captcha_failed` 400、`two_factor_invalid` 400、`rate_limited` 429、`xy2api_unavailable` 503。429 读取 `Retry-After` 秒数。每个 IP 或邮箱 5 分钟最多 10 次尝试。
+登录错误统一为 `{ error: { code, message } }`：`invalid_credentials` 401、`account_disabled` 403、`captcha_failed` 400、`two_factor_invalid` 400、`rate_limited` 429、`xy2api_unavailable` 503。429 读取 `Retry-After` 秒数。限流只计失败（密码或验证码错误、人机验证失败、账号停用）：同一邮箱 5 分钟最多 10 次，同一 IP 5 分钟最多 50 次。成功登录、主站故障和主站限流都不计数，办公室共用出口 IP 不会被自己的正常登录挡住（用户 2026-10-09 决定）。
 
 退出时先尽力调用后端 logout，再执行 `supabase.auth.signOut()`；不要因后端短暂故障阻止本地退出。
 
@@ -96,7 +96,7 @@ type KeyMetadata = {
 
 ## 模型和生图
 
-GET `/api/models` 合并主站及启用的个人服务商模型，增加 source/billing/providerId/providerName 与顶层 xy2api.available/error。主站 Key 不可用时仍返回个人服务商。格式见增量交接。
+GET `/api/models` 合并主站及启用的个人服务商模型，增加 source/billing/providerId/providerName 与顶层 xy2api.available/error。主站 Key 不可用时仍返回个人服务商。余额为 0 时主站对话模型无法发现，`xy2api.error` 为 `insufficient_balance`（引导充值，不是换 Key）。格式见增量交接。
 
 GET `/api/image-models`：
 

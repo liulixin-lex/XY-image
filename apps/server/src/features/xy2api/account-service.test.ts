@@ -84,6 +84,9 @@ describe("linked accounts", () => {
       7,
       "real@example.com",
     );
+    // Every login (not only the first) must bind the link to this xy2api user.
+    expect(store.loginLink).toHaveBeenCalledTimes(2);
+    expect(store.loginLink).toHaveBeenLastCalledWith("u7@sso.example.com", 7);
     const row = rows.get("shadow-id");
     expect(row?.access_token_enc).not.toContain("synthetic-access");
     expect(box.openSecret(row?.refresh_token_enc ?? "")).toBe(

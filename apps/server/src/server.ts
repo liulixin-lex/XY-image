@@ -13,6 +13,7 @@ import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 import { validateProductionEnv } from "./config/production.js";
 import { closeSupabaseTransport } from "./supabase/transport.js";
+import { describeErrorForLog } from "./utils/error-sanitizer.js";
 
 const env = loadServerEnv();
 validateProductionEnv(env);
@@ -52,7 +53,7 @@ try {
 
   console.log(`@loomic/server listening on http://${host}:${env.port}`);
 } catch (error) {
-  app.log.error("[server] Startup failed");
+  app.log.error(`[server] Startup failed: ${describeErrorForLog(error)}`);
   await app.close();
   process.exitCode = 1;
 }

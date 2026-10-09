@@ -8,7 +8,12 @@ import {
   matchImageModels,
 } from "./catalog.js";
 import type { RemoteKey, Xy2apiClient } from "./client.js";
-import { BillingGuardError, Xy2apiError, mapGatewayError } from "./errors.js";
+import {
+  BillingGuardError,
+  type GatewayCode,
+  Xy2apiError,
+  mapGatewayError,
+} from "./errors.js";
 import type { SecretBox } from "./secret-box.js";
 import {
   type KeyRow,
@@ -25,6 +30,19 @@ export function isKeyUsable(row: KeyRow): boolean {
     (row.quota <= 0 || row.quota_used < row.quota)
   );
 }
+// Model-discovery refusals that are evidence about the key (or its owner).
+// Anything else — notably 403 INSUFFICIENT_BALANCE, which xy2api answers on
+// /v1/models before looking at the key — says nothing about the key: it stays
+// selectable with the models we last saw, and generation reports the real
+// reason (402 + recharge) instead of "pick another key".
+const KEY_LEVEL_DISCOVERY_FAILURES = new Set<GatewayCode>([
+  "key_unavailable",
+  "key_ip_restricted",
+  "xy2api_reauth_required",
+]);
+// Minimum gap between automatic re-discovery attempts for one user.
+const REDISCOVERY_GAP_MS = 15_000;
+
 export type ImageCredential = {
   keyId: number;
   apiKey: string;
@@ -40,6 +58,12 @@ export type ChatCredential = {
 
 export class KeyService {
   private syncs = new Map<string, Promise<void>>();
+  /**
+   * Users whose last sync could not list models for some key, with the reason
+   * and when it was last tried. In memory and best effort: on another
+   * instance (or after a restart) the next login or manual sync re-runs it.
+   */
+  private deferredDiscovery = new Map<string, { code: string; at: number }>();
   constructor(
     private readonly getAdmin: () => AdminSupabaseClient,
     private readonly accounts: AccountService,
@@ -91,16 +115,25 @@ export class KeyService {
     const remote = await this.accounts.withAccess(userId, (token) =>
       this.client.listKeys(token),
     );
+    const previous = new Map(
+      (await this.rows(userId)).map((row) => [row.key_id, row]),
+    );
     const rows: KeyRow[] = [];
+    let deferred: string | null = null;
     for (let index = 0; index < remote.length; index += 3) {
-      rows.push(
-        ...(await Promise.all(
-          remote
-            .slice(index, index + 3)
-            .map((key) => this.syncRow(userId, key)),
-        )),
-      );
+      for (const result of await Promise.all(
+        remote
+          .slice(index, index + 3)
+          .map((key) => this.syncRow(userId, key, previous.get(key.id))),
+      )) {
+        rows.push(result.row);
+        deferred ??= result.deferred;
+      }
     }
+    if (deferred) {
+      if (this.deferredDiscovery.size > 10000) this.deferredDiscovery.clear();
+      this.deferredDiscovery.set(userId, { code: deferred, at: Date.now() });
+    } else this.deferredDiscovery.delete(userId);
     if (rows.length)
       checkStoreError(
         (await this.db().from("xy2api_api_keys").upsert(rows)).error,
@@ -153,7 +186,11 @@ export class KeyService {
           : (chat?.chat_models[0] ?? null),
     });
   }
-  private async syncRow(userId: string, key: RemoteKey): Promise<KeyRow> {
+  private async syncRow(
+    userId: string,
+    key: RemoteKey,
+    previous: KeyRow | undefined,
+  ): Promise<{ row: KeyRow; deferred: string | null }> {
     const group = key.group;
     const platform = group?.platform ?? "";
     const supported = [
@@ -165,6 +202,8 @@ export class KeyService {
     ].includes(platform);
     let models: string[] = [];
     let invalid: string | null = null;
+    // Why model discovery could not run this time (key itself not at fault).
+    let deferred: string | null = null;
     if (key.masked) {
       // TODO(xy2api-compat): if a future xy2api only returns masked keys from
       // the list endpoint, fetch the full key via GET /api/v1/keys/:id here.
@@ -180,14 +219,35 @@ export class KeyService {
       try {
         models = await this.client.listModels(key.key);
       } catch (error) {
-        if (error instanceof Xy2apiError && [401, 403].includes(error.status))
-          invalid = mapGatewayError({
-            status: error.status,
-            body: { code: error.id },
-          }).code;
+        const code =
+          error instanceof Xy2apiError && [401, 403].includes(error.status)
+            ? mapGatewayError({
+                status: error.status,
+                body: { code: error.id },
+              }).code
+            : null;
+        if (code && KEY_LEVEL_DISCOVERY_FAILURES.has(code)) invalid = code;
+        else {
+          deferred =
+            code ??
+            (error instanceof Xy2apiError
+              ? `${error.status} ${error.id}`
+              : "network");
+          console.warn(
+            `[xy2api] key ${key.id} model discovery deferred (${deferred}); keeping last known models`,
+          );
+        }
       }
     }
-    const imageModels = matchImageModels(this.catalog, platform, models);
+    // Last discovery result for this key, while its group is unchanged.
+    const lastKnown =
+      deferred && previous?.group_id === (group?.id ?? null)
+        ? previous
+        : undefined;
+    const imageModels = lastKnown?.image_models.length
+      ? lastKnown.image_models
+      : matchImageModels(this.catalog, platform, models);
+    const chatSource = lastKnown?.chat_models ?? models;
     const row: KeyRow = {
       user_id: userId,
       key_id: key.id,
@@ -215,7 +275,7 @@ export class KeyService {
       image_models: imageModels,
       chat_models:
         group?.status === "active"
-          ? this.env.chatModels.filter((id) => models.includes(id))
+          ? this.env.chatModels.filter((id) => chatSource.includes(id))
           : [],
       quota: key.quota ?? 0,
       quota_used: key.quota_used ?? 0,
@@ -232,7 +292,33 @@ export class KeyService {
       supported &&
       (!["openai", "grok"].includes(platform) || row.allow_image_generation) &&
       imageModels.length > 0;
-    return row;
+    return { row, deferred };
+  }
+  /**
+   * Re-runs a sync whose model discovery was blocked, once the caller has
+   * seen a sign it may now succeed (e.g. a positive balance after a recharge).
+   * Returns true when a sync ran, so callers can drop cached state.
+   */
+  async retryDeferredDiscovery(userId: string): Promise<boolean> {
+    const entry = this.deferredDiscovery.get(userId);
+    if (!entry || Date.now() - entry.at < REDISCOVERY_GAP_MS) return false;
+    entry.at = Date.now();
+    try {
+      await this.syncKeys(userId);
+      console.info(
+        `[xy2api] re-ran deferred key discovery for user ${userId} (was ${entry.code})`,
+      );
+      return true;
+    } catch (error) {
+      console.warn(
+        `[xy2api] deferred key discovery retry failed: ${error instanceof Error ? error.name : "unknown"}`,
+      );
+      return false;
+    }
+  }
+  /** Why the user's last sync could not list models, if it could not. */
+  deferredDiscoveryReason(userId: string): string | null {
+    return this.deferredDiscovery.get(userId)?.code ?? null;
   }
   private async selected(
     userId: string,
@@ -279,10 +365,15 @@ export class KeyService {
     };
   }
   async resolveChatCredential(userId: string): Promise<ChatCredential> {
-    const row = await this.selected(
-      userId,
-      (await this.preferences(userId)).chat_key_id,
-    );
+    const prefs = await this.preferences(userId);
+    // Chat models are only known from discovery; when a $0 balance refused it,
+    // send the user to recharge rather than to pick another key.
+    if (
+      !prefs.chat_key_id &&
+      this.deferredDiscoveryReason(userId) === "insufficient_balance"
+    )
+      throw new BillingGuardError("insufficient_balance", 402);
+    const row = await this.selected(userId, prefs.chat_key_id);
     if (!row.chat_models.length)
       throw new BillingGuardError("key_unavailable", 403);
     return {

@@ -51,7 +51,12 @@ export function ReadinessPanel({ className }: { className?: string }) {
   const loadingKeys = !keys.data && !keys.error;
   const imageState = keyState(imageKey, imageId);
   const chatState = keyState(chatKey, chatId);
-  const needsAttention = !loadingKeys && (imageState !== "ok" || chatState !== "ok");
+  // At $0 the main site refuses model discovery, so no chat Key can be picked
+  // yet; the server picks one after a recharge. Not a Key problem to fix here.
+  const balance = account.data?.balance ?? null;
+  const chatWaitsForRecharge = chatId === null && balance !== null && balance.amount <= 0;
+  const needsAttention =
+    !loadingKeys && (imageState !== "ok" || (chatState !== "ok" && !chatWaitsForRecharge));
   const links = account.data?.links;
 
   return (
@@ -74,7 +79,11 @@ export function ReadinessPanel({ className }: { className?: string }) {
       </div>
       <dl className="divide-y divide-line border-t border-line text-[13px]">
         <Row label="生图 Key" state={loadingKeys ? null : imageState} value={loadingKeys ? null : keyNote(imageKey, imageId)} />
-        <Row label="对话 Key" state={loadingKeys ? null : chatState} value={loadingKeys ? null : keyNote(chatKey, chatId)} />
+        <Row
+          label="对话 Key"
+          state={loadingKeys ? null : chatState}
+          value={loadingKeys ? null : chatWaitsForRecharge ? "充值后可用" : keyNote(chatKey, chatId)}
+        />
       </dl>
       <div className="border-t border-line px-5 py-3">
         <Link

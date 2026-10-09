@@ -28,7 +28,8 @@ export function AccountChip({ className }: { className?: string }) {
   const data = account.data;
   const name = displayNameOf(data);
   const initial = (name || "·").slice(0, 1).toUpperCase();
-  const noKey = Boolean(data && !data.balance);
+  // A selected key with an unreadable balance is "暂不可读", not "未选 Key".
+  const noKey = Boolean(data && !data.balance && data.preferences.image_key_id === null);
 
   return (
     <div className={cn("flex items-center gap-2.5", className)}>

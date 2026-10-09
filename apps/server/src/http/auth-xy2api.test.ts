@@ -137,4 +137,85 @@ describe("xy2api authentication HTTP routes", () => {
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(fixture.login).toHaveBeenCalledTimes(10);
   });
+  it("does not count successful sign-ins from a shared office IP", async () => {
+    const fixture = setup();
+    for (let index = 0; index < 30; index++) {
+      const response = await fixture.app.inject({
+        method: "POST",
+        url: "/api/auth/xy2api/login",
+        remoteAddress: "198.51.100.7",
+        payload: { email: "user@example.com", password: "synthetic" },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+  });
+  it("allows 50 failed guesses per IP across different emails", async () => {
+    const fixture = setup();
+    fixture.login.mockRejectedValue(
+      new Xy2apiError(401, "INVALID_CREDENTIALS"),
+    );
+    const attempt = (index: number) =>
+      fixture.app.inject({
+        method: "POST",
+        url: "/api/auth/xy2api/login",
+        remoteAddress: "198.51.100.8",
+        payload: { email: `user${index}@example.com`, password: "synthetic" },
+      });
+    for (let index = 0; index < 50; index++)
+      expect((await attempt(index)).statusCode).toBe(401);
+    expect((await attempt(50)).statusCode).toBe(429);
+    expect(fixture.login).toHaveBeenCalledTimes(50);
+  });
+  it.each([
+    ["a main-site outage", new Xy2apiError(503, "SERVICE_UNAVAILABLE")],
+    ["a main-site rate limit", new Xy2apiError(429, "RATE_LIMITED")],
+    ["a network failure", new TypeError("fetch failed")],
+  ])("does not count %s against the user", async (_label, failure) => {
+    const fixture = setup();
+    fixture.login.mockRejectedValue(failure);
+    for (let index = 0; index < 12; index++) {
+      const response = await fixture.app.inject({
+        method: "POST",
+        url: "/api/auth/xy2api/login",
+        remoteAddress: "198.51.100.9",
+        payload: { email: "user@example.com", password: "synthetic" },
+      });
+      expect(fixture.login).toHaveBeenCalledTimes(index + 1);
+    }
+  });
+  it("counts wrong two-factor codes but not a correct one", async () => {
+    const fixture = setup();
+    fixture.login.mockResolvedValue({
+      kind: "2fa",
+      tempToken: "synthetic-temp-token",
+      maskedEmail: "u***@example.com",
+    });
+    const verify = vi
+      .spyOn(fixture.client, "login2fa")
+      .mockRejectedValue(new Xy2apiError(400, "TOTP_INVALID"));
+    const start = () =>
+      fixture.app.inject({
+        method: "POST",
+        url: "/api/auth/xy2api/login",
+        payload: { email: "user@example.com", password: "synthetic" },
+      });
+    const code = async () =>
+      (
+        await fixture.app.inject({
+          method: "POST",
+          url: "/api/auth/xy2api/login/2fa",
+          payload: {
+            challenge: (await start()).json().challenge,
+            code: "123456",
+          },
+        })
+      ).statusCode;
+    for (let index = 0; index < 9; index++) expect(await code()).toBe(400);
+    verify.mockResolvedValueOnce(fixture.result);
+    expect(await code()).toBe(200);
+    expect(await code()).toBe(400);
+    // Ten wrong codes for this email: even the password step is refused now.
+    expect((await start()).statusCode).toBe(429);
+    expect(verify).toHaveBeenCalledTimes(11);
+  });
 });

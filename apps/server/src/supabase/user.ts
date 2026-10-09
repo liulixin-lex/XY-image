@@ -67,6 +67,17 @@ export function createSupabaseRequestAuthenticator(
   const createUserClient =
     options.createUserClient ?? createUserSupabaseClientFactory(env);
   const cache = new Map<string, { user: AuthenticatedUser; until: number }>();
+  // Why a bearer token was refused (jose error code / claim name, never token
+  // contents), at most once a minute per reason: a misconfigured issuer or
+  // secret otherwise shows up only as unexplained 401s.
+  const rejected = new Map<string, number>();
+  const reject = (reason: string) => {
+    if ((rejected.get(reason) ?? 0) <= now()) {
+      rejected.set(reason, now() + 60_000);
+      console.warn(`[auth] bearer token rejected: ${reason}`);
+    }
+    return null;
+  };
   return {
     async authenticate(request) {
       const token = readBearerToken(request.headers.authorization);
@@ -84,7 +95,7 @@ export function createSupabaseRequestAuthenticator(
             ).payload
           : decodeJwt(token);
         if (typeof claims.exp !== "number" || claims.exp * 1000 <= now())
-          return null;
+          return reject("expired");
         if (key) {
           if (
             claims.role !== "authenticated" ||
@@ -92,7 +103,7 @@ export function createSupabaseRequestAuthenticator(
             typeof claims.email !== "string" ||
             !claims.email
           )
-            return null;
+            return reject("not an authenticated user token");
           return {
             accessToken: token,
             id: claims.sub,
@@ -112,7 +123,7 @@ export function createSupabaseRequestAuthenticator(
         cache.delete(hash);
         const { data, error } = await createUserClient(token).auth.getUser();
         if (error || !data.user?.email || claims.exp * 1000 <= now())
-          return null;
+          return reject("auth server refused the session");
         const user: AuthenticatedUser = {
           accessToken: token,
           id: data.user.id,
@@ -132,8 +143,17 @@ export function createSupabaseRequestAuthenticator(
           until: Math.min(now() + 60_000, claims.exp * 1000),
         });
         return user;
-      } catch {
-        return null; // No token or upstream error contents in logs.
+      } catch (error) {
+        // No token or upstream error contents in logs: code and claim only.
+        const { code, claim } = (error ?? {}) as {
+          code?: unknown;
+          claim?: unknown;
+        };
+        return reject(
+          typeof code === "string"
+            ? `${code}${typeof claim === "string" ? ` claim=${claim}` : ""}`
+            : "verification error",
+        );
       }
     },
   };

@@ -81,7 +81,7 @@ export class AccountService {
     } catch {
       console.warn("[xy2api] Key sync deferred after login");
     }
-    return (await this.store.loginLink(email)).tokenHash;
+    return (await this.store.loginLink(email, user.id)).tokenHash;
   }
   private encryptTokens(
     tokens: Xy2apiTokens,

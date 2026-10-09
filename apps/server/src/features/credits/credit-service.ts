@@ -158,7 +158,8 @@ export function createCreditService(options: {
         p_user_id: userId,
         p_amount: amount,
         p_job_id: jobId ?? null,
-        p_description: description ?? null,
+        // DEFAULT NULL in SQL; the generated type marks it optional, not nullable.
+        ...(description ? { p_description: description } : {}),
       });
 
       if (error) {

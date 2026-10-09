@@ -1,6 +1,6 @@
 import type { RequestAuthenticator } from "../../supabase/user.js";
 import type { AccountService } from "./account-service.js";
-import type { AccountRow } from "./store.js";
+import { type AccountRow, shadowXy2apiUserId } from "./store.js";
 
 export function createLinkedAuthenticator(
   base: RequestAuthenticator,
@@ -14,7 +14,8 @@ export function createLinkedAuthenticator(
   return {
     async authenticate(request) {
       const user = await base.authenticate(request);
-      if (!user || user.appMetadata?.provider !== "xy2api") return null;
+      const xy2apiUserId = user ? shadowXy2apiUserId(user.appMetadata) : null;
+      if (!user || xy2apiUserId === null) return null;
       let cached = cache.get(user.id);
       if (!cached || cached.until <= Date.now()) {
         const row = await accounts.getAccount(user.id);
@@ -22,7 +23,12 @@ export function createLinkedAuthenticator(
         if (cache.size > 10000) cache.clear();
         cache.set(user.id, cached);
       }
-      if (!cached.row || cached.row.session_state !== "active") return null;
+      if (
+        !cached.row ||
+        cached.row.session_state !== "active" ||
+        cached.row.xy2api_user_id !== xy2apiUserId
+      )
+        return null;
       if (
         Date.now() - Date.parse(cached.row.last_validated_at ?? "1970-01-01") >=
         Math.max(1000, revalidateMinutes * 60000 - 30000)

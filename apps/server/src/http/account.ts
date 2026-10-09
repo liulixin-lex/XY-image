@@ -101,6 +101,15 @@ export function registerAccountRoutes(
       } catch {
         /* The account page remains available without a usable key. */
       }
+      // A recharge unblocks model discovery that a $0 balance refused at
+      // login; re-sync so chat models and defaults appear without a manual
+      // "同步 Key". Preferences below are read after it.
+      if (
+        balance &&
+        balance.amount > 0 &&
+        (await options.keys.retryDeferredDiscovery(user.id))
+      )
+        balances.delete(user.id);
       return {
         user: {
           xy2apiUserId: account.xy2api_user_id,
