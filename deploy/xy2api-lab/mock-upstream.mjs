@@ -17,6 +17,9 @@
 //   [[mock:safety]]      content-policy rejection (OpenAI 400 / Gemini blockReason)
 //   [[mock:empty]]       200 with no image / no content (malformed success)
 //   [[mock:delay=1500]]  sleep before answering (timeouts, aborts)
+//   [[mock:imagedelay=20000]]  in a chat message: the generate_image call the
+//                        scripted model makes sleeps that long; the chat reply
+//                        itself is not delayed (stopping a run mid-generation)
 //
 // TODO(agent01): if xy2api starts forwarding new upstream paths for images
 // (e.g. async/batch variants), add them here and record a fixture in
@@ -269,18 +272,30 @@ function textOf(content) {
 
 const IMAGE_INTENT = /(画|生成|图|海报|image|draw|picture|poster)/i;
 
+// The app appends context blocks to the user's message (<canvas_state>,
+// <input_images>, preferences). Intent, echo and prompt come from the user's
+// own words only: "画布" in the canvas summary is not a request for an image.
+function userWords(text) {
+  return String(text ?? "")
+    .replace(/<([a-z_]+)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .trim();
+}
+
 // Decide what the scripted "model" does next: a generate_image tool call when
 // the user asks for an image and the tool is offered, otherwise plain text.
-function planReply({ lastRole, lastText, toolNames }) {
+function planReply({ lastRole, lastText: fullText, toolNames }) {
+  const lastText = userWords(fullText);
   if (lastRole === "tool") {
     return { kind: "text", text: "（模拟上游）图片已生成，已放到画布上。" };
   }
   if (toolNames.includes("generate_image") && IMAGE_INTENT.test(lastText)) {
+    const imageDelay = Number(directives(lastText).imagedelay);
     const prompt =
-      lastText
+      (lastText
         .replace(/\[\[mock:[^\]]*\]\]/g, "")
         .trim()
-        .slice(0, 400) || "lab image";
+        .slice(0, 400) || "lab image") +
+      (imageDelay > 0 ? ` [[mock:delay=${imageDelay}]]` : "");
     return {
       kind: "tool",
       name: "generate_image",
