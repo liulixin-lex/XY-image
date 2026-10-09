@@ -65,7 +65,7 @@ async function stopChild(child, exited) {
 }
 
 test(
-  "the production Nginx template permits session use but blocks shadow-account password and grant bypasses",
+  "the production Nginx template permits session use and object reads but blocks shadow-account bypasses, REST, Realtime and Storage writes",
   {
     skip: process.env.XY_NGINX_BINARY
       ? false
@@ -199,6 +199,26 @@ test(
         ["POST", "/auth/v1/verify/"],
         ["GET", "/"],
         ["GET", "/pg/"],
+        // Browsers never use REST, Realtime or Storage writes/listing.
+        ["GET", "/rest/v1/projects?select=id"],
+        ["POST", "/rest/v1/rpc/synthetic"],
+        ["GET", "/realtime/v1/websocket?vsn=1.0.0"],
+        ["GET", "/storage/v1/bucket"],
+        ["POST", "/storage/v1/object/project-assets/synthetic.png"],
+        ["PUT", "/storage/v1/object/project-assets/synthetic.png"],
+        ["DELETE", "/storage/v1/object/project-assets"],
+        ["POST", "/storage/v1/object/list/canvases"],
+        ["POST", "/storage/v1/object/upload/sign/project-assets/synthetic.png"],
+        ["POST", "/storage/v1/object/sign/project-assets/synthetic.png"],
+        ["POST", "/storage/v1/object/public/project-assets/synthetic.png"],
+        ["GET", "/storage/v1/object/public/canvases/synthetic.png"],
+        ["GET", "/storage/v1/object/public/project-assets/"],
+        [
+          "GET",
+          "/storage/v1/object/public/project-assets/%2e%2e/%2e%2e/list/canvases",
+        ],
+        ["GET", "/storage/v1/object/public/project-assets/..%2F..%2Fbucket"],
+        ["GET", "/storage/v1/render/image/public/project-assets/synthetic.png"],
       ];
       for (const [method, url] of blocked) {
         const count = forwarded.length;
@@ -224,11 +244,15 @@ test(
         ["OPTIONS", "/auth/v1/user"],
         ["OPTIONS", "/auth/v1/token"],
         ["OPTIONS", "/auth/v1/token?grant_type=refresh_token"],
-        ["GET", "/rest/v1/projects?select=id"],
-        ["POST", "/rest/v1/rpc/synthetic"],
-        ["POST", "/storage/v1/object/project-assets/synthetic.png"],
         ["GET", "/storage/v1/object/public/project-assets/synthetic.png"],
-        ["GET", "/realtime/v1/websocket?vsn=1.0.0"],
+        [
+          "GET",
+          "/storage/v1/object/public/project-assets/u/1/synthetic.png?download=a.png",
+        ],
+        [
+          "GET",
+          "/storage/v1/object/sign/brand-kit-assets/u/logo.png?token=synthetic",
+        ],
       ];
       for (const [method, url] of allowed) {
         const count = forwarded.length;
@@ -241,16 +265,24 @@ test(
           "Forward method/query without rewriting auth policy",
         );
       }
+      const head = await request(
+        nginxPort,
+        "HEAD",
+        "/storage/v1/object/public/project-assets/synthetic.png",
+      );
+      assert.equal(head.status, 200, "HEAD of a public object remains usable");
+      const before = forwarded.length;
       const realtime = await request(
         nginxPort,
         "GET",
         "/realtime/v1/websocket?vsn=1.0.0",
         { upgrade: "websocket", connection: "Upgrade" },
       );
+      assert.equal(realtime.status, 404, "Realtime is not public");
       assert.equal(
-        realtime.status,
-        101,
-        "Realtime WebSocket upgrades remain available",
+        forwarded.length,
+        before,
+        "Realtime upgrades must not reach Supabase",
       );
       const api = await request(nginxPort, "POST", "/api/synthetic", {
         host: "api.test.invalid",
