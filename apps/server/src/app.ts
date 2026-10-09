@@ -146,7 +146,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       typeof statusCode === "number" && statusCode >= 400 && statusCode < 500
         ? statusCode
         : 500;
-    request.log.error({ code: "request_failed", status }, "Request failed");
+    // A 4xx (bad JSON, body too large, ...) is the client's; only a 5xx is
+    // logged at error (see http/log-route-error.ts).
+    if (status < 500)
+      request.log.warn({ code: "request_failed", status }, "Request failed");
+    else
+      request.log.error({ code: "request_failed", status }, "Request failed");
     return reply.code(status).send({
       error: {
         code: "application_error",

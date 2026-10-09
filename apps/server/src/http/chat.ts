@@ -15,6 +15,7 @@ import {
   type ChatService,
 } from "../features/chat/chat-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { logRouteError } from "./log-route-error.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,
@@ -134,8 +135,10 @@ export async function registerChatRoutes(
           .code(200)
           .send(messageListResponseSchema.parse({ messages }));
       } catch (error) {
-        request.log.error(
-          { sessionId: request.params.sessionId, err: error },
+        logRouteError(
+          request,
+          error,
+          { sessionId: request.params.sessionId },
           "chat.listMessages FAILED",
         );
         return sendChatError(error, reply);
@@ -167,8 +170,10 @@ export async function registerChatRoutes(
           .code(201)
           .send(messageCreateResponseSchema.parse({ message }));
       } catch (error) {
-        request.log.error(
-          { sessionId: request.params.sessionId, err: error },
+        logRouteError(
+          request,
+          error,
+          { sessionId: request.params.sessionId },
           "chat.createMessage FAILED",
         );
         return sendChatError(error, reply);

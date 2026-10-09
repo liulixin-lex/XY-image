@@ -13,6 +13,7 @@ import {
   type CanvasService,
 } from "../features/canvas/canvas-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { logRouteError } from "./log-route-error.js";
 
 export async function registerCanvasRoutes(
   app: FastifyInstance,
@@ -67,8 +68,10 @@ export async function registerCanvasRoutes(
           .code(200)
           .send(canvasSaveResponseSchema.parse({ ok: true, missingFileIds }));
       } catch (error) {
-        request.log.error(
-          { canvasId: request.params.canvasId, err: error },
+        logRouteError(
+          request,
+          error,
+          { canvasId: request.params.canvasId },
           "canvas.save FAILED",
         );
         return sendCanvasError(error, reply);
