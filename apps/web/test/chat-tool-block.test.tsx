@@ -50,6 +50,37 @@ describe("ToolBlockView", () => {
     expect(screen.getByText("Gemini 3 Pro Image")).toBeInTheDocument();
   });
 
+  it.each([
+    [
+      { error: "图片已生成并扣费，正在重新保存", pending: "storage", jobId: "j1" },
+      "图片已生成，正在保存",
+      "这张已经扣费，不用重新生成。保存好后会自动放到画布上。",
+    ],
+    [
+      { error: "Job timed out after 660s", jobId: "j1" },
+      "图片还在生成",
+      "这次等得比较久。生成好后会自动放到画布上。",
+    ],
+  ])("does not call an image on its way a failure (%o)", (output, title, message) => {
+    render(
+      <ToolBlockView
+        block={{
+          type: "tool",
+          toolCallId: "t6",
+          toolName: "generate_image",
+          status: "completed",
+          input: { model: "gpt-image-2", prompt: "灯塔" },
+          output,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("图片生成失败")).not.toBeInTheDocument();
+    expect(screen.queryByText(output.error)).not.toBeInTheDocument();
+  });
+
   it("hides raw key/value lines when the tool has a readable summary", () => {
     render(
       <ToolBlockView

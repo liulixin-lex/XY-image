@@ -52,6 +52,7 @@ export async function registerCanvasRoutes(
           user,
           request.params.canvasId,
           payload.content,
+          { deletedElementIds: payload.deletedElementIds },
         );
         // content-length, not a second JSON.stringify of a body up to 50 MB.
         request.log.info(

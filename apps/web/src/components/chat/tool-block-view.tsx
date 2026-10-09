@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, Clock3 } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -173,11 +173,13 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const isImageTool = block.toolName === "generate_image";
   const isVideoTool = block.toolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
+  const mediaOutput = block.output as Record<string, unknown> | undefined;
   const mediaError =
     isMediaTool && isCompleted && !imageArtifact
-      ? ((block.output as Record<string, unknown> | undefined)
-          ?.error as string | undefined)
+      ? (mediaOutput?.error as string | undefined)
       : undefined;
+  const mediaPending =
+    isImageTool && mediaError ? imagePendingNotice(mediaOutput) : null;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
   const aspectRatio =
@@ -202,6 +204,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {block.status === "running" ? (
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+        ) : mediaPending ? (
+          <Clock3 aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
         ) : mediaError ? (
           <CircleAlert aria-hidden className="h-3.5 w-3.5 text-alert" />
         ) : (
@@ -229,12 +233,16 @@ export const ToolBlockView = React.memo(function ToolBlockView({
         />
       )}
 
-      {/* Layer 2b-err: Media generation failed */}
-      {isMediaTool && isCompleted && !imageArtifact && mediaError && (
-        <MediaErrorCard
-          isVideoTool={isVideoTool}
-          error={mediaError}
-        />
+      {/* Layer 2b-err: Media generation failed, or an image still on its way */}
+      {mediaPending ? (
+        <MediaPendingCard {...mediaPending} />
+      ) : (
+        isMediaTool && isCompleted && !imageArtifact && mediaError && (
+          <MediaErrorCard
+            isVideoTool={isVideoTool}
+            error={mediaError}
+          />
+        )
       )}
 
       {/* Layer 2b: Image generation card with inline preview */}
@@ -405,6 +413,56 @@ const MediaErrorCard = React.memo(function MediaErrorCard({
           <div className="mt-0.5 text-[12px] text-muted-foreground line-clamp-2">
             {error}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/*  MediaPendingCard                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Image results that are not failures: charged and still being saved (server
+ * M6, `pending: "storage"`), or past the agent's wait. The worker puts either
+ * on the canvas when it is ready, and the page polls for it
+ * (use-job-fallback-polling).
+ */
+function imagePendingNotice(
+  output: Record<string, unknown> | undefined,
+): { title: string; message: string } | null {
+  if (output?.pending === "storage") {
+    return {
+      title: "图片已生成，正在保存",
+      message: "这张已经扣费，不用重新生成。保存好后会自动放到画布上。",
+    };
+  }
+  if (typeof output?.error === "string" && /timed out/i.test(output.error)) {
+    return {
+      title: "图片还在生成",
+      message: "这次等得比较久。生成好后会自动放到画布上。",
+    };
+  }
+  return null;
+}
+
+const MediaPendingCard = React.memo(function MediaPendingCard({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="rounded-xl border-[0.5px] border-border p-3">
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 shrink-0 rounded-lg bg-muted p-1.5 text-muted-foreground">
+          <Clock3 aria-hidden className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-foreground">{title}</div>
+          <div className="mt-0.5 text-[12px] text-muted-foreground">{message}</div>
         </div>
       </div>
     </div>

@@ -267,13 +267,15 @@ export async function saveCanvas(
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
+  // Elements the user deleted on this page (see lib/canvas-save.ts).
+  deletedElementIds?: string[],
 ): Promise<{ missingFileIds: string[] }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
       headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, deletedElementIds }),
     },
   );
   if (!response.ok) return handleErrorResponse(response);

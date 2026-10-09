@@ -9,8 +9,8 @@ import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { useCanvasTheme } from "../hooks/use-canvas-theme";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import { buildCanvasSavePayload, type SavePayload } from "../lib/canvas-save";
 import {
-  buildFilesPayload,
   forgetStoredFiles,
   loadCanvasFiles,
   markFilesStored,
@@ -70,12 +70,6 @@ type CanvasEditorProps = {
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
-};
-
-type SaveContent = {
-  elements: Record<string, unknown>[];
-  appState: Record<string, unknown>;
-  files: Record<string, Record<string, unknown>>;
 };
 
 const SAVE_DEBOUNCE_MS = 1500;
@@ -166,9 +160,14 @@ export function CanvasEditor({
   // they are sent again with their data, at most MAX_FILE_RESENDS times each.
   const resendCountRef = useRef(new Map<string, number>());
   const persist = useCallback(
-    async (content: SaveContent, sentWithData: string[]): Promise<void> => {
+    async ({ content, deletedElementIds, sentWithData }: SavePayload): Promise<void> => {
       const id = canvasIdRef.current;
-      const { missingFileIds } = await saveCanvas(accessTokenRef.current, id, content);
+      const { missingFileIds } = await saveCanvas(
+        accessTokenRef.current,
+        id,
+        content,
+        deletedElementIds,
+      );
       markFilesStored(id, sentWithData);
       if (missingFileIds.length === 0) return;
       forgetStoredFiles(id, missingFileIds);
@@ -188,7 +187,7 @@ export function CanvasEditor({
       if (resend.length === 0) return;
       for (const fileId of resend) counts.set(fileId, (counts.get(fileId) ?? 0) + 1);
       const next = buildSavePayloadRef.current();
-      if (next) await persist(next.content, next.sentWithData);
+      if (next) await persist(next);
     },
     [],
   );
@@ -223,18 +222,16 @@ export function CanvasEditor({
             captureUpdate: "NONE",
           });
           // Persist normalized elements to DB
-          const { files, sentWithData } = buildFilesPayload(
-            canvasIdRef.current,
-            excalidrawApi.getFiles() as Record<string, any>,
+          const deleted = (excalidrawApi.getSceneElementsIncludingDeleted() as any[]).filter(
+            (el) => el.isDeleted,
           );
-          const appState = excalidrawApi.getAppState();
           persist(
-            {
-              elements: mutableElements.filter((el: any) => !el.isDeleted),
-              appState: { viewBackgroundColor: appState.viewBackgroundColor, gridModeEnabled: appState.gridModeEnabled },
-              files,
-            },
-            sentWithData,
+            buildCanvasSavePayload(
+              canvasIdRef.current,
+              [...mutableElements, ...deleted],
+              excalidrawApi.getAppState(),
+              excalidrawApi.getFiles() as Record<string, any>,
+            ),
           ).catch((err: Error) => console.warn("[canvas-editor] normalization save failed:", err));
         }
       } catch (err) {
@@ -266,24 +263,18 @@ export function CanvasEditor({
 
       saveTimerRef.current = setTimeout(() => {
         // Build the full payload only when the debounce fires. Files the
-        // server already has go without their data.
-        const { files, sentWithData } = buildFilesPayload(
+        // server already has go without their data; `elements` includes the
+        // deleted ones, which go as ids.
+        const payload = buildCanvasSavePayload(
           canvasId,
+          elements,
+          appState,
           (excalidrawApi?.getFiles() ?? {}) as Record<string, any>,
         );
-        const content = {
-          elements: elements.filter(
-            (el: any) => !el.isDeleted,
-          ) as Record<string, unknown>[],
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridModeEnabled: appState.gridModeEnabled,
-          },
-          files,
-        };
+        const { content } = payload;
         pendingSaveRef.current = content;
 
-        persist(content, sentWithData)
+        persist(payload)
           .then(() => {
             if (pendingSaveRef.current === content) {
               pendingSaveRef.current = null;
@@ -463,27 +454,20 @@ export function CanvasEditor({
     // Never flush before hydration — Excalidraw may not have loaded elements yet
     if (!hydratedRef.current) return null;
     try {
-      const sceneElements = excalidrawApi.getSceneElements();
-      const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
-      const appState = excalidrawApi.getAppState();
+      const payload = buildCanvasSavePayload(
+        canvasIdRef.current,
+        excalidrawApi.getSceneElementsIncludingDeleted(),
+        excalidrawApi.getAppState(),
+        excalidrawApi.getFiles() as Record<string, any>,
+      );
 
       // Safety: refuse to save empty when we loaded with elements — prevents
       // race conditions from wiping canvas content during page teardown.
-      const liveCount = sceneElements.filter((el: any) => !el.isDeleted).length;
-      if (liveCount === 0 && initialElementCountRef.current > 0) {
+      if (payload.content.elements.length === 0 && initialElementCountRef.current > 0) {
         console.warn("[canvas-editor] skipping save: 0 elements but loaded with", initialElementCountRef.current);
         return null;
       }
-      const { files, sentWithData } = buildFilesPayload(canvasIdRef.current, rawFiles);
-      const content: SaveContent = {
-        elements: sceneElements.filter((el: any) => !el.isDeleted),
-        appState: {
-          viewBackgroundColor: appState.viewBackgroundColor,
-          gridModeEnabled: appState.gridModeEnabled,
-        },
-        files,
-      };
-      return { content, sentWithData };
+      return payload;
     } catch (err) {
       console.warn("[canvas-editor] failed to build save payload on flush:", err);
       return null;
@@ -515,7 +499,10 @@ export function CanvasEditor({
             Authorization: `Bearer ${accessTokenRef.current}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ content: payload.content }),
+          body: JSON.stringify({
+            content: payload.content,
+            deletedElementIds: payload.deletedElementIds,
+          }),
           keepalive: true,
         });
       } catch {
@@ -537,7 +524,7 @@ export function CanvasEditor({
       if (pendingSaveRef.current) {
         const payload = buildSavePayloadRef.current();
         if (payload) {
-          persist(payload.content, payload.sentWithData).catch(console.error);
+          persist(payload).catch(console.error);
         }
         pendingSaveRef.current = null;
       }

@@ -97,7 +97,7 @@ group by 1, 2;
 
 主站返回图片即已扣费。之后写 Storage（每轮最多三次上传）或写 `asset_objects` 失败时，服务端把图片字节存进 `public.xy2api_pending_deliveries`（仅服务端可访问，迁移 `20261009000005`），任务回到 `queued` 并带 `error_code = storage_retrying`。Worker 用同一条队列消息补传，间隔 30 秒、1、2、4、8 分钟，之后每 10 分钟一次；连同第一次一共 12 次，约 75 分钟。补传不调用主站、不再扣费；补传成功后任务转为 `succeeded`，Worker 在记录成功之后才删除暂存行。同步画布接口遇到这种情况返回 502 `storage_retrying`，并把任务交给 Worker 补传。
 
-用户看到的是“保存中”：不能取消，不占生图并发名额；Agent 会告诉用户图片稍后出现在生成记录里。补传成功的图片只进生成记录，不会自动放回当时的画布（TODO）。12 次都失败后任务转为 `dead_letter` / `storage_failed`，暂存行保留，等人工恢复。暂存失败（例如数据库也不可用）时直接 `storage_failed`，这时图片字节丢失，只能到主站核对补偿。日志关键字：`image held`、`storage attempt`、`delivered on storage attempt`、`for manual recovery`、`could not be held`。
+用户看到的是“保存中”：不能取消，不占生图并发名额；Agent 会告诉用户图片正在保存、保存好后自动出现在画布上，不要重新生成。补传成功后 Worker 把图放到当时的画布上（见“画布图片存储”），开着的页面轮询到任务成功后合并进来。12 次都失败后任务转为 `dead_letter` / `storage_failed`，暂存行保留，等人工恢复。暂存失败（例如数据库也不可用）时直接 `storage_failed`，这时图片字节丢失，只能到主站核对补偿。日志关键字：`image held`、`storage attempt`、`delivered on storage attempt`、`for manual recovery`、`could not be held`。
 
 查看暂存中的图片：
 
@@ -192,7 +192,9 @@ limit 20;
 
 API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。画布不再用的图片和已删除画布的图片目前不会自动清理（代码里有 TODO）。
 
-实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步、画布生图面板，检查保存请求的大小和库里的标记）。
+Agent 生的图由 Worker 放到画布上（任务带 `canvas_id` 的才放，生图面板的任务不带）。所以 Agent 等超时、或者图片在 Storage 补传期间才保存好，图也会回到画布。每个任务只放一次：元素的 `customData.jobId` 记着任务 ID，消息重投或 Agent 运行时再放一次都只返回已有的元素。写画布和保存都是条件写（`canvases.updated_at` 没变才写入，变了就重读再写），Worker 放图不会被同时进行的保存覆盖。页面保存时带上用户删掉的“Agent 放的图”的 ID（`deletedElementIds`）；库里有、页面还没加载、也没被删的 Agent 图，保存时会保留下来。不带 `deletedElementIds` 的旧页面仍然整份覆盖。日志：Worker `[image-generation] job … placed on canvas` / `already on canvas` / `not placed on canvas`（放图失败只记日志，图片仍在生成记录里），API `[canvas-service] … kept N placed image(s) the client has not loaded`、`changed during save, retry`，写入方 `[canvas-element-writer] … changed while inserting, retry`。
+
+实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步、画布生图面板，检查保存请求的大小和库里的标记）；`~/xy-lab/e2e/late-delivery.sh`（停掉 Storage 让 Agent 生图，恢复后检查 Worker 放图、页面没加载时的保存不丢图、合并时保留未保存的修改、删除后不再回来）。
 
 `GET /api/proxy-image?url=…`（画布把生成结果放上去时用）只读本站 Storage：地址必须和 `SUPABASE_URL` 同源、在 `/storage/v1/object/public/` 或 `/sign/` 下、不含编码的 `.`、`/`、`\`；走内网（`SUPABASE_INTERNAL_URL`），不跟随重定向，只返回 png/jpeg/webp/gif（25 MB 以内，带 `nosniff`），每个 IP 每分钟 240 次。2026-10-09 之前它会抓取任何以 `supabase.co`、`replicate.*` 结尾的域名并跟随重定向，可以被当成开放代理，也能借重定向访问内网。日志前缀 `[image-proxy]`，只记拒绝原因和路径前几段，不记查询串。实验环境探针：`~/xy-lab/e2e/isolation.sh probe-image-proxy.mjs`。
 

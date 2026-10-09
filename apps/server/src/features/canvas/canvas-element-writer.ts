@@ -15,6 +15,8 @@ type ImageInsertOpts = {
   height: number;
   mimeType: string;
   title?: string;
+  /** The image job this comes from: one element per job, however often asked. */
+  jobId?: string;
 };
 
 type VideoInsertOpts = {
@@ -30,7 +32,7 @@ type VideoInsertOpts = {
 
 type Placement = { x: number; y: number; width: number; height: number };
 
-type InsertResult = { elementId: string };
+type InsertResult = { elementId: string; inserted: boolean };
 
 // ---------------------------------------------------------------------------
 // Placement calculation (ported from apps/web/src/lib/canvas-elements.ts)
@@ -134,6 +136,9 @@ function buildImageElement(
     customData: {
       ...(opts.title ? { title: opts.title } : {}),
       source: "generated" as const,
+      // Marks an element the server placed: a canvas save keeps it until the
+      // client has seen it (canvas-service), and a repeated insert finds it.
+      ...(opts.jobId ? { jobId: opts.jobId } : {}),
     },
   };
 }
@@ -185,6 +190,8 @@ function buildVideoElement(
 
 const CANVAS_FILES_BUCKET = "project-assets";
 const IMAGE_MAX_SIZE = 600;
+// Reads and conditional writes before giving up when the canvas keeps changing.
+const WRITE_ATTEMPTS = 4;
 const VIDEO_MAX_SIZE = 800;
 
 /**
@@ -195,6 +202,12 @@ const VIDEO_MAX_SIZE = 800;
  * map gets an oss:// marker to it, the same form the canvas save path stores;
  * loading the canvas turns it into the image's public URL. (Until 10-09 the
  * image was downloaded and embedded as base64, which bloated canvases.content.)
+ *
+ * The write only lands if the canvas has not changed since it was read
+ * (`updated_at`); otherwise it reads again, so a save from the browser in
+ * between is not overwritten. With `jobId`, an element already placed for that
+ * job is returned instead of adding a second one (worker redelivery, or the
+ * agent runtime placing what the worker could not).
  */
 export async function insertImageElement(
   client: { from: (table: string) => any; storage: { from: (bucket: string) => any } },
@@ -203,58 +216,77 @@ export async function insertImageElement(
 ): Promise<InsertResult> {
   const dataURL = `oss://${CANVAS_FILES_BUCKET}/${opts.objectPath}`;
 
-  // 1. Read canvas
-  const { data, error } = await client
-    .from("canvases")
-    .select("content")
-    .eq("id", opts.canvasId)
-    .single();
+  for (let attempt = 1; ; attempt++) {
+    // 1. Read canvas
+    const { data, error } = await client
+      .from("canvases")
+      .select("content, updated_at")
+      .eq("id", opts.canvasId)
+      .single();
 
-  if (error || !data) {
-    throw new Error(`Canvas not found: ${opts.canvasId}`);
+    if (error || !data) {
+      throw new Error(`Canvas not found: ${opts.canvasId}`);
+    }
+
+    const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
+    const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
+    const files = ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
+
+    if (opts.jobId) {
+      const existing = elements.find(
+        (el) => !el.isDeleted && (el.customData as { jobId?: unknown } | undefined)?.jobId === opts.jobId,
+      );
+      if (existing) {
+        console.log(`[canvas-element-writer] job ${opts.jobId} already on canvas ${opts.canvasId}`);
+        return { elementId: existing.id as string, inserted: false };
+      }
+    }
+
+    // 2. Placement
+    const placement = explicitPlacement ?? calculateAutoPlacement(
+      elements, opts.width, opts.height, IMAGE_MAX_SIZE,
+    );
+
+    // 3. Build element + files entry pointing at the stored image
+    const fileId = generateId();
+    const element = buildImageElement(fileId, placement, opts);
+
+    const updatedFiles = {
+      ...files,
+      [fileId]: {
+        id: fileId,
+        dataURL,
+        mimeType: opts.mimeType,
+        created: Date.now(),
+      },
+    };
+
+    // 4. Write, unless the canvas changed since step 1
+    const updatedContent = {
+      ...content,
+      elements: [...elements, element],
+      files: updatedFiles,
+    };
+
+    const { data: written, error: writeError } = await client
+      .from("canvases")
+      .update({ content: updatedContent as unknown as Json })
+      .eq("id", opts.canvasId)
+      .eq("updated_at", data.updated_at)
+      .select("id");
+
+    if (writeError) {
+      throw new Error(`Failed to write canvas: ${writeError.message}`);
+    }
+    if (written?.length) {
+      console.log(`[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`);
+      return { elementId: element.id as string, inserted: true };
+    }
+    if (attempt >= WRITE_ATTEMPTS) {
+      throw new Error(`Canvas changed on every attempt or is not writable, image not inserted: ${opts.canvasId}`);
+    }
+    console.warn(`[canvas-element-writer] canvas ${opts.canvasId} changed while inserting, retry ${attempt}`);
   }
-
-  const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const files = ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
-
-  // 2. Placement
-  const placement = explicitPlacement ?? calculateAutoPlacement(
-    elements, opts.width, opts.height, IMAGE_MAX_SIZE,
-  );
-
-  // 3. Build element + files entry pointing at the stored image
-  const fileId = generateId();
-  const element = buildImageElement(fileId, placement, opts);
-
-  const updatedFiles = {
-    ...files,
-    [fileId]: {
-      id: fileId,
-      dataURL,
-      mimeType: opts.mimeType,
-      created: Date.now(),
-    },
-  };
-
-  // 4. Write
-  const updatedContent = {
-    ...content,
-    elements: [...elements, element],
-    files: updatedFiles,
-  };
-
-  const { error: writeError } = await client
-    .from("canvases")
-    .update({ content: updatedContent as unknown as Json })
-    .eq("id", opts.canvasId);
-
-  if (writeError) {
-    throw new Error(`Failed to write canvas: ${writeError.message}`);
-  }
-
-  console.log(`[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`);
-  return { elementId: element.id as string };
 }
 
 /**
@@ -304,5 +336,5 @@ export async function insertVideoElement(
   }
 
   console.log(`[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`);
-  return { elementId: element.id as string };
+  return { elementId: element.id as string, inserted: true };
 }

@@ -132,7 +132,18 @@ function CanvasPageContent() {
         if (loaded.length > 0) api.addFiles(loaded);
       }
 
-      api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
+      // Merge, don't replace: the page may hold edits it has not saved yet.
+      // Newer local versions (and local deletions) win; elements only the
+      // server has, such as an image the worker placed, are added.
+      const { reconcileElements, restoreElements } = await import(
+        "@excalidraw/excalidraw"
+      );
+      const merged = reconcileElements(
+        api.getSceneElementsIncludingDeleted(),
+        restoreElements(elements as any, null) as any,
+        api.getAppState(),
+      );
+      api.updateScene({ elements: merged, captureUpdate: "IMMEDIATELY" });
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }

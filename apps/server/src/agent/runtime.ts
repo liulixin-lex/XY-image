@@ -611,6 +611,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   xy2apiKeyId: prepared.keyId,
                   payload: {
                     prompt: input.prompt,
+                    // The worker labels the image it places on the canvas.
+                    title: input.title,
                     model: prepared.model,
                     quality: prepared.quality,
                     aspect_ratio: input.aspectRatio,
@@ -658,12 +660,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 width?: number;
                 height?: number;
                 mime_type?: string;
+                element_id?: string;
               };
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
-              // Write element directly to canvas (backend-driven insertion)
-              let elementId: string | undefined;
-              if (canvasId && result.object_path) {
+              // The worker placed the image on the canvas (element_id). Jobs
+              // from before it did, or that it could not place, are placed
+              // here; the job id on the element keeps it to one either way.
+              let elementId =
+                typeof result.element_id === "string"
+                  ? result.element_id
+                  : undefined;
+              if (!elementId && canvasId && result.object_path) {
                 try {
                   const writerClient = createClient(
                     accessToken,
@@ -679,17 +687,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       height: result.height ?? 1024,
                       mimeType: result.mime_type ?? "image/png",
                       title: input.title,
+                      jobId: job.id,
                     },
                     explicitPlacement,
                   );
                   elementId = insertResult.elementId;
-
-                  // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  });
                   jobLap("canvas_element_inserted", { elementId });
                 } catch (insertErr) {
                   // Graceful degradation: log error but still return result
@@ -698,6 +700,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     insertErr,
                   );
                 }
+              }
+              if (canvasId && elementId) {
+                // Notify connected frontends to refresh canvas
+                options.connectionManager?.pushToCanvas(canvasId, {
+                  type: "canvas.sync" as const,
+                  runId,
+                  timestamp: new Date().toISOString(),
+                });
               }
 
               return {
@@ -712,7 +722,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
             // Charged, but storage refused it: the worker keeps retrying the
             // upload for up to about 75 minutes. Don't hold the run that long.
-            // TODO(agent01): a late delivery reaches history but not this canvas.
+            // Once saved, the worker places it on the canvas and the page,
+            // polling the job (use-job-fallback-polling), syncs it in.
             if (current.error_code === "storage_retrying") {
               jobLap("job_poll_done", {
                 pollCount,
@@ -721,6 +732,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               return {
                 jobId: job.id,
                 error: current.error_message ?? "图片已生成，正在保存",
+                pending: "storage" as const,
               };
             }
 
