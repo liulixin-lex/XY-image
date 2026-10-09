@@ -174,6 +174,26 @@ where w.owner_user_id <> wm.user_id;
 
 双用户隔离演练（实验环境）：`~/xy-lab/e2e/isolation.sh`（API、WebSocket、REST、存储共 83 项，任一越权读到对方数据、5xx 或改动对方数据都算失败）和 `~/xy-lab/e2e/isolation.sh probe-agent-workspace.mjs`（Agent 生图存进自己的工作区）。脚本在 `xy-ops/agent01/e2e/`，只打印状态码，不打印令牌。
 
+### 画布图片存储
+
+画布图片存在 `project-assets/<工作区>/canvas-files/<画布>/`，`canvases.content.files` 里只留 `oss://project-assets/…` 标记。2026-10-09 之前路径少了工作区这一层，存储权限拒绝写入，所有画布图片都以 base64 留在 `canvases.content` 里；这些画布下次保存时自动转存，不需要手工迁移。还有多少没转存：
+
+```sql
+select c.id, count(*) as inline_files, sum(length(f.value->>'dataURL')) as inline_bytes
+from public.canvases c
+cross join lateral jsonb_each(
+  case when jsonb_typeof(c.content->'files') = 'object' then c.content->'files' else '{}'::jsonb end
+) f
+where f.value->>'dataURL' like 'data:%'
+group by c.id
+order by inline_bytes desc
+limit 20;
+```
+
+API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。画布不再用的图片和已删除画布的图片目前不会自动清理（代码里有 TODO）。
+
+实验环境验证：`~/xy-lab/e2e/run.sh 04-canvas-files.mjs`（浏览器里拖入图片、刷新、旧画布转存、Agent 出图同步，检查保存请求的大小和库里的标记）。
+
 ## 回滚
 
 先关闭前端入口并停止本次 API/Worker，避免旧前端继续调用。保留数据库增量表及审计数据，不回退成允许浏览器改 billing_status。旧平台 Key 版本不能当作本分支的无缝回退版本。

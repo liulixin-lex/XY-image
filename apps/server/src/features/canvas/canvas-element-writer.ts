@@ -10,7 +10,7 @@ type CanvasElement = Record<string, unknown>;
 
 type ImageInsertOpts = {
   canvasId: string;
-  objectPath: string;       // Storage path for oss:// marker (already uploaded by worker)
+  objectPath: string;       // project-assets path (already uploaded by the worker)
   width: number;
   height: number;
   mimeType: string;
@@ -191,29 +191,19 @@ const VIDEO_MAX_SIZE = 800;
  * Insert an image element into a canvas. Reads current content, appends element
  * with auto-placement (or explicit placement), writes it back.
  *
- * The image file is already in Supabase Storage (uploaded by worker executor).
- * We download it and embed as base64 dataURL in the canvas files map so
- * Excalidraw can render it natively (consistent with frontend-inserted images).
+ * The image is already in project-assets (stored by the worker). The files
+ * map gets an oss:// marker to it, the same form the canvas save path stores;
+ * loading the canvas turns it into the image's public URL. (Until 10-09 the
+ * image was downloaded and embedded as base64, which bloated canvases.content.)
  */
 export async function insertImageElement(
   client: { from: (table: string) => any; storage: { from: (bucket: string) => any } },
   opts: ImageInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
-  // 1. Download image from storage and convert to base64 dataURL
-  const { data: blob, error: dlError } = await client
-    .storage.from(CANVAS_FILES_BUCKET)
-    .download(opts.objectPath);
+  const dataURL = `oss://${CANVAS_FILES_BUCKET}/${opts.objectPath}`;
 
-  if (dlError || !blob) {
-    throw new Error(`Failed to download image from storage: ${dlError?.message ?? "no data"}`);
-  }
-
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  const base64 = buffer.toString("base64");
-  const dataURL = `data:${opts.mimeType};base64,${base64}`;
-
-  // 2. Read canvas
+  // 1. Read canvas
   const { data, error } = await client
     .from("canvases")
     .select("content")
@@ -228,12 +218,12 @@ export async function insertImageElement(
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
   const files = ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
 
-  // 3. Placement
+  // 2. Placement
   const placement = explicitPlacement ?? calculateAutoPlacement(
     elements, opts.width, opts.height, IMAGE_MAX_SIZE,
   );
 
-  // 4. Build element + files entry with base64 dataURL
+  // 3. Build element + files entry pointing at the stored image
   const fileId = generateId();
   const element = buildImageElement(fileId, placement, opts);
 
@@ -247,7 +237,7 @@ export async function insertImageElement(
     },
   };
 
-  // 5. Write
+  // 4. Write
   const updatedContent = {
     ...content,
     elements: [...elements, element],

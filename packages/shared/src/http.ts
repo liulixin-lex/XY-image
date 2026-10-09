@@ -138,6 +138,11 @@ export const canvasSaveRequestSchema = z.object({
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  /**
+   * Image files the canvas still uses that the server has no data for. The
+   * client resends them with their data (it omits files saved earlier).
+   */
+  missingFileIds: z.array(z.string()).optional(),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;

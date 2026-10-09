@@ -104,7 +104,11 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("another user's records", () => {
   it("canvas save to a canvas the user cannot write is 404, not a silent 200", async () => {
-    const fake = fakeClient({ canvases: [mine] });
+    // The fake ignores select columns; the save reads the canvas's workspace
+    // through the projects join.
+    const fake = fakeClient({
+      canvases: [{ ...mine, projects: { workspace_id: "ws-b" } }],
+    });
     const canvases = createCanvasService({
       createUserClient: () => fake.client,
     });
@@ -117,7 +121,7 @@ describe("another user's records", () => {
     });
     await expect(
       canvases.saveCanvasContent(user, "canvas-b", content),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ missingFileIds: [] });
   });
 
   it("chat writes RLS refuses are 404; other failures stay 500", async () => {

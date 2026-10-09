@@ -267,7 +267,7 @@ export async function saveCanvas(
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
-): Promise<void> {
+): Promise<{ missingFileIds: string[] }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
@@ -277,6 +277,15 @@ export async function saveCanvas(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  // Image files the server has no data for (see lib/canvas-files.ts).
+  const body = (await response.json().catch(() => null)) as {
+    missingFileIds?: unknown;
+  } | null;
+  return {
+    missingFileIds: Array.isArray(body?.missingFileIds)
+      ? body.missingFileIds.filter((id): id is string => typeof id === "string")
+      : [],
+  };
 }
 
 export async function uploadThumbnail(
