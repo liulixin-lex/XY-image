@@ -60,10 +60,10 @@ jobs:
       fail-fast: false
       matrix:
         tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+    # Lab state defaults to $RUNNER_TEMP (lab.sh), outside the checkout.
+    # upload-artifact rejects paths containing "..", so no workspace/.. here.
     env:
       XY2API_TAG: ${{ matrix.tag }}
-      XY2API_LAB_DIR: ${{ github.workspace }}/../xy2api-lab
-      XY2API_FIXTURES_OUT: ${{ github.workspace }}/../xy2api-fixtures
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -90,6 +90,7 @@ jobs:
       - name: Record fixtures
         id: record
         run: |
+          export XY2API_FIXTURES_OUT="$RUNNER_TEMP/xy2api-fixtures"
           deploy/xy2api-lab/lab.sh record
           version=$(deploy/xy2api-lab/lab.sh version)
           echo "version=$version" >> "$GITHUB_OUTPUT"
