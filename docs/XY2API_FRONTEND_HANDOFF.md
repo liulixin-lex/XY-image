@@ -154,7 +154,8 @@ GET `/api/image-models`：
 | concurrency_limit | 等待现有任务结束 |
 | run_image_limit | 告知本轮已达上限，需要新一轮 |
 | rate_limited / upstream_busy | 提示稍后由用户主动尝试，不自动重发生成 |
-| invalid_input / safety_filter | 展示安全错误文案，引导修改输入 |
+| invalid_input / safety_filter | 展示安全错误文案，引导修改输入（主站内容审计拦截也归这里） |
+| request_rejected | 主站拒绝了请求但原因无法归类；`message` 已带脱敏后的主站原因，直接展示，Key 状态不变 |
 | upstream_too_large | 降低画质后由用户主动提交 |
 | upstream_unknown | 「可能已扣费」，先去主站核对用量 |
 | storage_failed | 「图片已生成但保存失败」，联系管理员核对用量 |

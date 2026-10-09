@@ -75,6 +75,8 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
 
 - 真实账号完成密码、TOTP、Turnstile、错误密码、10 次限流、退出及普通 Supabase 用户拒绝检查。
 - 主站创建/删除 Key、同步、切换 OpenAI/Gemini、额度用完、IP 白名单、余额为零检查。
+- Turnstile：Cloudflare 里 site key 的 hostname 白名单要包含生图站域名，否则生图站登录拿不到 token（xy2api 本身不校验 hostname）。生产已开内容审计：用命中规则的提示词各试一次 OpenAI 和 Gemini 生图，应提示修改输入（safety_filter）、主站不扣费，并且之后同一个 Key 仍能正常生图。
+- 读取主站 `/api/v1/settings/public` 的 `version`，必须在 `XY2API_VERIFIED_VERSIONS` 内；不在则先按 [xy2api 版本兼容](XY2API_COMPAT.md) 录制并回放通过。上线后关注 `[xy2api-compat]` 告警与漂移日志。
 - 同步画布、异步任务、Agent 生图均拿到图；实际主站用量与账单一致。超时只发送一次，unknown 进入人工核对。
 - 主站改密码/撤销会话后按配置间隔要求重新登录；新 HTTP 请求和已有 WebSocket 都验证。
 - 前端 F1–F8 完成并验收；浏览器网络、Local Storage、日志、任务表无主站明文 Key/JWT。
@@ -89,7 +91,7 @@ where created_at > now() - interval '1 hour'
 group by 1, 2;
 ```
 
-关注 upstream_unknown、key_unavailable、rate_limited 和 storage_failed。生成发送后无自动重试（包括 429/503）；仅 Storage 上传最多三次。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
+关注 upstream_unknown、key_unavailable、request_rejected、rate_limited 和 storage_failed。request_rejected 增多通常说明主站改了规则或文案（内容审计、新版本错误 id），要对照 `docs/XY2API_COMPAT.md` 补归类。主站开了内容审计自动封禁时，用户反复触发 safety_filter 可能被主站停用，之后会表现为 xy2api_reauth_required。生成发送后无自动重试（包括 429/503）；仅 Storage 上传最多三次。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
 
 ## 回滚
 
