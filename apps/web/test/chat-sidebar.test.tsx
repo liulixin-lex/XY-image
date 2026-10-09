@@ -278,4 +278,27 @@ describe("ChatSidebar", () => {
     );
     expect(updateSessionTitleMock).toHaveBeenCalledWith("token_abc", "session-real", "你好");
   });
+
+  it("says why the main site refused a message and reports it", async () => {
+    const { emit } = renderWithEvents();
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
+    await userEvent.type(input, "你好{Enter}");
+    await screen.findByRole("button", { name: "停止" });
+
+    await emit({
+      type: "run.failed",
+      error: {
+        code: "run_failed",
+        message: "内容未通过审核，请修改提示词",
+        details: { gatewayCode: "safety_filter" },
+      },
+    });
+    expect(
+      await screen.findByText("没能完成：内容未通过审核，请修改提示词"),
+    ).toBeInTheDocument();
+    expect(reportCodeMock).toHaveBeenCalledWith(
+      "safety_filter",
+      "内容未通过审核，请修改提示词",
+    );
+  });
 });

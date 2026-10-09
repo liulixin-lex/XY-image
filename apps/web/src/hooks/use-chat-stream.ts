@@ -2,7 +2,12 @@
 
 import { useCallback } from "react";
 
-import type { StreamEvent, ToolBlock } from "@loomic/shared";
+import {
+  RUN_STOPPED_TEXT,
+  runFailureText,
+  type StreamEvent,
+  type ToolBlock,
+} from "@loomic/shared";
 import type { Message } from "./use-chat-sessions";
 
 type MessageUpdater = (
@@ -162,10 +167,8 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                   ? blocks
                   : [
                       ...blocks,
-                      {
-                        type: "text" as const,
-                        text: "\u62b1\u6b49\uff0c\u5904\u7406\u8fc7\u7a0b\u4e2d\u9047\u5230\u95ee\u9898\uff0c\u8bf7\u91cd\u8bd5\u3002",
-                      },
+                      // Same line as the saved message (server ws/assistant-draft).
+                      { type: "text" as const, text: runFailureText(event.error) },
                     ],
               };
             }),
@@ -182,7 +185,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
               if (m.contentBlocks.length === 0) {
                 return {
                   ...m,
-                  contentBlocks: [{ type: "text" as const, text: "已停止。" }],
+                  contentBlocks: [{ type: "text" as const, text: RUN_STOPPED_TEXT }],
                 };
               }
               return {
