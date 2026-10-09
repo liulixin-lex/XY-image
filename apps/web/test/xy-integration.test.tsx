@@ -25,7 +25,8 @@ vi.mock("../src/lib/supabase-browser", () => ({
   })),
 }));
 
-import { needsReconcile } from "../src/components/billing/billing-badge";
+import { isBillingSettled, needsReconcile } from "../src/components/billing/billing-badge";
+import { JobQueue } from "../src/components/studio/job-queue";
 import { resolveImagePreference } from "../src/hooks/use-image-model-preference";
 import { AuthProvider, EXPIRED_LOGIN_PATH } from "../src/lib/auth-context";
 import { describeIssue, issueCodeOf } from "../src/lib/generation-errors";
@@ -182,6 +183,32 @@ describe("image job views", () => {
       maybeCharged: false,
       action: "none",
     });
+  });
+
+  it("lets a reconciled billing outcome replace the maybe-charged guess", () => {
+    const failed = (id: string, billing: string) =>
+      toImageJobView({
+        ...base,
+        id,
+        status: "dead_letter",
+        error_code: "upstream_unknown",
+        billing_status: billing,
+        created_at: new Date().toISOString(),
+      } as unknown as BackgroundJob);
+    expect(isBillingSettled("charged")).toBe(true);
+    expect(isBillingSettled("unknown")).toBe(false);
+    const view = render(
+      <JobQueue
+        jobs={[failed("j1", "unknown"), failed("j2", "charged"), failed("j3", "not_charged")]}
+        usageUrl={null}
+        onCancel={() => {}}
+        onReuse={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+    expect(view.getAllByText("结果未知，可能已扣费")).toHaveLength(1);
+    expect(view.getByText("主站已扣费，但没拿到图片")).toBeInTheDocument();
+    expect(view.getByText("没生成出来，这次没有扣费")).toBeInTheDocument();
   });
 
   it("treats anything but hd as 1K", () => {

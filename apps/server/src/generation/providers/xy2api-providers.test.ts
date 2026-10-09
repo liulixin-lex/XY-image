@@ -178,4 +178,39 @@ describe("per-call gateway image transports", () => {
     });
     expect(server.requests).toHaveLength(1);
   });
+  it("keeps xy2api's request id when a 200 answer has no usable image", async () => {
+    // xy2api answered and probably billed: the id lets the worker settle the
+    // 待核对 job from the usage list later.
+    const empty = await gateway(200, { data: [] });
+    await expect(
+      openai.generate(
+        { model: "gpt-image-2", prompt: "fixture" },
+        { apiKey: "synthetic-key", baseUrl: empty.baseUrl },
+      ),
+    ).rejects.toMatchObject({
+      code: "upstream_unknown",
+      failure: { billing: "unknown", requestId: "fixture-request-id" },
+    });
+    const broken = await gateway(200, {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                inlineData: { data: "bm90LWFuLWltYWdl", mimeType: "image/png" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    await expect(
+      gemini.generate(
+        { model: "gemini-3-pro-image", prompt: "fixture" },
+        { apiKey: "synthetic-google-key", baseUrl: broken.baseUrl },
+      ),
+    ).rejects.toMatchObject({
+      failure: { billing: "unknown", requestId: "fixture-request-id" },
+    });
+  });
 });

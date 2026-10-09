@@ -77,6 +77,8 @@ export type ServerEnv = {
   workerId?: string;
   workerPollIntervalMs?: number;
   workerMaxBatchSize?: number;
+  /** Worker settles 待核对 image jobs from the xy2api usage list (default on). */
+  xy2apiBillingReconcile?: boolean;
 };
 
 export function loadServerEnv(
@@ -224,6 +226,7 @@ export function loadServerEnv(
     workerImageConcurrency: integer("WORKER_IMAGE_CONCURRENCY", 3),
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),
     workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 3),
+    xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
     ...overrides,
   };
 }

@@ -79,3 +79,12 @@ exception when check_violation then null;
 end $$;
 rollback;
 select 'pending_deliveries_checks_passed' as result;
+
+do $$ begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema='public' and table_name='background_jobs' and column_name='billing_checked_at')
+    or to_regclass('public.background_jobs_billing_reconcile_idx') is null then
+    raise exception 'billing reconcile column or index missing';
+  end if;
+end $$;
+select 'billing_reconcile_checks_passed' as result;

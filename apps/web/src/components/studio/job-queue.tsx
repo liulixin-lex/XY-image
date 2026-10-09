@@ -14,7 +14,7 @@ import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, formatElapsed, isActiveJob, isFailedJob, isSavingJob } from "@/lib/image-jobs";
 import { cn } from "@/lib/utils";
 
-import { needsReconcile } from "../billing/billing-badge";
+import { isBillingSettled, needsReconcile } from "../billing/billing-badge";
 
 const DISMISSED_KEY = "xy:studio-dismissed";
 const ATTENTION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -143,7 +143,8 @@ function QueueRow({
   const failed = isFailedJob(job);
   const issue = failed ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage) : null;
   const settled = !running && !queued && !saving;
-  const unknown = settled && (needsReconcile(job.billing) || Boolean(issue?.maybeCharged));
+  const unknown =
+    settled && (needsReconcile(job.billing) || (Boolean(issue?.maybeCharged) && !isBillingSettled(job.billing)));
   const prompt = job.prompt || "（无描述）";
 
   let title: string;
@@ -164,6 +165,9 @@ function QueueRow({
       : (issue?.title ?? "没拿到结果");
   } else if (job.billing === "not_charged") {
     title = "没生成出来，这次没有扣费";
+    detail = issue?.title ? `${issue.title} · ${prompt}` : prompt;
+  } else if (failed && job.billing === "charged") {
+    title = "主站已扣费，但没拿到图片";
     detail = issue?.title ? `${issue.title} · ${prompt}` : prompt;
   } else {
     title = issue?.title ?? "生成失败";

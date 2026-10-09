@@ -94,6 +94,13 @@ export type RemoteKey = {
     | null
     | undefined;
 };
+/** Result of looking up one gateway request in the user's usage list. */
+export type UsageLookup =
+  | { kind: "found"; usageId: number | null; actualCost: number | null }
+  /** every page of the range was read and no row carries the request id */
+  | { kind: "absent" }
+  /** page cap reached or rows without request_id: no conclusion */
+  | { kind: "incomplete" };
 export type Usage = {
   mode?: string;
   isValid?: boolean;
@@ -404,6 +411,85 @@ export class Xy2apiClient {
       if (items.length === 0) return keys;
     }
     throw new Xy2apiError(502, "PAGINATION_LIMIT");
+  }
+  /** One key by id. Used when the list endpoint returns masked keys. */
+  async getKey(token: string, id: number): Promise<RemoteKey> {
+    const parsed = remoteKeySchema.safeParse(
+      await this.request<unknown>(`/api/v1/keys/${id}`, { token }),
+    );
+    if (!parsed.success || parsed.data.id !== id)
+      throw new Xy2apiError(502, "INVALID_RESPONSE");
+    const masked = isMaskedKey(parsed.data.key);
+    if (masked) reportWireDrift("keys.get", "key_masked");
+    return {
+      ...parsed.data,
+      masked,
+      quota: parsed.data.quota ?? 0,
+      quota_used: parsed.data.quota_used ?? 0,
+    };
+  }
+  /**
+   * Finds the usage row xy2api wrote for one gateway request. Rows carry
+   * request_id "client:<X-Client-Request-ID>" (0.2.2 and 0.2.5). `from`/`to`
+   * are UTC days, both inclusive. At most `maxPages` pages are read: the
+   * usage list counts against the user's heavy-query budget on the main site.
+   */
+  async findUsage(
+    token: string,
+    input: {
+      requestId: string;
+      from: Date;
+      to: Date;
+      apiKeyId?: number | undefined;
+      maxPages?: number;
+    },
+  ): Promise<UsageLookup> {
+    const day = (date: Date) => date.toISOString().slice(0, 10);
+    const wanted = new Set([input.requestId, `client:${input.requestId}`]);
+    const pageSize = 100;
+    let unreadable = false;
+    for (let page = 1; page <= (input.maxPages ?? 5); page++) {
+      const query = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+        start_date: day(input.from),
+        end_date: day(input.to),
+        timezone: "UTC",
+        ...(input.apiKeyId ? { api_key_id: String(input.apiKeyId) } : {}),
+      });
+      const result = record(
+        await this.request<unknown>(`/api/v1/usage?${query}`, { token }),
+      );
+      const items = Array.isArray(result) ? result : result.items;
+      if (!Array.isArray(items)) throw new Xy2apiError(502, "INVALID_RESPONSE");
+      for (const item of items) {
+        const row = record(item);
+        if (typeof row.request_id !== "string") {
+          unreadable = true;
+          continue;
+        }
+        if (!wanted.has(row.request_id)) continue;
+        const usageId = Number(row.id);
+        const cost = Number(row.actual_cost);
+        return {
+          kind: "found",
+          usageId: Number.isSafeInteger(usageId) ? usageId : null,
+          actualCost: Number.isFinite(cost) ? cost : null,
+        };
+      }
+      if (unreadable) reportWireDrift("usage.list", "request_id_missing");
+      const pages = Number(result.pages);
+      const total = Number(result.total);
+      const last =
+        items.length === 0 ||
+        (Number.isInteger(pages) && pages > 0
+          ? page >= pages
+          : Number.isInteger(total) && total >= 0
+            ? page * pageSize >= total
+            : items.length < pageSize);
+      if (last) return unreadable ? { kind: "incomplete" } : { kind: "absent" };
+    }
+    return { kind: "incomplete" };
   }
   async logout(refreshToken: string): Promise<void> {
     await this.request("/api/v1/auth/logout", {

@@ -239,3 +239,57 @@ describe("user key synchronization", () => {
     expect(order).toEqual([1, 2]);
   });
 });
+
+describe("keys the main site lists masked", () => {
+  const masked = "sk-synt…tial";
+  it("reads the full key from GET /api/v1/keys/:id", async () => {
+    const fixture = setup();
+    fixture.list.mockResolvedValue([
+      { ...fixture.remote, key: masked, masked: true },
+    ]);
+    const getKey = vi
+      .spyOn(fixture.client, "getKey")
+      .mockResolvedValue({ ...fixture.remote, masked: false });
+    await fixture.keys.syncKeys("user-1");
+    expect(getKey).toHaveBeenCalledWith("synthetic-access", 1);
+    expect(fixture.client.listModels).toHaveBeenCalledWith(fixture.remote.key);
+    expect(
+      (await fixture.keys.resolveImageCredential("user-1", 1)).apiKey,
+    ).toBe(fixture.remote.key);
+  });
+  it("keeps the full key from an earlier sync when both reads are masked", async () => {
+    const fixture = setup();
+    await fixture.keys.syncKeys("user-1");
+    fixture.list.mockResolvedValue([
+      { ...fixture.remote, key: masked, masked: true },
+    ]);
+    vi.spyOn(fixture.client, "getKey").mockResolvedValue({
+      ...fixture.remote,
+      key: masked,
+      masked: true,
+    });
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      invalid_reason: null,
+      image_capable: true,
+    });
+    expect(
+      (await fixture.keys.resolveImageCredential("user-1", 1)).apiKey,
+    ).toBe(fixture.remote.key);
+  });
+  it("marks a masked key unusable when no full copy exists", async () => {
+    const fixture = setup();
+    fixture.list.mockResolvedValue([
+      { ...fixture.remote, key: masked, masked: true },
+    ]);
+    vi.spyOn(fixture.client, "getKey").mockRejectedValue(
+      new Xy2apiError(404, "NOT_FOUND"),
+    );
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.client.listModels).not.toHaveBeenCalled();
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      invalid_reason: "key_unavailable",
+      image_capable: false,
+    });
+  });
+});

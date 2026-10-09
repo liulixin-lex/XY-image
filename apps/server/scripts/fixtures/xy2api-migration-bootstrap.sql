@@ -5,7 +5,7 @@ create schema auth;
 create table auth.users (id uuid primary key);
 create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
 create function public.set_updated_at() returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end $$;
-create table public.background_jobs (id uuid primary key, created_by uuid references auth.users(id), payload jsonb, updated_at timestamptz default now());
+create table public.background_jobs (id uuid primary key, created_by uuid references auth.users(id), payload jsonb, created_at timestamptz default now(), updated_at timestamptz default now());
 alter table public.background_jobs enable row level security;
 create policy original_owner_policy on public.background_jobs for all to authenticated using (auth.uid() = created_by);
 grant all on public.background_jobs to anon, authenticated, service_role;

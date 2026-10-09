@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 import { LiveDot } from "../ambient/live-dot";
 import { RevealImage } from "../ambient/reveal-image";
-import { BillingBadge, needsReconcile } from "../billing/billing-badge";
+import { BillingBadge, isBillingSettled, needsReconcile } from "../billing/billing-badge";
 
 /**
  * Every result, grouped by day. Clicking a finished picture puts it on the
@@ -203,7 +203,11 @@ function HistoryTile({
             </span>
             {failed ? (
               <span className="line-clamp-2 text-[11.5px] leading-snug text-fg-soft">
-                {issue?.maybeCharged || reconcile ? "可能已扣费，点开核对" : issue?.message}
+                {reconcile || (issue?.maybeCharged && !isBillingSettled(job.billing))
+                  ? "可能已扣费，点开核对"
+                  : job.billing === "charged"
+                    ? "主站已扣费，点开查看"
+                    : issue?.message}
               </span>
             ) : null}
           </button>

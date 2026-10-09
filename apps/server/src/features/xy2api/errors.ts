@@ -266,3 +266,18 @@ export function sanitizeGatewayError(error: unknown): GatewayError {
     }),
   );
 }
+
+/**
+ * xy2api answered this call (its X-Client-Request-ID arrived), so a 待核对
+ * outcome can be settled later from the usage list (billing-reconciler.ts).
+ * Keeps the mapped failure and adds the id.
+ */
+export function withRequestId(
+  error: unknown,
+  requestId: string | null | undefined,
+): GatewayError {
+  const gateway = sanitizeGatewayError(error);
+  return requestId && !gateway.failure.requestId
+    ? new GatewayError({ ...gateway.failure, requestId })
+    : gateway;
+}
