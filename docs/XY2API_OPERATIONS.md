@@ -1,12 +1,12 @@
 # xy2api 后端部署与验收
 
-2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共35份应用迁移（10-09 agent01 新增 `20261009000004`）；实验环境联调见 handoff 第 5 节。运维自动化见 [监控与异地备份](XY_IMAGE_OPERATIONS_AUTOMATION.md)，上线放行记录见 [发布验收表](XY_IMAGE_RELEASE.md)。
+2026-10-09（北京时间）更新：用户选定**自建 Supabase**。部署入口、内外网URL、迁移/类型生成、权限加固及备份恢复详见 [自建运行手册](XY_IMAGE_SELFHOST.md)。当前共38份应用迁移（10-09 agent01 新增 `20261009000004`、`20261009000005`、`20261009000006`、`20261009000007`）；实验环境联调见 handoff 第 5 节。运维自动化见 [监控与异地备份](XY_IMAGE_OPERATIONS_AUTOMATION.md)，上线放行记录见 [发布验收表](XY_IMAGE_RELEASE.md)。
 2026-10-08 更新：前端 F1–F8 已交付；agent03 新增字体代理和自定义对话服务商，详见 [后端增量交接](XY_IMAGE_BACKEND_AGENT03.md)。用户要求先开发，真实测试延后；Supabase 尚未创建。生产放行仍要求完整迁移、真实主站和服务商验收，离线测试不代表真实计费已打通。
 
 ## 配置与准备
 
 1. 按自建运行手册准备官方固定版本Supabase容器栈；先完整执行应用迁移，确保Auth、Storage、PGMQ、Realtime和Agent持久化表可用。
-2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行35份迁移；新增 `20261009000002`、`20261009000003` 和 `20261009000004` 必须在本轮API前执行。
+2. 按顺序执行 `supabase/migrations/20261007000001_xy2api_integration.sql` 和 `20261007000002_xy2api_job_write_boundary.sql`。第一份原样保留规范 SQL；第二份收回浏览器直接增删改 background_jobs 的权限，保留受 RLS 保护的读取。必须两份一起上线。再执行 `20261009000001_user_chat_providers.sql`；新版 API 依赖此表和偏好列。新库完整执行38份迁移；新增 `20261009000002`、`20261009000003`、`20261009000004`、`20261009000005`、`20261009000006` 和 `20261009000007` 必须在本轮API前执行。
 3. 自建Auth环境关闭开放注册、匿名/电话/Google登录；保留email provider和Admin createUser/generateLink/verifyOtp能力。使用生成器的配置，本地config.toml不会自动配置自建容器。无需发送合成邮箱邮件。
 4. 从根目录 `.env.example` 创建服务器私有环境文件，权限 `600`。设置 Supabase URL、anon key、service role、Postgres URL、xy2api API/Web URL、SSO_EMAIL_DOMAIN、LOOMIC_WEB_ORIGIN。用 `openssl rand -base64 32` 离线生成 LOOMIC_SECRET_KEY，API/Worker 完全一致。不要执行旧的种子账号脚本；普通 Supabase 用户不通过集成鉴权。
 5. 为主站 Key 分组启用图像能力，确认余额、Key 限额、模型、平台和出口 IP 白名单。主站设置或部署由负责人执行；本开发没有修改 xy2api 仓库。
@@ -39,7 +39,7 @@ bash apps/server/scripts/check-xy2api-migrations.sh
 
 ## 构建和预发
 
-统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、35份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
+统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、36份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
 
 构建强制 shared build 和 server typecheck；`.dockerignore` 排除真实 env、凭据目录及前端。SERVICE_MODE 区分同一镜像的 API/Worker；非root、只读根文件系统、tmpfs临时文件。API固定单实例。`GET /api/health` 只验证进程，内部 `/api/ready` 验证依赖且由公网反代隐藏。
 
@@ -91,7 +91,88 @@ where created_at > now() - interval '1 hour'
 group by 1, 2;
 ```
 
-关注 upstream_unknown、key_unavailable、request_rejected、rate_limited 和 storage_failed。request_rejected 增多通常说明主站改了规则或文案（内容审计、新版本错误 id），要对照 `docs/XY2API_COMPAT.md` 补归类。主站开了内容审计自动封禁时，用户反复触发 safety_filter 可能被主站停用，之后会表现为 xy2api_reauth_required。生成发送后无自动重试（包括 429/503）；仅 Storage 上传最多三次。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
+关注 upstream_unknown、key_unavailable、request_rejected、rate_limited 和 storage_failed。request_rejected 增多通常说明主站改了规则或文案（内容审计、新版本错误 id），要对照 `docs/XY2API_COMPAT.md` 补归类。主站开了内容审计自动封禁时，用户反复触发 safety_filter 可能被主站停用，之后会表现为 xy2api_reauth_required。生成发送后无自动重试（包括 429/503）；只重试 Storage 写入（见下节），从不重新生图。pending/unknown 不应手工改回 none 重跑。已扣费未交付的任务由负责人到主站核对并补偿；Loomic 不执行扣积分或退款。
+
+### 已扣费图片暂存与补传（M6）
+
+主站返回图片即已扣费。之后写 Storage（每轮最多三次上传）或写 `asset_objects` 失败时，服务端把图片字节存进 `public.xy2api_pending_deliveries`（仅服务端可访问，迁移 `20261009000005`），任务回到 `queued` 并带 `error_code = storage_retrying`。Worker 用同一条队列消息补传，间隔 30 秒、1、2、4、8 分钟，之后每 10 分钟一次；连同第一次一共 12 次，约 75 分钟。补传不调用主站、不再扣费；补传成功后任务转为 `succeeded`，Worker 在记录成功之后才删除暂存行。同步画布接口遇到这种情况返回 502 `storage_retrying`，并把任务交给 Worker 补传。
+
+用户看到的是“保存中”：不能取消，不占生图并发名额；Agent 会告诉用户图片稍后出现在生成记录里。补传成功的图片只进生成记录，不会自动放回当时的画布（TODO）。12 次都失败后任务转为 `dead_letter` / `storage_failed`，暂存行保留，等人工恢复。暂存失败（例如数据库也不可用）时直接 `storage_failed`，这时图片字节丢失，只能到主站核对补偿。日志关键字：`image held`、`storage attempt`、`delivered on storage attempt`、`for manual recovery`、`could not be held`。
+
+查看暂存中的图片：
+
+```sql
+select d.job_id, j.status, j.error_code, d.attempts, d.last_error,
+       octet_length(d.bytes) as bytes, d.created_at, d.updated_at
+from public.xy2api_pending_deliveries d
+join public.background_jobs j on j.id = d.job_id
+order by d.created_at;
+```
+
+Storage 修好后，让放弃的任务再走一轮补传（把 `<job_id>` 换成实际 ID；补传只上传暂存的字节）：
+
+```sql
+begin;
+update public.xy2api_pending_deliveries set attempts = 1, updated_at = now()
+where job_id = '<job_id>';
+update public.background_jobs
+set status = 'queued', error_code = 'storage_retrying',
+    error_message = '图片已生成并扣费，正在重新保存，稍后会出现在生成记录里', failed_at = null
+where id = '<job_id>' and status = 'dead_letter' and billing_status = 'charged';
+select pgmq.send('image_generation_jobs', jsonb_build_object(
+  'job_id', id, 'job_type', 'image_generation', 'workspace_id', workspace_id))
+from public.background_jobs where id = '<job_id>' and status = 'queued';
+commit;
+```
+
+Storage 一时修不好、需要先把图交给用户时，可以导出字节：`psql -At -c "select encode(bytes, 'base64') from public.xy2api_pending_deliveries where job_id = '<job_id>'" | base64 -d > image`，扩展名看 `mime_type`。任务成功后仍留下的暂存行（Worker 删除失败）可以清理：
+
+```sql
+delete from public.xy2api_pending_deliveries d
+using public.background_jobs j
+where j.id = d.job_id and j.status = 'succeeded';
+```
+
+### “待核对”任务自动核对
+
+计费结果未知（`billing_status = 'unknown'`）、但带着主站请求 ID（`xy2api_request_id`）的生图任务，由 Worker 到该用户的主站用量列表（`GET /api/v1/usage`）里找 `request_id = "client:<请求 ID>"` 的记录（迁移 `20261009000006`，代码 `features/xy2api/billing-reconciler.ts`）：
+
+- 找到记录：改为 `charged`，日志写出用量记录 ID 和 `actual_cost`。
+- 任务结束满 24 小时、完整翻完时间范围仍没有记录：改为 `not_charged`。主站每 5 秒重试一次用量写入，超过 60 秒就告警，所以一天没有记录可以认定没扣费。
+- 其他情况（会话失效、主站限流、翻页超过 5 页、记录缺 `request_id`）：不下结论，下一轮再查，任务保持“待核对”。
+
+Worker 每 5 分钟扫一次，每次最多 20 个任务。任务结束 2 分钟后第一次查，2 小时内每 10 分钟查一次，之后每 2 小时一次，最多查 7 天。多个 Worker 用 `billing_checked_at` 加 `SKIP LOCKED` 分摊，不会重复查同一个任务。用量列表占用户在主站的重查询额度（按分钟限流），所以同一用户遇到 429 或需要重新登录时，本轮跳过该用户。查询按 Key 过滤，Key 已在主站删除时改为查该用户的全部记录。
+
+请求 ID 只有主站有响应时才拿得到：xy2api 不接受客户端自带的请求 ID。所以“主站还没响应就超时”的任务没法自动核对，仍然要用户到主站用量页核对。会带请求 ID 的情况：Gemini 安全拦截（主站会计费），以及主站已返回、但本站读不出图片的情况。
+
+日志关键字：`[xy2api-reconcile]`。`checked N 待核对 job(s)` 是每轮汇总，`charged: usage row`、`not charged: no usage row` 是结论，`not checked (...)` 是跳过原因，`sweep failed` 说明数据库不可用或迁移没执行。设置 `XY2API_BILLING_RECONCILE=false` 可以关闭（默认开启），关闭后任务一直保持“待核对”。
+
+查看还在等待核对的任务：
+
+```sql
+select id, created_by, xy2api_key_id, xy2api_request_id, error_code,
+       created_at, failed_at, billing_checked_at
+from public.background_jobs
+where billing_status = 'unknown' and xy2api_request_id is not null
+order by created_at desc;
+```
+
+人工在主站核对后可以直接改结论（只改仍是 `unknown` 的任务）：`update public.background_jobs set billing_status = 'charged' where id = '<job_id>' and billing_status = 'unknown';`，没扣费就改成 `'not_charged'`。
+
+### 工作区成员与数据隔离
+
+产品没有邀请功能，每个用户只有自己的个人工作区，成员只由 `bootstrap_viewer` 在首次登录时建立。迁移 `20261009000007` 之前，任何登录用户都能通过 Supabase REST 把别人加进自己的工作区；被加的人在 Agent 里生成的图，可能存进加人者的工作区（代码已改为按 owner 查个人工作区）。上线 `20261009000007` 前后各查一次，正常应为 0 行：
+
+```sql
+select wm.workspace_id, wm.user_id, wm.role, wm.created_at
+from public.workspace_members wm
+join public.workspaces w on w.id = wm.workspace_id
+where w.owner_user_id <> wm.user_id;
+```
+
+有结果就说明有人用过这个漏洞：先记下这些行，再查对应用户在该工作区下的 `asset_objects` 和 `background_jobs`，确认后删除成员行。
+
+双用户隔离演练（实验环境）：`~/xy-lab/e2e/isolation.sh`（API、WebSocket、REST、存储共 83 项，任一越权读到对方数据、5xx 或改动对方数据都算失败）和 `~/xy-lab/e2e/isolation.sh probe-agent-workspace.mjs`（Agent 生图存进自己的工作区）。脚本在 `xy-ops/agent01/e2e/`，只打印状态码，不打印令牌。
 
 ## 回滚
 
