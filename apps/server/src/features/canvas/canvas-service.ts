@@ -25,12 +25,23 @@ export type CanvasSaveResult = {
   missingFileIds: string[];
 };
 
+export type CanvasSaveOptions = {
+  /**
+   * Elements the client deleted (still in its scene, marked deleted). When
+   * given, images the server placed on the canvas (`customData.jobId`) that
+   * the save neither contains nor deletes are kept: the client has not seen
+   * them yet. Older clients do not send it and replace the elements as before.
+   */
+  deletedElementIds?: string[] | undefined;
+};
+
 export type CanvasService = {
   getCanvas(user: AuthenticatedUser, canvasId: string): Promise<CanvasDetail>;
   saveCanvasContent(
     user: AuthenticatedUser,
     canvasId: string,
     content: CanvasContent,
+    options?: CanvasSaveOptions,
   ): Promise<CanvasSaveResult>;
 };
 
@@ -61,6 +72,9 @@ const STORABLE_TYPES = new Set([
   "image/svg+xml",
 ]);
 const UPLOAD_CONCURRENCY = 4;
+// A save writes only if the canvas is unchanged since it was read; after this
+// many changed reads (the worker placing images) it writes regardless.
+const SAVE_ATTEMPTS = 3;
 
 export function createCanvasService(options: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
@@ -91,53 +105,117 @@ export function createCanvasService(options: {
       };
     },
 
-    async saveCanvasContent(user, canvasId, content) {
+    async saveCanvasContent(user, canvasId, content, saveOptions = {}) {
       const client = options.createUserClient(user.accessToken);
+      let pending = content;
+      let previousVersion: string | undefined;
 
-      // Only the stored files map is read: it has the storage markers to reuse
-      // and the files this save may leave out (the client sends each file's
-      // data once). The project gives the workspace folder for uploads.
-      const { data: canvas, error: readError } = await client
-        .from("canvases")
-        .select("id, files:content->files, projects(workspace_id)")
-        .eq("id", canvasId)
-        .maybeSingle();
-      if (readError) {
-        throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
-      }
-      const workspaceId = (canvas?.projects as { workspace_id?: string } | null)
-        ?.workspace_id;
-      // RLS hides other users' canvases: nothing is uploaded or saved.
-      if (!canvas || !workspaceId) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
-      }
+      for (let attempt = 1; ; attempt++) {
+        // The stored files have the storage markers to reuse and the files
+        // this save may leave out (the client sends each file's data once);
+        // the stored elements have images placed since the client loaded.
+        // The project gives the workspace folder for uploads.
+        const { data: canvas, error: readError } = await client
+          .from("canvases")
+          .select(
+            "id, updated_at, files:content->files, elements:content->elements, projects(workspace_id)",
+          )
+          .eq("id", canvasId)
+          .maybeSingle();
+        if (readError) {
+          throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+        }
+        const workspaceId = (canvas?.projects as { workspace_id?: string } | null)
+          ?.workspace_id;
+        // RLS hides other users' canvases: nothing is uploaded or saved. An
+        // unchanged canvas after a write that landed nowhere: RLS refused the
+        // write (deleted in another tab, or not the user's to write).
+        if (
+          !canvas ||
+          !workspaceId ||
+          (previousVersion !== undefined && canvas.updated_at === previousVersion)
+        ) {
+          throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        }
 
-      const stored = asFileRecord(canvas.files);
-      const { files, missingFileIds, summary } = await storeCanvasFiles(client, {
-        workspaceId,
-        canvasId,
-        content,
-        stored,
-      });
-      if (summary) console.info(`[canvas-service] canvas ${canvasId}: ${summary}`);
-      const leanContent = { ...content, files } as CanvasContent;
+        const { elements, kept } = keepUnseenPlacedImages(
+          pending.elements,
+          canvas.elements,
+          saveOptions.deletedElementIds,
+        );
+        const { files, missingFileIds, summary } = await storeCanvasFiles(client, {
+          workspaceId,
+          canvasId,
+          content: { ...pending, elements },
+          stored: asFileRecord(canvas.files),
+        });
+        const notes = [
+          summary,
+          kept.length ? `kept ${kept.length} placed image(s) the client has not loaded` : "",
+        ].filter(Boolean);
+        if (notes.length) console.info(`[canvas-service] canvas ${canvasId}: ${notes.join("; ")}`);
+        const leanContent = { ...pending, elements, files } as CanvasContent;
 
-      const { data, error } = await client
-        .from("canvases")
-        .update({ content: leanContent as unknown as Json })
-        .eq("id", canvasId)
-        .select("id");
+        let update = client
+          .from("canvases")
+          .update({ content: leanContent as unknown as Json })
+          .eq("id", canvasId);
+        if (attempt < SAVE_ATTEMPTS) update = update.eq("updated_at", canvas.updated_at);
+        const { data, error } = await update.select("id");
 
-      if (error) {
-        throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+        if (error) {
+          throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+        }
+        if (data?.length) return { missingFileIds };
+        if (attempt >= SAVE_ATTEMPTS) {
+          // RLS hides canvases the user cannot write: nothing was saved, so do
+          // not report success.
+          throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        }
+        // Changed since the read (or not writable; the next read tells). Keep
+        // this pass's storage markers so nothing is uploaded twice.
+        console.info(`[canvas-service] canvas ${canvasId} changed during save, retry ${attempt}`);
+        previousVersion = canvas.updated_at;
+        pending = { ...pending, files } as CanvasContent;
       }
-      // RLS hides canvases the user cannot write (another user's, or deleted
-      // in another tab): nothing was saved, so do not report success.
-      if (!data?.length) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
-      }
-      return { missingFileIds };
     },
+  };
+}
+
+/**
+ * Images the server placed (`customData.jobId`, see canvas-element-writer)
+ * after the client loaded the canvas: in the stored elements, not in this
+ * save, and not deleted by the client. They are appended so the save does not
+ * drop them before the client syncs. Without `deletedElementIds` (older
+ * clients) nothing is kept.
+ */
+function keepUnseenPlacedImages(
+  incoming: CanvasContent["elements"],
+  stored: unknown,
+  deletedElementIds: string[] | undefined,
+): { elements: CanvasContent["elements"]; kept: string[] } {
+  if (!Array.isArray(deletedElementIds) || !Array.isArray(stored)) {
+    return { elements: incoming, kept: [] };
+  }
+  const present = new Set(
+    (incoming as Array<Record<string, unknown>>).map((element) => element?.id),
+  );
+  const deleted = new Set(deletedElementIds);
+  const unseen = stored.filter((element): element is Record<string, unknown> => {
+    if (!element || typeof element !== "object") return false;
+    const { id, isDeleted, customData } = element as Record<string, unknown>;
+    return (
+      typeof id === "string" &&
+      !isDeleted &&
+      typeof (customData as { jobId?: unknown } | undefined)?.jobId === "string" &&
+      !present.has(id) &&
+      !deleted.has(id)
+    );
+  });
+  if (unseen.length === 0) return { elements: incoming, kept: [] };
+  return {
+    elements: [...incoming, ...unseen] as CanvasContent["elements"],
+    kept: unseen.map((element) => element.id as string),
   };
 }
 

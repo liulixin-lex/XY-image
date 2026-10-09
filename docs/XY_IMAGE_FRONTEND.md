@@ -69,7 +69,7 @@
 - 品牌名集中在 `lib/brand.ts`；图标在 `components/brand/brand-mark.tsx`。`public/` 下的 favicon、logo、apple-touch-icon、og-image 由 `scripts/generate-brand-assets.mjs` 生成，用法（字体目录、sharp 路径）写在脚本头部。改了图标要同步脚本里的几何。
 - 在 `<a>` 上用按钮样式时，直接用 `buttonVariants()`（已经过 tailwind-merge）。不要给 Base UI 的 `Button` 传 `render={<a/>}`。
 - **画布主题**：画布用 Excalidraw 深色主题，主题统一从 `hooks/use-canvas-theme.ts` 取。注意 next-themes 的 `resolvedTheme` 不理会 `forcedTheme`（会一直返回 `light`），所以要读 `forcedTheme ?? resolvedTheme`。深色主题靠 CSS 滤镜 `invert(93%) hue-rotate(180deg)` 反相画布，位图会再反相回来，颜色正确；默认白底显示为中性黑 #121212。缩略图和给设计助手的画布截图走 `exportToBlob`，没有设 `exportWithDarkMode`，导出仍是浅色。背景色选择器的色块套用同一个滤镜（`CANVAS_DARK_FILTER`），看到的就是画布上的颜色，存的 hex 不变。
-- **画布图片**（`lib/canvas-files.ts`）：服务端把画布图片存在 `project-assets/<工作区>/canvas-files/<画布>/<文件 ID>.<扩展名>`，读取时只给 `storageUrl`，前端下载后转成 Excalidraw 需要的 data URL。保存时只有服务端还没有的文件带 `dataURL`，其余只带 ID 和类型，服务端沿用已存的那份；所以自动保存和关页时的 keepalive（上限 64 KiB）不再带整张图。保存响应里的 `missingFileIds` 是画面上用到、但服务端没有数据的文件（比如另一个标签页的保存把它丢了），编辑器会带数据重发，每个文件最多 2 次。Agent 插入的图是指向生成结果的标记，`canvas.sync` 时只下载编辑器还没有的文件。2026-10-09 之前的画布图片是 base64 存在 `canvases.content` 里的，下次保存时自动转存。
+- **画布图片**（`lib/canvas-files.ts`）：服务端把画布图片存在 `project-assets/<工作区>/canvas-files/<画布>/<文件 ID>.<扩展名>`，读取时只给 `storageUrl`，前端下载后转成 Excalidraw 需要的 data URL。保存时只有服务端还没有的文件带 `dataURL`，其余只带 ID 和类型，服务端沿用已存的那份；所以自动保存和关页时的 keepalive（上限 64 KiB）不再带整张图。保存响应里的 `missingFileIds` 是画面上用到、但服务端没有数据的文件（比如另一个标签页的保存把它丢了），编辑器会带数据重发，每个文件最多 2 次。Agent 插入的图是指向生成结果的标记，`canvas.sync` 时只下载编辑器还没有的文件。2026-10-09 之前的画布图片是 base64 存在 `canvases.content` 里的，下次保存时自动转存。保存请求还带 `deletedElementIds`（`lib/canvas-save.ts`）：只列用户删掉的、服务端放上来的图（`customData.jobId`），服务端据此保留页面还没加载的新图。`canvas.sync` 和任务轮询拉到服务端画布后用 Excalidraw 的 `reconcileElements` 合并（本地版本更新的、本地删掉的、只在本地的都保留），不再整份替换。Agent 工具结果带 `pending: "storage"`（图片在补传）时，`use-job-fallback-polling` 每 15 秒查一次任务，最长 90 分钟；超时的任务仍是 5 秒一次、最长 10 分钟。对话里这两种情况不显示“图片生成失败”，而是“图片已生成，正在保存”或“图片还在生成”，说明好了会自动放到画布上（`tool-block-view.tsx`）。画布生图面板和前端放置的助手出图经 `/api/proxy-image` 读取生成结果（`fetchAsDataURL`）：这个接口只读本站 Storage（`SUPABASE_URL` 下 `/storage/v1/object/public|sign/` 的 png/jpeg/webp/gif，25 MB 以内），别的地址一律 403。
 - **画布手机端**：<640px 时品牌套件选择器和设计助手按钮都只显示图标（选择器用 Base UI 菜单，自动避开屏幕边缘），；缩放条移到工具栏上方；画布内生图面板贴底全宽停靠（桌面端放不下时会翻到占位框上方）。
 
 ## 测试与构建
@@ -78,7 +78,7 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 23 个文件，132 个用例
+npx vitest run                     # 24 个文件，140 个用例
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 

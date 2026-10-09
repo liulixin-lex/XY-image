@@ -12,6 +12,13 @@ import { fetchJob } from "../lib/server-api";
 const POLL_INTERVAL_MS = 5_000;
 /** Maximum total polling duration before giving up (ms) */
 const MAX_POLL_DURATION_MS = 10 * 60 * 1_000; // 10 minutes
+/**
+ * A generated image storage refused (`pending: "storage"`): the worker retries
+ * the upload for about 75 minutes, so poll slower and longer. Past this the
+ * image still lands on the canvas; the page shows it on its next load.
+ */
+const STORAGE_POLL_INTERVAL_MS = 15_000;
+const STORAGE_MAX_POLL_DURATION_MS = 90 * 60 * 1_000;
 /** Terminal job statuses that should stop polling */
 const TERMINAL_FAILURE_STATUSES = new Set(["failed", "dead_letter", "canceled"]);
 
@@ -30,6 +37,17 @@ type ActivePoll = {
   jobType: string;
 };
 
+type PollLimits = { intervalMs: number; maxDurationMs: number };
+
+const TIMEOUT_POLL: PollLimits = {
+  intervalMs: POLL_INTERVAL_MS,
+  maxDurationMs: MAX_POLL_DURATION_MS,
+};
+const STORAGE_POLL: PollLimits = {
+  intervalMs: STORAGE_POLL_INTERVAL_MS,
+  maxDurationMs: STORAGE_MAX_POLL_DURATION_MS,
+};
+
 // --- Hook ---
 
 /**
@@ -41,7 +59,8 @@ type ActivePoll = {
  * API until the worker finishes, then notifies the caller to re-fetch the canvas.
  *
  * This prevents users from losing both their result and credits when the
- * backend times out but the worker eventually succeeds.
+ * backend times out but the worker eventually succeeds. The same applies to an
+ * image held for storage retries (`pending: "storage"` on the tool output).
  *
  * Since the backend now inserts elements into the canvas directly, this hook
  * simply notifies the caller so it can trigger a canvas re-fetch (canvas.sync).
@@ -83,7 +102,7 @@ export function useJobFallbackPolling({
    * Start polling a specific job until it reaches a terminal state.
    */
   const startPolling = useCallback(
-    (jobId: string, jobType: string) => {
+    (jobId: string, jobType: string, limits: PollLimits) => {
       // Guard against duplicate polling for the same job
       if (activePollsRef.current.has(jobId)) {
         console.log(
@@ -94,13 +113,13 @@ export function useJobFallbackPolling({
 
       const startedAt = Date.now();
       console.log(
-        `[job-fallback] Starting fallback polling for ${jobType} job ${jobId}`,
+        `[job-fallback] Starting fallback polling for ${jobType} job ${jobId} (up to ${limits.maxDurationMs / 60_000} min)`,
       );
 
       const intervalId = setInterval(async () => {
         // Safety: check max duration
         const elapsed = Date.now() - startedAt;
-        if (elapsed > MAX_POLL_DURATION_MS) {
+        if (elapsed > limits.maxDurationMs) {
           console.warn(
             `[job-fallback] Giving up on job ${jobId} after ${Math.round(elapsed / 1000)}s`,
           );
@@ -149,7 +168,7 @@ export function useJobFallbackPolling({
             err,
           );
         }
-      }, POLL_INTERVAL_MS);
+      }, limits.intervalMs);
 
       activePollsRef.current.set(jobId, {
         intervalId,
@@ -161,8 +180,8 @@ export function useJobFallbackPolling({
   );
 
   /**
-   * Check a stream event for timed-out generation jobs.
-   * Call this for every stream event received from the WebSocket.
+   * Check a stream event for timed-out generation jobs, or images still being
+   * saved. Call this for every stream event received from the WebSocket.
    */
   const checkForTimedOutJobs = useCallback(
     (event: StreamEvent) => {
@@ -175,19 +194,21 @@ export function useJobFallbackPolling({
       const jobId = output.jobId;
       const jobType = output.jobType;
 
-      // Only trigger fallback for timeout errors with a valid jobId
-      if (
-        typeof error !== "string" ||
-        !error.toLowerCase().includes("timed out") ||
-        typeof jobId !== "string" ||
-        !jobId
-      ) {
+      // Only trigger fallback for timeouts and storage retries with a jobId
+      if (typeof error !== "string" || typeof jobId !== "string" || !jobId) {
         return;
       }
+      const limits =
+        output.pending === "storage"
+          ? STORAGE_POLL
+          : error.toLowerCase().includes("timed out")
+            ? TIMEOUT_POLL
+            : null;
+      if (!limits) return;
 
       const resolvedJobType =
         typeof jobType === "string" ? jobType : "unknown";
-      startPolling(jobId, resolvedJobType);
+      startPolling(jobId, resolvedJobType, limits);
     },
     [startPolling],
   );

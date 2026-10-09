@@ -286,7 +286,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook("onClose", async () => readiness.close());
   void registerHealthRoutes(app, env, readiness.check);
   void registerFontsRoutes(app, { env });
-  void registerImageProxyRoute(app);
+  void registerImageProxyRoute(app, { env });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,

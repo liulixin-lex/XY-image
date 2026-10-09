@@ -134,6 +134,12 @@ export const canvasGetResponseSchema = z.object({
 
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
+  /**
+   * Elements deleted in the editor (Excalidraw keeps them in the scene as
+   * deleted). Lets the server keep images it placed that the editor has not
+   * loaded yet, without bringing back ones the user deleted.
+   */
+  deletedElementIds: z.array(z.string().max(128)).max(20000).optional(),
 });
 
 export const canvasSaveResponseSchema = z.object({
