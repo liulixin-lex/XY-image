@@ -45,7 +45,7 @@ bash apps/server/scripts/check-xy2api-migrations.sh
 
 反向代理使用生成的 Nginx 模板：TLS、WebSocket upgrade、20m请求体、至少660秒API/Realtime读取超时、禁用上游自动重试、只记录不含查询的路径。Supabase公开Auth仅允许一次性verify、会话refresh、GET user、logout及其预检；不允许设置本地密码、password/PKCE grant或自行发登录邮件。内部Admin操作仍经私网。前端现存的旧PKCE callback不是主站登录流程，不开放对应grant。
 
-API收到停止信号后排空已接收WebSocket Agent及最终消息持久化；Worker停止接单并等待在途任务，ACK失败保留已成功结果，重投不会再生图。Docker停止宽限720秒仍须真实环境验证，不承诺SIGKILL可优雅退出。
+API收到停止信号后先排空已接收的WebSocket Agent运行及最终消息持久化，再关闭服务。排空期间照常响应请求、保持浏览器连接（在途运行还要收浏览器RPC），新运行回“服务正在维护，请稍后再试”，`/api/ready` 返回 503（`checks.accepting: false`）。排空放在 Fastify 的关闭钩子之外（`server.ts` 先 `drainAgentRuns()` 再 `app.close()`）：关闭钩子受 10 秒插件超时约束，2026-10-09 之前排空超过 10 秒时整个关闭流程会停住，WebSocket 不关、进程约 5 分钟后报错退出。关闭期间也不再回 Fastify 的 503（它绕过 WebSocket 插件，排空中重连的浏览器连接会一直挂着）。日志：`[server] Shutting down`、`Draining active agent runs`、`Agent runs drained`、`Closed`、`Shutdown complete`，每 30 秒一行 `Still draining`（info）或 `Still closing`（warn，带连接数）。进程被强杀时没有排空，运行丢失：页面重连后发现服务端没有这次运行，提示“连接断开期间这条回复没有完成”，已经发出的生图照常落到画布。Worker停止接单并等待在途任务，ACK失败保留已成功结果，重投不会再生图。实验室已验证（`restart.sh`：Worker 排空约 20 秒，任务 charged 且有请求 ID；API 排空约 15 秒、17 秒内恢复；强杀后页面恢复）。Docker停止宽限720秒仍须正式环境验证，不承诺SIGKILL可优雅退出。
 
 ## 真实付费预检
 
@@ -190,7 +190,7 @@ order by inline_bytes desc
 limit 20;
 ```
 
-API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。保存时只留下画面上图片用到的文件（Excalidraw 会一直留着删掉的图片的文件，页面每次都发上来）；不再用的文件如果存在这块画布自己的目录里，保存成功后删掉对象。生成记录里的图（`generated/`）和别的画布目录里的对象不删。保存后画布是空的就不删任何对象，免得一次误清空把图也删掉。用户撤销删除时，页面手里还有数据，服务端回 `missingFileIds` 后页面重新上传。删除项目只是归档（`archived_at`），画布和图片都保留，目前没有清理归档项目的策略。日志：`N unused file(s) not kept`、`removed N unused file(s)`、`unused file(s) not removed`（删除失败只记日志，对象留着）。还没做的：保存失败后留下、没有任何画布引用的对象，需要一次对照 `canvas-files/` 和 `canvases.content->files` 的清扫（代码里有 TODO）。
+API 日志按 `[canvas-service]` 过滤：每次保存只要有图片转存、留在原地或缺数据，就记一行汇总；`not stored, kept inline` 是存储拒绝或出错（带对象路径和错误信息，不带内容），这张图会留在 `content` 里，下次保存再试。保存时只留下画面上图片用到的文件（Excalidraw 会一直留着删掉的图片的文件，页面每次都发上来）；不再用的文件如果存在这块画布自己的目录里，保存成功后删掉对象。生成记录里的图（`generated/`）和别的画布目录里的对象不删。保存后画布是空的就不删任何对象，免得一次误清空把图也删掉。用户撤销删除时，页面手里还有数据，服务端回 `missingFileIds` 后页面重新上传。删除项目只是归档（`archived_at`），画布和图片都保留，目前没有清理归档项目的策略。日志：`N unused file(s) not kept`、`removed N unused file(s)`、`unused file(s) not removed`（删除失败只记日志，对象留着）。没有任何画布引用的对象（比如上传成功、保存却失败）由 Worker 清扫（`features/canvas/canvas-files-sweeper.ts`）：启动后 2–5 分钟第一次，之后每 6 小时一次；逐个工作区对照 `canvas-files/` 和这个工作区所有画布（包括归档项目的）的 `content->files`，只删创建超过 3 天、哪块画布都没引用的对象，每次最多 1000 个。`CANVAS_FILES_SWEEP=dry-run` 只记日志不删，`off` 关闭，默认 `on`。手动执行（Worker 容器里）：`node --import tsx src/cli/sweep-canvas-files.ts [--dry-run]`。日志：`[canvas-files-sweep] workspaces= orphaned= removed= failed=`；删除失败只记日志，对象留到下次。
 
 用户在对话里点“停止”时，Agent 正在等的生图任务如果 Worker 还没取走（`queued`、`billing_status = none`），会直接取消，主站没有收到请求、不扣费；已经取走的照常跑完并放到画布上。Worker 刚取走、还没发出时任务被取消（和停止撞上），Worker 丢掉这条消息，任务保持“已取消”，不会记成失败。日志：API `[submitImageJob] job_poll_done {"status":"canceled_unsent"}` / `"stopped_running"`，Worker `canceled before it was sent`。停止或失败的对话里还在跑的工具保存成“已停止 / 处理失败”，刷新后不会一直转圈（`ws/assistant-draft.ts`）。
 

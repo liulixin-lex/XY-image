@@ -27,12 +27,26 @@ export async function registerRunRoutes(
   options: {
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
+    /** A restart is draining runs (lifecycle/drain-tasks); refuse new ones. */
+    isDraining?: () => boolean;
     settingsService?: SettingsService;
     threadService?: ThreadService;
     viewerService?: ViewerService;
   } = {},
 ) {
   app.post("/api/agent/runs", async (request, reply) => {
+    if (options.isDraining?.())
+      return reply
+        .code(503)
+        .header("Retry-After", "30")
+        .send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "application_error",
+              message: "服务正在维护，请稍后再试",
+            },
+          }),
+        );
     try {
       const hasAuthorization = hasBearerAuthorization(
         request.headers.authorization,

@@ -69,6 +69,19 @@ type ChatSidebarProps = {
 /** The run command could not go out (not connected); nothing was started. */
 class RunNotSentError extends Error {}
 
+/**
+ * The connection came back and the server no longer has the run this page
+ * sent: it restarted without draining, or the events it buffered expired. Any
+ * reply it saved was reloaded; an image job already sent still lands.
+ */
+class RunLostError extends Error {
+  constructor(readonly runId: string) {
+    super("run lost");
+  }
+}
+const RUN_LOST_TEXT =
+  "连接断开期间这条回复没有完成，不会自动重发。需要的话可以再发一次。";
+
 export function ChatSidebar({
   accessToken,
   canvasId,
@@ -135,6 +148,8 @@ export function ChatSidebar({
   // for the stop button. A stop asked for before the server acknowledged the
   // run is sent as soon as its id arrives.
   const activeRunIdRef = useRef<string | null>(null);
+  // Ends the run this page sent when a reconnect shows the server lost it.
+  const endLocalRunRef = useRef<(() => void) | null>(null);
   const stopRequestedRef = useRef(false);
   const [stopping, setStopping] = useState(false);
   // Sending waits for the connection (a run command sent before it is lost).
@@ -509,6 +524,11 @@ export function ChatSidebar({
           resolveStream = r;
         });
         const runIdRef = { current: "" };
+        let lost = false;
+        endLocalRunRef.current = () => {
+          lost = true;
+          resolveStream();
+        };
 
         const cleanup = ws.onEvent((event) => {
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
@@ -651,6 +671,7 @@ export function ChatSidebar({
 
         await streamDone;
         cleanup();
+        if (lost) throw new RunLostError(runIdRef.current);
       } catch (error) {
         if (error instanceof RunNotSentError) {
           // Nothing went out (the connection dropped as it was sent): take
@@ -661,6 +682,34 @@ export function ChatSidebar({
           );
           chatInputRef.current?.restore(text);
           showToast("还没连上服务器，这条消息没有发出。连上后再发一次。", "error");
+          return;
+        }
+        if (error instanceof RunLostError) {
+          console.warn(`[chat] run ${error.runId} lost: the server no longer has it`);
+          updateSessionMessages(currentSessionId, (prev) => {
+            const notice = { type: "text" as const, text: RUN_LOST_TEXT };
+            if (prev.some((m) => m.id === assistantId)) {
+              return prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, contentBlocks: [...m.contentBlocks, notice] }
+                  : m,
+              );
+            }
+            // Messages were reloaded on reconnect: a saved reply needs no note.
+            if (prev.at(-1)?.role === "assistant") return prev;
+            return [
+              ...prev,
+              { id: assistantId, role: "assistant" as const, contentBlocks: [notice] },
+            ];
+          });
+          // To the page as a failed run: it looks for image jobs this run had
+          // already sent, which still land on the canvas.
+          onStreamEvent?.({
+            type: "run.failed",
+            runId: error.runId,
+            timestamp: new Date().toISOString(),
+            error: { code: "run_failed", message: RUN_LOST_TEXT },
+          });
           return;
         }
         updateSessionMessages(currentSessionId, (prev) =>
@@ -682,6 +731,7 @@ export function ChatSidebar({
         );
       } finally {
         activeRunIdRef.current = null;
+        endLocalRunRef.current = null;
         stopRequestedRef.current = false;
         setStopping(false);
         setStreaming(false);
@@ -874,10 +924,22 @@ export function ChatSidebar({
       // Reload messages from DB (server may have persisted while disconnected)
       await reloadMessages(sessionId);
 
+      // The run this page sent before the connection dropped, if any.
+      const localRunId = activeRunIdRef.current;
+      const endLocalRun = endLocalRunRef.current;
+
       // Resume canvas binding (after DB messages are set)
       ws.resumeCanvas(canvasId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
+        // The server no longer runs it. Buffered events follow the ack and
+        // end it if it finished meanwhile; otherwise it was lost.
+        if (endLocalRun && localRunId && activeRunId !== localRunId) {
+          setTimeout(() => {
+            if (endLocalRunRef.current === endLocalRun) endLocalRun();
+          }, 3_000);
+          if (!activeRunId) return;
+        }
         if (activeRunId && typeof activeRunId === "string") {
           setStreaming(true);
           activeRunIdRef.current = activeRunId;

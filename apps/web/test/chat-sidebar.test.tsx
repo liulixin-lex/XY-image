@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent, WsCommandAck } from "@loomic/shared";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
@@ -278,6 +278,100 @@ describe("ChatSidebar", () => {
     );
     expect(updateSessionTitleMock).toHaveBeenCalledWith("token_abc", "session-real", "你好");
   });
+
+  // The page sent a run, the connection dropped, and it came back.
+  function renderReconnecting() {
+    const listeners: Array<(event: StreamEvent) => void> = [];
+    let resumeAck: ((ack: WsCommandAck) => void) | undefined;
+    const base: WebSocketHandle = {
+      ...createMockWs(),
+      onEvent: vi.fn((listener: (event: StreamEvent) => void) => {
+        listeners.push(listener);
+        return () => {
+          listeners.splice(listeners.indexOf(listener), 1);
+        };
+      }),
+      resumeCanvas: vi.fn((_canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
+        resumeAck = onAck;
+      }),
+    };
+    const onStreamEvent = vi.fn();
+    const ui = (ws: WebSocketHandle) => (
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          onStreamEvent={onStreamEvent}
+          ws={ws}
+        />
+      </ToastProvider>
+    );
+    const view = render(ui(base));
+    return {
+      onStreamEvent,
+      emit: (event: Record<string, unknown>) =>
+        act(() => {
+          for (const listener of [...listeners])
+            listener({
+              runId: "run_123",
+              timestamp: "2026-10-09T00:00:00Z",
+              ...event,
+            } as StreamEvent);
+        }),
+      reconnect: async (activeRunId: string | null) => {
+        resumeAck = undefined;
+        view.rerender(ui({ ...base, connected: false }));
+        view.rerender(ui({ ...base, connected: true }));
+        await waitFor(() => expect(resumeAck).toBeDefined());
+        act(() =>
+          resumeAck?.({
+            type: "command.ack",
+            action: "canvas.resume",
+            payload: { canvasId: "canvas-1", activeRunId, replayed: 0 },
+          }),
+        );
+      },
+    };
+  }
+
+  it("ends a run the server lost while the page was disconnected", async () => {
+    const { reconnect, onStreamEvent } = renderReconnecting();
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
+    await userEvent.type(input, "画一座灯塔{Enter}");
+    await screen.findByRole("button", { name: "停止" });
+
+    await reconnect(null);
+    expect(
+      await screen.findByText(
+        "连接断开期间这条回复没有完成，不会自动重发。需要的话可以再发一次。",
+        undefined,
+        { timeout: 5_000 },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    // The page looks for image jobs the run had already sent.
+    expect(onStreamEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "run.failed", runId: "run_123" }),
+    );
+  }, 10_000);
+
+  it("lets the replayed events end a run that finished while disconnected", async () => {
+    const { reconnect, emit } = renderReconnecting();
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
+    await userEvent.type(input, "你好{Enter}");
+    await screen.findByRole("button", { name: "停止" });
+
+    await reconnect(null);
+    await emit({ type: "message.delta", messageId: "m-1", delta: "你好！" });
+    await emit({ type: "run.completed" });
+    expect(await screen.findByRole("button", { name: "发送" })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 3_500));
+    expect(
+      screen.queryByText(/连接断开期间这条回复没有完成/),
+    ).not.toBeInTheDocument();
+  }, 10_000);
 
   it("says why the main site refused a message and reports it", async () => {
     const { emit } = renderWithEvents();
