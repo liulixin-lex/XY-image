@@ -18,9 +18,10 @@
 1. 鉴权签名密钥与缓存改为实例内，不再跨实例共享。显式限定算法、audience 和 issuer，验证 exp/iat/sub/role；本地验证不使用会越过 exp 的缓存，远程验证缓存不超过令牌到期时间或一分钟。无效令牌/远程错误不记原文。
 2. 生产启动前校验必需 Supabase 配置和公开 HTTPS 地址。`SUPABASE_JWT_ISSUER` 与自建 Auth 的 `API_EXTERNAL_URL` 保持一致。
 3. `/api/health` 只代表进程存活；`/api/ready` 探测 DB 连接、业务/Agent 表、PGMQ 队列、Storage 桶、Realtime publication、权限、Auth 与 Storage API。5 秒合并缓存，3 秒单项超时，失败 503，不返回连接串；公网 Nginx 隐藏此路由。Realtime 项检查 publication 配置，不等同真实 WebSocket 推送验收；它只报告、不影响 `ok`（10-09 起：没有任何代码订阅 Realtime，公网也已关闭；以后要用 Realtime 推送时再改回必需项）。
-4. Worker 满并发时休眠，数据库轮询故障指数退避至30秒；停止后不接收刚返回的新任务，等待已发送任务落库，停止宽限720秒。API排空已接收WebSocket Agent及最终消息落库；队列ACK失败不覆盖成功状态，已知charged在恢复时不退成unknown。健康文件反映轮询/运行状态；Docker unhealthy 不会自动重启，部署方需告警。没有增加任何生图重试。
+4. Worker 满并发时休眠，数据库轮询故障指数退避至30秒；停止后不接收刚返回的新任务，等待已发送任务落库，停止宽限720秒。API先排空已接收WebSocket Agent及最终消息落库再关闭，排空期间照常响应、拒绝新运行、`/api/ready` 503；队列ACK失败不覆盖成功状态，已知charged在恢复时不退成unknown。健康文件反映轮询/运行状态；Docker unhealthy 不会自动重启，部署方需告警。没有增加任何生图重试。
 5. 新增 `20261009000002`（就绪检查/Realtime publication）、`20261009000003`（权限加固）、`20261009000004`（`canvases` 存储桶改为私有并删除开放策略，权限检查增加匿名存储策略和公开 canvases 的漂移检测）和 `20261009000005`（已扣费图片暂存表 `xy2api_pending_deliveries`，只有服务端可读写；readiness 的 schema 检查要求此表存在，权限检查覆盖此表）和 `20261009000006`（“待核对”自动核对用的 `background_jobs.billing_checked_at` 列和部分索引，不加权限）和 `20261009000007`（工作区成员不再允许客户端自行添加或改动：删除 owner 的 INSERT/UPDATE 策略并收回权限，只剩 `bootstrap_viewer` 建成员；权限检查增加此项漂移检测），共38份应用迁移。旧积分扣减/退款/每日领取/套餐发放 RPC 仅 service_role 可调用；旧账单表客户端权限关闭，Agent/密文表和 langgraph schema 不对客户端开放。保留历史表，不做删表。`increment_job_attempt` 仍允许 Worker 的 service_role 调用。
 6. Nginx 日志只记 `$uri`，不记查询和请求头；生成的 Envoy 日志把整个路径和 Referer 替换为固定脱敏标记，避免 Realtime query token 进入网关日志。应用/Worker 数据库错误不输出连接串。其他上游容器的错误日志还需上线前敏感信息抽检。
+7. Worker 每 6 小时清扫没有任何画布引用、创建超过 3 天的画布图片对象（`CANVAS_FILES_SWEEP=on|dry-run|off`，默认 on，详见 [XY2API 运维](XY2API_OPERATIONS.md) 的“画布图片存储”）。
 
 ## 生成部署目录（离线，不启动服务）
 
