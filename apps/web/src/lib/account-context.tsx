@@ -270,6 +270,19 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [userId, refreshAccount]);
 
+  // A $0 balance hides the main-site chat models (xy2api refuses model
+  // discovery); once a refresh shows a positive balance the server has
+  // re-discovered them (see GET /api/account), so reload the refused list.
+  const balanceAmount = account.data?.balance?.amount ?? null;
+  useEffect(() => {
+    if (
+      chatModels.xy2apiError === "insufficient_balance" &&
+      balanceAmount !== null &&
+      balanceAmount > 0
+    )
+      void refreshChatModels();
+  }, [chatModels.xy2apiError, balanceAmount, refreshChatModels]);
+
   useEffect(
     () => () => {
       if (followUpTimer.current) clearTimeout(followUpTimer.current);

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { loadServerEnv } from "../../config/env.js";
+import { Xy2apiError } from "./errors.js";
 import { createXy2apiServices } from "./services.js";
 import { memoryDatabase } from "./test-support.js";
 
@@ -101,6 +102,101 @@ describe("user key synchronization", () => {
       expect(fixture.tables.xy2api_api_keys?.[0]?.image_capable).toBe(false);
     },
   );
+  it("keeps a $0 key selectable and points to recharge", async () => {
+    const fixture = setup();
+    // xy2api refuses /v1/models before it looks at the key when the balance is 0.
+    vi.spyOn(fixture.client, "listModels").mockRejectedValue(
+      new Xy2apiError(403, "INSUFFICIENT_BALANCE"),
+    );
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      invalid_reason: null,
+      image_capable: true,
+      chat_models: [],
+    });
+    expect(fixture.tables.xy2api_api_keys?.[0]?.image_models).toContain(
+      "gpt-image-2",
+    );
+    expect(await fixture.keys.preferences("user-1")).toMatchObject({
+      image_key_id: 1,
+      chat_key_id: null,
+    });
+    await expect(
+      fixture.keys.resolveChatCredential("user-1"),
+    ).rejects.toMatchObject({ code: "insufficient_balance", statusCode: 402 });
+    vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 0 });
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}),
+    ).rejects.toMatchObject({ code: "insufficient_balance", statusCode: 402 });
+  });
+  it.each([
+    ["insufficient balance", new Xy2apiError(403, "INSUFFICIENT_BALANCE")],
+    ["an unclassified refusal", new Xy2apiError(403, "SOMETHING_NEW")],
+    ["a gateway outage", new Xy2apiError(502, "INVALID_RESPONSE")],
+    ["a network failure", new TypeError("fetch failed")],
+  ])("keeps last known models after %s", async (_label, failure) => {
+    const fixture = setup();
+    await fixture.keys.syncKeys("user-1");
+    vi.spyOn(fixture.client, "listModels").mockRejectedValue(failure);
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      invalid_reason: null,
+      image_capable: true,
+      image_models: ["gpt-image-2"],
+      chat_models: ["gpt-4.1"],
+    });
+    expect(await fixture.keys.preferences("user-1")).toMatchObject({
+      image_key_id: 1,
+      chat_key_id: 1,
+    });
+  });
+  it.each([
+    [401, "INVALID_API_KEY", "key_unavailable"],
+    [403, "API_KEY_DISABLED", "key_unavailable"],
+    [403, "ACCESS_DENIED", "key_ip_restricted"],
+  ])(
+    "still disables a key on %i %s during discovery",
+    async (status, id, reason) => {
+      const fixture = setup();
+      await fixture.keys.syncKeys("user-1");
+      vi.spyOn(fixture.client, "listModels").mockRejectedValue(
+        new Xy2apiError(status, id),
+      );
+      await fixture.keys.syncKeys("user-1");
+      expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+        invalid_reason: reason,
+        image_capable: false,
+      });
+      expect(fixture.keys.deferredDiscoveryReason("user-1")).toBeNull();
+    },
+  );
+  it("re-runs deferred discovery once it may succeed, at most every 15 s", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const fixture = setup();
+      const models = vi
+        .spyOn(fixture.client, "listModels")
+        .mockRejectedValue(new Xy2apiError(403, "INSUFFICIENT_BALANCE"));
+      await fixture.keys.syncKeys("user-1");
+      expect(fixture.keys.deferredDiscoveryReason("user-1")).toBe(
+        "insufficient_balance",
+      );
+      models.mockResolvedValue(["gpt-image-2", "gpt-4.1"]);
+      expect(await fixture.keys.retryDeferredDiscovery("user-1")).toBe(false);
+      vi.advanceTimersByTime(15_000);
+      expect(await fixture.keys.retryDeferredDiscovery("user-1")).toBe(true);
+      expect(fixture.keys.deferredDiscoveryReason("user-1")).toBeNull();
+      expect(await fixture.keys.preferences("user-1")).toMatchObject({
+        image_key_id: 1,
+        chat_key_id: 1,
+        default_chat_model: "gpt-4.1",
+      });
+      vi.advanceTimersByTime(15_000);
+      expect(await fixture.keys.retryDeferredDiscovery("user-1")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("limits concurrent model discovery to three requests", async () => {
     const fixture = setup();
     fixture.list.mockResolvedValue(

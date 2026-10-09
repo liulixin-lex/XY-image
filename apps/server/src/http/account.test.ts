@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { loadServerEnv } from "../config/env.js";
+import { Xy2apiError } from "../features/xy2api/errors.js";
 import { createXy2apiServices } from "../features/xy2api/services.js";
 import { memoryDatabase } from "../features/xy2api/test-support.js";
 import { registerAccountRoutes } from "./account.js";
@@ -102,6 +103,88 @@ describe("public account metadata", () => {
       expect(usage).toHaveBeenCalledTimes(2);
     } finally {
       await app.close();
+    }
+  });
+  it("shows a $0 balance and picks up chat models after a recharge", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const env = loadServerEnv(
+      {},
+      {
+        XY2API_BASE_URL: "https://example.com",
+        LOOMIC_SECRET_KEY: randomBytes(32).toString("base64"),
+        SSO_EMAIL_DOMAIN: "sso.example.com",
+      },
+    );
+    const db = memoryDatabase({
+      xy2api_accounts: [
+        {
+          user_id: "user-1",
+          xy2api_user_id: 7,
+          email: "broke@example.com",
+          session_state: "active",
+          access_token_enc: "access-ciphertext",
+        },
+      ],
+    });
+    const services = createXy2apiServices(env, () => db.admin);
+    vi.spyOn(services.accounts, "getAccessToken").mockResolvedValue(
+      "synthetic-access",
+    );
+    vi.spyOn(services.client, "listKeys").mockResolvedValue([
+      {
+        id: 7,
+        key: "synthetic-private-api-key",
+        name: "Image",
+        status: "active",
+        quota: 0,
+        quota_used: 0,
+        group: {
+          id: 1,
+          name: "Image",
+          platform: "openai",
+          status: "active",
+          allow_image_generation: true,
+        },
+      },
+    ]);
+    const models = vi
+      .spyOn(services.client, "listModels")
+      .mockRejectedValue(new Xy2apiError(403, "INSUFFICIENT_BALANCE"));
+    const usage = vi
+      .spyOn(services.client, "getUsage")
+      .mockResolvedValue({ balance: 0, mode: "wallet" });
+    await services.keys.syncKeys("user-1");
+    const app = Fastify();
+    registerAccountRoutes(app, {
+      ...services,
+      env,
+      auth: {
+        authenticate: async () => ({
+          id: "user-1",
+          accessToken: "synthetic-supabase-token",
+          email: "u7@sso.example.com",
+          userMetadata: {},
+        }),
+      },
+    });
+    try {
+      const broke = await app.inject({ method: "GET", url: "/api/account" });
+      expect(broke.json()).toMatchObject({
+        balance: { amount: 0 },
+        preferences: { image_key_id: 7, chat_key_id: null },
+      });
+      // Recharged on the main site; the balance cache (15 s) has expired.
+      usage.mockResolvedValue({ balance: 5, mode: "wallet" });
+      models.mockResolvedValue(["gpt-image-2", "gpt-4.1"]);
+      vi.advanceTimersByTime(16_000);
+      const topped = await app.inject({ method: "GET", url: "/api/account" });
+      expect(topped.json()).toMatchObject({
+        balance: { amount: 5 },
+        preferences: { image_key_id: 7, chat_key_id: 7 },
+      });
+    } finally {
+      await app.close();
+      vi.useRealTimers();
     }
   });
 });
