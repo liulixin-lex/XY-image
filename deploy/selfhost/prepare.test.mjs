@@ -108,6 +108,9 @@ test("offline preparation creates isolated credentials and a closed default netw
     assert.ok(gateway.includes("[path-redacted]"));
     assert.ok(!gateway.includes("%REQ(:PATH)%"));
     assert.ok(gateway.includes("[referer-redacted]"));
+    const nginx = await readFile(path.join(dir, "nginx.conf"), "utf8");
+    assert.ok(!nginx.includes("__REAL_IP__"));
+    assert.ok(!nginx.includes("set_real_ip_from"), "No CDN trusted by default");
     const before = await readFile(path.join(dir, "server.env"), "utf8");
     await assert.rejects(prepare({ ...options, dir }));
     assert.equal(await readFile(path.join(dir, "server.env"), "utf8"), before);
@@ -127,5 +130,31 @@ test("invalid origins and repository destinations fail before writing", async ()
       apiOrigin: "http://api.example.com",
     }),
     /HTTPS origin/,
+  );
+});
+test("--cdn cloudflare trusts only Cloudflare edges for the client address", async () => {
+  const root = await createTestDirectory("prepare-cdn-test-");
+  try {
+    const dir = path.join(root, "deployment");
+    await prepare({ ...options, dir, cdn: "cloudflare" });
+    const nginx = await readFile(path.join(dir, "nginx.conf"), "utf8");
+    assert.match(nginx, /^set_real_ip_from 173\.245\.48\.0\/20;$/m);
+    assert.match(nginx, /^set_real_ip_from 2606:4700::\/32;$/m);
+    assert.match(nginx, /^real_ip_header CF-Connecting-IP;$/m);
+    assert.ok(!/set_real_ip_from (0\.0\.0\.0|::)\/0/.test(nginx));
+    const deployment = JSON.parse(
+      await readFile(path.join(dir, "deployment.json"), "utf8"),
+    );
+    assert.equal(deployment.cdn, "cloudflare");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  await assert.rejects(
+    prepare({
+      ...options,
+      dir: path.resolve(repository, "../invalid-cdn-test"),
+      cdn: "fastly",
+    }),
+    /Unsupported cdn/,
   );
 });

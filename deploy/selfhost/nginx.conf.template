@@ -3,6 +3,9 @@
 # reads. REST, Storage writes/listing, Realtime, Studio, meta and admin stay
 # on the Docker network (the API uses SUPABASE_INTERNAL_URL).
 log_format xy_safe '$remote_addr $request_method $uri $status $body_bytes_sent $request_time';
+# prepare.mjs replaces the next line. With --cdn it trusts only that CDN's
+# edges to name the client, so logs and the login limiter see real addresses.
+# __REAL_IP__
 map $http_upgrade $xy_connection_upgrade { default upgrade; '' close; }
 # Shadow users authenticate through XY API. Public Auth cannot set passwords,
 # request new email links, create users, or use password/PKCE/OAuth grants.
