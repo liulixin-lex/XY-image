@@ -10,6 +10,7 @@ import {
   groupByDay,
   isActiveJob,
   isFailedJob,
+  isSavingJob,
 } from "@/lib/image-jobs";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
@@ -102,8 +103,9 @@ function HistoryTile({
   onCancel: () => void;
   onDownload: () => void;
 }) {
-  const running = job.status === "running";
-  const queued = job.status === "queued";
+  const saving = isSavingJob(job);
+  const running = job.status === "running" && !saving;
+  const queued = job.status === "queued" && !saving;
   const failed = isFailedJob(job);
   const done = job.status === "succeeded" && Boolean(job.url);
   const issue = failed ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage) : null;
@@ -167,6 +169,13 @@ function HistoryTile({
             </span>
             <span className="relative max-w-[14em] text-[11.5px] leading-snug text-fg-muted">
               请求已发往主站，慢的模型要几分钟
+            </span>
+          </div>
+        ) : saving ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-line-strong p-4 text-center">
+            <span className="text-[13px] font-medium text-fg-soft">保存中</span>
+            <span className="max-w-[14em] text-[11.5px] leading-snug text-fg-muted">
+              图片已生成并扣费，存好后会自动出现
             </span>
           </div>
         ) : queued ? (

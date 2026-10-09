@@ -7,10 +7,17 @@ import {
 } from "../../generation/providers/registry.js";
 import { GatewayError, mapGatewayError } from "./errors.js";
 import { executeImageJob } from "./image-runner.js";
+import {
+  MAX_DELIVERY_ATTEMPTS,
+  type PendingDeliveryStore,
+} from "./pending-delivery.js";
 import { createXy2apiServices } from "./services.js";
-import { memoryDatabase } from "./test-support.js";
+import { memoryDatabase, memoryPendingDeliveries } from "./test-support.js";
 
-afterEach(clearProviders);
+afterEach(() => {
+  clearProviders();
+  vi.restoreAllMocks();
+});
 function setup(billing = "none") {
   const env = loadServerEnv(
     {},
@@ -76,8 +83,13 @@ function setup(billing = "none") {
     env,
     xy2api,
     generate,
-    execute: () =>
-      executeImageJob("job-1", { env, xy2api, getAdminClient: () => db.admin }),
+    execute: (deliveries?: PendingDeliveryStore) =>
+      executeImageJob("job-1", {
+        env,
+        xy2api,
+        getAdminClient: () => db.admin,
+        ...(deliveries ? { deliveries } : {}),
+      }),
   };
 }
 describe("image billing lifecycle", () => {
@@ -186,6 +198,7 @@ describe("image billing lifecycle", () => {
     );
   });
   it("retries only storage uploads and preserves charged billing on failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const fixture = setup();
     fixture.uploads.mockResolvedValue({ error: "fixture storage failure" });
     await expect(fixture.execute()).rejects.toMatchObject({
@@ -194,6 +207,118 @@ describe("image billing lifecycle", () => {
     expect(fixture.uploads).toHaveBeenCalledTimes(3);
     expect(fixture.generate).toHaveBeenCalledTimes(1);
     expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe("charged");
+  });
+  it("holds a charged image when storage fails and delivers it later without a new request", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fixture = setup();
+    const deliveries = memoryPendingDeliveries();
+    fixture.uploads.mockResolvedValue({ error: { message: "storage down" } });
+    await expect(fixture.execute(deliveries)).rejects.toMatchObject({
+      code: "storage_retrying",
+      retryInSeconds: 30,
+    });
+    expect(deliveries.rows.get("job-1")).toMatchObject({
+      objectPath: "workspace-1/generated/job-1.jpg",
+      mimeType: "image/jpeg",
+      attempts: 1,
+      lastError: expect.stringContaining("storage down"),
+    });
+    expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe("charged");
+
+    fixture.uploads.mockResolvedValue({ error: null });
+    const result = await fixture.execute(deliveries);
+    expect(result).toMatchObject({
+      object_path: "workspace-1/generated/job-1.jpg",
+      width: 100,
+      height: 100,
+    });
+    expect(fixture.uploads).toHaveBeenLastCalledWith(
+      "workspace-1/generated/job-1.jpg",
+      Buffer.from("image"),
+      expect.objectContaining({ contentType: "image/jpeg" }),
+    );
+    expect(fixture.generate).toHaveBeenCalledTimes(1);
+    expect(fixture.tables.asset_objects).toHaveLength(1);
+    // The worker removes the held copy once success is recorded.
+    expect(deliveries.rows.has("job-1")).toBe(true);
+  });
+  it("backs off between storage attempts and gives up keeping the held image", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fixture = setup("charged");
+    const deliveries = memoryPendingDeliveries();
+    await deliveries.hold(
+      {
+        jobId: "job-1",
+        objectPath: "workspace-1/generated/job-1.png",
+        mimeType: "image/png",
+        width: 64,
+        height: 64,
+        bytes: Buffer.from("held"),
+      },
+      "storage down",
+    );
+    fixture.uploads.mockResolvedValue({ error: { message: "storage down" } });
+    const waits: number[] = [];
+    for (let attempt = 2; attempt < MAX_DELIVERY_ATTEMPTS; attempt++)
+      await fixture.execute(deliveries).catch((error) => {
+        waits.push(error.retryInSeconds);
+      });
+    expect(waits).toEqual([60, 120, 240, 480, 600, 600, 600, 600, 600, 600]);
+    await expect(fixture.execute(deliveries)).rejects.toMatchObject({
+      code: "storage_failed",
+    });
+    expect(deliveries.rows.get("job-1")?.attempts).toBe(MAX_DELIVERY_ATTEMPTS);
+    expect(fixture.generate).not.toHaveBeenCalled();
+  });
+  it("reuses the asset row written by an earlier delivery attempt", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fixture = setup("charged");
+    const deliveries = memoryPendingDeliveries();
+    await deliveries.hold(
+      {
+        jobId: "job-1",
+        objectPath: "workspace-1/generated/job-1.png",
+        mimeType: "image/png",
+        width: 64,
+        height: 64,
+        bytes: Buffer.from("held"),
+      },
+      "asset row: timeout",
+    );
+    fixture.tables.asset_objects = [
+      {
+        id: "asset-earlier",
+        bucket: "project-assets",
+        object_path: "workspace-1/generated/job-1.png",
+      },
+    ];
+    await expect(fixture.execute(deliveries)).resolves.toMatchObject({
+      asset_id: "asset-earlier",
+    });
+    expect(fixture.tables.asset_objects).toHaveLength(1);
+  });
+  it("fails as storage_failed when the charged image cannot be held", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fixture = setup();
+    const deliveries = memoryPendingDeliveries();
+    deliveries.hold = vi.fn(async () => {
+      throw new Error("database down");
+    });
+    fixture.uploads.mockResolvedValue({ error: { message: "storage down" } });
+    await expect(fixture.execute(deliveries)).rejects.toMatchObject({
+      code: "storage_failed",
+    });
+    expect(fixture.generate).toHaveBeenCalledTimes(1);
+  });
+  it("keeps a charged job without a held image for reconciliation", async () => {
+    const fixture = setup("charged");
+    await expect(
+      fixture.execute(memoryPendingDeliveries()),
+    ).rejects.toMatchObject({ code: "upstream_unknown" });
+    expect(fixture.generate).not.toHaveBeenCalled();
   });
   it.each([
     { prompt: "x".repeat(4001), model: "gpt-image-2" },

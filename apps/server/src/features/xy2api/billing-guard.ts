@@ -65,7 +65,9 @@ export class BillingGuard {
       .from("background_jobs")
       .select("id", { count: "exact", head: true })
       .eq("created_by", user.id)
-      .in("status", ["queued", "running"]);
+      .in("status", ["queued", "running"])
+      // Charged images waiting for a storage retry no longer use the gateway.
+      .neq("billing_status", "charged");
     checkStoreError(error);
     if ((count ?? 0) >= this.env.maxConcurrentJobs)
       throw new BillingGuardError("concurrency_limit", 429);

@@ -15,6 +15,7 @@ import { loadServerEnv } from "./config/env.js";
 import { validateProductionEnv } from "./config/production.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import { createPendingDeliveryStore } from "./features/xy2api/pending-delivery.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { closeSupabaseTransport } from "./supabase/transport.js";
@@ -61,12 +62,15 @@ async function main() {
     pgmq,
   });
 
+  const deliveries = createPendingDeliveryStore(env.supabaseDbUrl);
+
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
     pgmq,
     getAdminClient,
     env,
+    deliveries,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {
@@ -123,6 +127,7 @@ async function main() {
       await Promise.allSettled(allTasks);
     }
     await pgmq.shutdown();
+    await deliveries.close();
     await closeSupabaseTransport();
     console.log(`${tag} Shutdown complete.`);
     process.exit(0);

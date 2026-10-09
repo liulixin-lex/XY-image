@@ -80,6 +80,17 @@ export type JobService = {
   incrementAttempt(
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
+  /**
+   * A charged image is held for another storage attempt (M6): back to queued,
+   * keeping the code/message so the UI shows "保存中" rather than a failure.
+   */
+  markRetrying(
+    jobId: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<void>;
+  /** Puts an existing job on its queue after `delaySeconds` (sync route storage retry). */
+  scheduleRedelivery(jobId: string, delaySeconds: number): Promise<void>;
 };
 
 export function createJobService(options: {
@@ -242,6 +253,8 @@ export function createJobService(options: {
         .eq("id", jobId)
         .eq("created_by", user.id)
         .in("status", ["queued", "running"])
+        // A charged image waiting for storage is already paid for; keep it.
+        .neq("billing_status", "charged")
         .select(SELECT_COLS)
         .maybeSingle();
 
@@ -302,6 +315,9 @@ export function createJobService(options: {
         .update({
           status: "succeeded",
           result: result as Json,
+          // Clears storage_retrying left by a held image's earlier attempts.
+          error_code: null,
+          error_message: null,
           completed_at: new Date().toISOString(),
         })
         .eq("id", jobId);
@@ -334,6 +350,43 @@ export function createJobService(options: {
         })
         .eq("id", jobId);
       checkStoreError(error);
+    },
+
+    async markRetrying(jobId, errorCode, errorMessage) {
+      const admin = options.getAdminClient();
+      const { error } = await admin
+        .from("background_jobs")
+        .update({
+          status: "queued",
+          error_code: errorCode,
+          error_message: errorMessage,
+        })
+        .eq("id", jobId)
+        .in("status", ["queued", "running"]);
+      checkStoreError(error);
+    },
+
+    async scheduleRedelivery(jobId, delaySeconds) {
+      const { data: job, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .select("id, queue_name, job_type, workspace_id, canvas_id, session_id")
+        .eq("id", jobId)
+        .single();
+      checkStoreError(error);
+      if (!job)
+        throw new JobServiceError("job_not_found", "Job not found.", 404);
+      await options.pgmq.send(
+        job.queue_name,
+        {
+          job_id: job.id,
+          job_type: job.job_type,
+          workspace_id: job.workspace_id,
+          ...(job.canvas_id ? { canvas_id: job.canvas_id } : {}),
+          ...(job.session_id ? { session_id: job.session_id } : {}),
+        },
+        delaySeconds,
+      );
     },
 
     async incrementAttempt(jobId) {

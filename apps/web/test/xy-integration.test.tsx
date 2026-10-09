@@ -29,7 +29,7 @@ import { needsReconcile } from "../src/components/billing/billing-badge";
 import { resolveImagePreference } from "../src/hooks/use-image-model-preference";
 import { AuthProvider, EXPIRED_LOGIN_PATH } from "../src/lib/auth-context";
 import { describeIssue, issueCodeOf } from "../src/lib/generation-errors";
-import { isActiveJob, isFailedJob, toImageJobView } from "../src/lib/image-jobs";
+import { isActiveJob, isFailedJob, isSavingJob, jobStatusLabel, toImageJobView } from "../src/lib/image-jobs";
 import { safeNextPath } from "../src/lib/pending-prompt";
 import { ApiApplicationError, ApiAuthError, emitAuthExpired } from "../src/lib/server-api";
 import { fetchAuthConfig, formatUsd, resetAuthConfigCache } from "../src/lib/xy2api-api";
@@ -165,6 +165,23 @@ describe("image job views", () => {
     expect(isFailedJob(view)).toBe(true);
     expect(isActiveJob(view)).toBe(false);
     expect(needsReconcile(view.billing)).toBe(true);
+  });
+
+  it("shows a charged image waiting for a storage retry as saving, not queued", () => {
+    const view = toImageJobView({
+      ...base,
+      status: "queued",
+      billing_status: "charged",
+      error_code: "storage_retrying",
+    } as BackgroundJob);
+    expect(isActiveJob(view)).toBe(true);
+    expect(isSavingJob(view)).toBe(true);
+    expect(jobStatusLabel(view)).toBe("保存中");
+    expect(jobStatusLabel({ ...view, errorCode: null })).toBe("排队中");
+    expect(describeIssue("storage_retrying", null)).toMatchObject({
+      maybeCharged: false,
+      action: "none",
+    });
   });
 
   it("treats anything but hd as 1K", () => {

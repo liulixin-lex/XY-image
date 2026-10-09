@@ -60,6 +60,7 @@ import {
   type UploadService,
   createUploadService,
 } from "./features/uploads/upload-service.js";
+import { createPendingDeliveryStore } from "./features/xy2api/pending-delivery.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
@@ -211,6 +212,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const pgmq = env.supabaseDbUrl
     ? createPgmqClient(env.supabaseDbUrl)
     : undefined;
+  const deliveries = env.supabaseDbUrl
+    ? createPendingDeliveryStore(env.supabaseDbUrl)
+    : undefined;
   const jobService =
     options.jobService ??
     (pgmq
@@ -226,6 +230,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     clearInterval(cleanupTimer);
     xy2api.compat.stop();
     await pgmq?.shutdown();
+    await deliveries?.close();
     await xy2api.providers.network.close();
   });
   const agentRuns = createAgentRunService({
@@ -333,6 +338,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     auth,
     viewerService,
     ...(jobService ? { jobService } : {}),
+    ...(deliveries ? { deliveries } : {}),
     xy2api,
     env,
     getAdminClient,

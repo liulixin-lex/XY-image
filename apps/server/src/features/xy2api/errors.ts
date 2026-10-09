@@ -114,6 +114,7 @@ export const gatewayMessages = {
   run_image_limit: "本轮生图次数已达上限，请开启新一轮对话",
   concurrency_limit: "当前生图任务已达上限，请等待完成",
   storage_failed: "图片已生成但保存失败，请联系管理员并到主站核对用量",
+  storage_retrying: "图片已生成并扣费，正在重新保存，稍后会出现在生成记录里",
 } as const;
 export type GatewayCode = keyof typeof gatewayMessages;
 export type GatewayFailure = {
@@ -215,6 +216,18 @@ export class BillingGuardError extends Error {
   ) {
     super(message);
     this.name = "BillingGuardError";
+  }
+}
+
+/**
+ * Not a failure: the image is charged and held in xy2api_pending_deliveries
+ * because storage refused it. The worker retries the upload after
+ * `retryInSeconds` (M6); xy2api is never called again.
+ */
+export class DeliveryPendingError extends BillingGuardError {
+  constructor(readonly retryInSeconds: number) {
+    super("storage_retrying", 502);
+    this.name = "DeliveryPendingError";
   }
 }
 

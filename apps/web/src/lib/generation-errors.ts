@@ -148,6 +148,16 @@ const CATALOG: Record<string, IssueSpec> = {
     weight: "dialog",
     maybeCharged: true,
   },
+  // Charged, and the server still holds the image: storage refused it and
+  // the upload is retried for about an hour (server M6). Nothing to reconcile
+  // and nothing to resubmit, so not maybeCharged.
+  storage_retrying: {
+    title: "图片已生成，正在保存",
+    message: "这张已经扣费。保存成功后会出现在生成记录里，不用重新提交。",
+    action: "none",
+    weight: "toast",
+    maybeCharged: false,
+  },
   xy2api_unavailable: {
     title: "主站暂时不可用",
     message: "暂时连不上主站，请稍后再试。",

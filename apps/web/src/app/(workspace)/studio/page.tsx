@@ -177,7 +177,7 @@ export default function StudioPage() {
                 models={models.data ?? []}
                 onSubmit={studio.submit}
                 submitting={studio.submitting}
-                activeCount={studio.activeCount}
+                activeCount={studio.busyCount}
                 maxActive={MAX_ACTIVE_JOBS}
               />
             )}

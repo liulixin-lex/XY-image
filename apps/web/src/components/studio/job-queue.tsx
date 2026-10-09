@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useNow } from "@/hooks/use-now";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, formatElapsed, isActiveJob, isFailedJob } from "@/lib/image-jobs";
+import { type ImageJobView, formatElapsed, isActiveJob, isFailedJob, isSavingJob } from "@/lib/image-jobs";
 import { cn } from "@/lib/utils";
 
 import { needsReconcile } from "../billing/billing-badge";
@@ -137,11 +137,12 @@ function QueueRow({
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const running = job.status === "running";
-  const queued = job.status === "queued";
+  const saving = isSavingJob(job);
+  const running = job.status === "running" && !saving;
+  const queued = job.status === "queued" && !saving;
   const failed = isFailedJob(job);
   const issue = failed ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage) : null;
-  const settled = !running && !queued;
+  const settled = !running && !queued && !saving;
   const unknown = settled && (needsReconcile(job.billing) || Boolean(issue?.maybeCharged));
   const prompt = job.prompt || "（无描述）";
 
@@ -153,6 +154,9 @@ function QueueRow({
   } else if (queued) {
     title = "排队中";
     detail = prompt;
+  } else if (saving) {
+    title = "图片已生成，正在保存";
+    detail = "已经扣费，存好后会出现在这里，不用重新提交";
   } else if (unknown) {
     title = "结果未知，可能已扣费";
     detail = job.requestId
@@ -186,7 +190,7 @@ function QueueRow({
         className={cn(
           "relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[10px]",
           running && "bg-[radial-gradient(circle_at_30%_30%,rgb(var(--amb)/0.55),rgb(var(--amb-2)/0.35)_55%,rgb(255_255_255/0.04))] animate-breathe",
-          queued && "border border-dashed border-line-strong",
+          (queued || saving) && "border border-dashed border-line-strong",
           settled && (unknown ? "bg-alert-wash text-alert" : "bg-white/[0.06] text-fg-soft"),
         )}
       >

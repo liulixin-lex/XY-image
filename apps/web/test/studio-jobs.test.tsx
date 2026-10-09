@@ -130,4 +130,33 @@ describe("useStudioJobs", () => {
     expect(notifyMock).toHaveBeenCalledTimes(1);
     expect(createImageJobMock).toHaveBeenCalledTimes(1);
   });
+
+  it("frees the slot of a saving job and tells the user once", async () => {
+    createImageJobMock.mockResolvedValue({ job: job("queued") });
+    const { result } = renderHook(() => useStudioJobs());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.submit(INPUT);
+    });
+    expect(result.current.busyCount).toBe(1);
+
+    const saving = job("queued", {
+      billing_status: "charged",
+      error_code: "storage_retrying",
+      error_message: "正在重新保存",
+    });
+    fetchJobsMock.mockResolvedValue({ jobs: [saving] });
+    await act(async () => {
+      await result.current.reload();
+    });
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    expect(result.current.activeCount).toBe(1);
+    expect(result.current.busyCount).toBe(0);
+    expect(reportCodeMock).toHaveBeenCalledTimes(1);
+    expect(reportCodeMock).toHaveBeenCalledWith("storage_retrying", "正在重新保存");
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
 });

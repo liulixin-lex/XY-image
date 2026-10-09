@@ -36,7 +36,14 @@ export type ImageCallContext = {
   apiKey: string;
   baseUrl: string;
   signal?: AbortSignal;
+  /** Public Supabase origin; reference URLs must be storage objects on it. */
   assetOrigin?: string;
+  /**
+   * Fetcher for those reference URLs. Pass `createSupabaseFetch(env)` so the
+   * download goes over SUPABASE_INTERNAL_URL instead of hairpinning through
+   * the public domain (M4). Defaults to the global fetch.
+   */
+  assetFetch?: typeof fetch;
 };
 
 export interface GeneratedImage {

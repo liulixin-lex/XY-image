@@ -8,6 +8,7 @@ import {
 } from "../features/chat-providers/model-resolver.js";
 import { chatRunError } from "../features/chat-providers/run-error.js";
 import { fetchReferenceImage } from "../generation/providers/xy2api-reference.js";
+import { createSupabaseFetch } from "../supabase/transport.js";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -704,6 +705,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
             }
 
+            // Charged, but storage refused it: the worker keeps retrying the
+            // upload for up to about 75 minutes. Don't hold the run that long.
+            // TODO(agent01): a late delivery reaches history but not this canvas.
+            if (current.error_code === "storage_retrying") {
+              jobLap("job_poll_done", {
+                pollCount,
+                status: "storage_retrying",
+              });
+              return {
+                jobId: job.id,
+                error: current.error_message ?? "图片已生成，正在保存",
+              };
+            }
+
             if (
               current.status === "dead_letter" ||
               current.status === "canceled"
@@ -981,7 +996,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     apiKey: "",
                     baseUrl: options.env.xy2apiBaseUrl,
                     ...(options.env.supabaseUrl
-                      ? { assetOrigin: options.env.supabaseUrl }
+                      ? {
+                          assetOrigin: options.env.supabaseUrl,
+                          assetFetch: createSupabaseFetch(options.env),
+                        }
                       : {}),
                   });
                   const mime = reference.mimeType;
