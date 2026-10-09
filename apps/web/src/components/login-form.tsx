@@ -218,7 +218,7 @@ export function LoginForm({ initialErrorMessage = null, next = "/home" }: LoginF
 
           {blocked ? (
             <Notice tone="error" className="mt-6">
-              主站开启了腾讯或阿里验证码，生图站暂时无法用账密登录，请联系管理员。
+              主站开启了生图站暂不支持的验证码，暂时无法用账密登录，请联系管理员。
             </Notice>
           ) : null}
           {configError ? (

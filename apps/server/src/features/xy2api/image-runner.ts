@@ -122,7 +122,13 @@ export async function executeImageJob(
         (
           await db
             .from("background_jobs")
-            .update({ billing_status: failure.billing })
+            .update({
+              billing_status: failure.billing,
+              // Lets support reconcile 待核对 jobs against xy2api usage rows.
+              ...("requestId" in failure && failure.requestId
+                ? { xy2api_request_id: failure.requestId }
+                : {}),
+            })
             .eq("id", jobId)
         ).error,
       );

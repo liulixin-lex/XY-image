@@ -7,6 +7,7 @@ import { AccountService } from "./account-service.js";
 import { BillingGuard } from "./billing-guard.js";
 import { loadImageCatalog } from "./catalog.js";
 import { Xy2apiClient } from "./client.js";
+import { createCompatProbe } from "./compat.js";
 import { KeyService } from "./key-service.js";
 import { createSecretBox } from "./secret-box.js";
 import { createAccountStore } from "./store.js";
@@ -49,6 +50,7 @@ export function createXy2apiServices(
   );
   accounts.syncKeys = (userId) => keys.syncKeys(userId);
   const billing = new BillingGuard(keys, client, getAdmin, env);
-  return { client, box, accounts, keys, billing, providers };
+  const compat = createCompatProbe(client);
+  return { client, box, accounts, keys, billing, providers, compat };
 }
 export type Xy2apiServices = ReturnType<typeof createXy2apiServices>;

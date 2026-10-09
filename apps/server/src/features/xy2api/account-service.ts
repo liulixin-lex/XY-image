@@ -4,7 +4,9 @@ import { BillingGuardError, Xy2apiError } from "./errors.js";
 import type { SecretBox } from "./secret-box.js";
 import type { AccountRow, AccountStore } from "./store.js";
 
-const revoked = new Set([
+// xy2api error ids that mean "this main-site session is gone"; replayed against
+// recorded fixtures per xy2api version in contract.replay.test.ts.
+export const REVOKED_SESSION_IDS: ReadonlySet<string> = new Set([
   "TOKEN_REVOKED",
   "USER_INACTIVE",
   "USER_NOT_ACTIVE",
@@ -81,10 +83,17 @@ export class AccountService {
     }
     return (await this.store.loginLink(email)).tokenHash;
   }
-  private encryptTokens(tokens: Xy2apiTokens) {
+  private encryptTokens(
+    tokens: Xy2apiTokens,
+    previousRefreshEnc: string | null = null,
+  ) {
     return {
       access_token_enc: this.box.sealSecret(tokens.access_token),
-      refresh_token_enc: this.box.sealSecret(tokens.refresh_token),
+      // Without a (rotated) refresh token keep the previous one; with none at
+      // all the session simply requires a new login once the access token ends.
+      refresh_token_enc: tokens.refresh_token
+        ? this.box.sealSecret(tokens.refresh_token)
+        : previousRefreshEnc,
       access_token_expires_at: new Date(
         Date.now() + tokens.expires_in * 1000,
       ).toISOString(),
@@ -152,7 +161,7 @@ export class AccountService {
         );
       await this.store.save({
         user_id: account.user_id,
-        ...this.encryptTokens(tokens),
+        ...this.encryptTokens(tokens, account.refresh_token_enc),
       });
       return tokens.access_token;
     } catch (error) {
@@ -193,7 +202,7 @@ export class AccountService {
         throw error;
       }
     } catch (error) {
-      if (error instanceof Xy2apiError && revoked.has(error.id)) {
+      if (error instanceof Xy2apiError && REVOKED_SESSION_IDS.has(error.id)) {
         await this.markReauth(userId);
         throw new BillingGuardError("xy2api_reauth_required", 401);
       }
@@ -232,7 +241,7 @@ export class AccountService {
       });
       this.onInvalidate(userId);
     } catch (error) {
-      if (error instanceof Xy2apiError && revoked.has(error.id))
+      if (error instanceof Xy2apiError && REVOKED_SESSION_IDS.has(error.id))
         await this.markReauth(userId);
       // Transient outages do not revoke valid sessions.
     }

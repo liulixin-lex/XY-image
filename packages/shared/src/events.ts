@@ -103,6 +103,7 @@ export const billingErrorCodeSchema = z.enum([
   "rate_limited",
   "invalid_input",
   "safety_filter",
+  "request_rejected",
   "upstream_busy",
   "upstream_too_large",
   "upstream_unknown",

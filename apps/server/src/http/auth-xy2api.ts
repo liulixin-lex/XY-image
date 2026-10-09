@@ -72,7 +72,9 @@ export function registerXy2apiAuthRoutes(
       turnstileEnabled: Boolean(settings.turnstile_enabled),
       turnstileSiteKey: settings.turnstile_site_key || "",
       captchaUnsupported: Boolean(
-        settings.tencent_captcha_enabled || settings.aliyun_captcha_enabled,
+        settings.tencent_captcha_enabled ||
+          settings.aliyun_captcha_enabled ||
+          settings.unsupported_captcha_enabled,
       ),
       registerUrl: `${options.env.xy2apiWebUrl}/register`,
       forgotPasswordUrl: `${options.env.xy2apiWebUrl}/forgot-password`,
@@ -93,12 +95,16 @@ export function registerXy2apiAuthRoutes(
         });
       const input = parsed.data;
       const settings = await options.client.getPublicSettings();
-      if (settings.tencent_captcha_enabled || settings.aliyun_captcha_enabled)
+      if (
+        settings.tencent_captcha_enabled ||
+        settings.aliyun_captcha_enabled ||
+        settings.unsupported_captcha_enabled
+      )
         return reply.code(400).send({
           error: {
             code: "captcha_failed",
             message:
-              "主站启用了腾讯或阿里验证码，生图站暂不支持账密登录，请联系管理员",
+              "主站启用了生图站暂不支持的验证码，暂时无法账密登录，请联系管理员",
           },
         });
       const result = await options.client.login({

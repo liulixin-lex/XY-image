@@ -117,6 +117,16 @@ const CATALOG: Record<string, IssueSpec> = {
     weight: "toast",
     maybeCharged: false,
   },
+  // The main site refused for a reason we cannot classify (new xy2api rule,
+  // custom moderation wording, ...). Not charged; the Key is left alone.
+  // describeIssue shows the server's message, which quotes the main site.
+  request_rejected: {
+    title: "主站拒绝了这次请求",
+    message: "到主站查看账号和 Key 状态，或修改提示词后再试。",
+    action: "none",
+    weight: "toast",
+    maybeCharged: false,
+  },
   upstream_too_large: {
     title: "图片响应过大",
     message: "把画质降到 1K 后再提交。",
@@ -233,13 +243,16 @@ export function issueCodeOf(error: unknown): string {
 }
 
 /**
- * Prefer the server's sanitized message for codes the catalog does not know,
+ * Prefer the server's sanitized message for codes the catalog does not know
+ * (and for request_rejected, whose message quotes the main site's reason),
  * otherwise use the catalog copy (consistent wording across HTTP/WS/jobs).
  */
 export function describeIssue(
   code: string,
   serverMessage?: string | null,
 ): IssueSpec {
+  if (code === "request_rejected" && serverMessage)
+    return { ...issueForCode(code), message: serverMessage };
   if (isKnownIssueCode(code)) return issueForCode(code);
   return serverMessage ? { ...FALLBACK, message: serverMessage } : FALLBACK;
 }

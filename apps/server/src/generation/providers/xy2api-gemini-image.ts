@@ -73,13 +73,22 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         },
       });
       const candidate = response.candidates?.[0];
+      const requestId =
+        response.sdkHttpResponse?.headers?.["x-client-request-id"];
       if (
         response.promptFeedback?.blockReason ||
         /SAFETY|PROHIBITED|RECITATION/.test(candidate?.finishReason ?? "")
       )
-        throw new GatewayError(
-          mapGatewayError({ status: 400, body: { code: "safety_filter" } }),
-        );
+        throw new GatewayError({
+          ...mapGatewayError({ status: 400, body: { code: "safety_filter" } }),
+          // The block arrives as HTTP 200 and xy2api bills it (0.2.5 records a
+          // 1-image usage row, see __fixtures__/0.2.5/billing.json), so this is
+          // not "not charged": mark it for reconciliation instead.
+          billing: "unknown",
+          userMessage:
+            "内容未通过审核，主站可能已计费，请修改提示词，并到主站用量页核对",
+          ...(requestId ? { requestId } : {}),
+        });
       const inline = candidate?.content?.parts?.find(
         (part) => part.inlineData?.data,
       )?.inlineData;
@@ -89,8 +98,6 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
       const mimeType = inline.mimeType ?? "image/png";
-      const requestId =
-        response.sdkHttpResponse?.headers?.["x-client-request-id"];
       return {
         url: `data:${mimeType};base64,${inline.data}`,
         mimeType,
