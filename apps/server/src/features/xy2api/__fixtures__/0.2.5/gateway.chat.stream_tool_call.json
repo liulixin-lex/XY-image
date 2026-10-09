@@ -1,0 +1,44 @@
+{
+  "scenario": "gateway.chat.stream_tool_call",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-5.4",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "帮我画一只猫"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "generate_image",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream",
+      "x-client-request-id": "6ba495b7-cb4d-4b47-b948-5cde0bd85126",
+      "x-request-id": "8ca85825-3979-4238-a1c7-8678ea7b8203"
+    },
+    "text": "data: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_79ef2a38\",\"type\":\"function\",\"function\":{\"name\":\"generate_image\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"title\\\":\\\"帮我画一只猫\\\",\\\"promp\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"t\\\":\\\"帮我画一只猫\\\",\\\"aspectRatio\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\":\\\"1:1\\\",\\\"quality\\\":\\\"stand\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ard\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: {\"id\":\"chatcmpl-mock-e7ec1bbb-f897-4c95-a93c-7352faf9e472\",\"object\":\"chat.completion.chunk\",\"created\":1791525980,\"model\":\"gpt-5.4\",\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":20,\"total_tokens\":32}}\n\ndata: [DONE]\n\n"
+  }
+}

@@ -165,7 +165,18 @@ export class KeyService {
     ].includes(platform);
     let models: string[] = [];
     let invalid: string | null = null;
-    if (key.status === "active" && supported && group?.status === "active") {
+    if (key.masked) {
+      // TODO(xy2api-compat): if a future xy2api only returns masked keys from
+      // the list endpoint, fetch the full key via GET /api/v1/keys/:id here.
+      console.warn(
+        `[xy2api] key ${key.id} arrived masked from the main site; marking unusable`,
+      );
+      invalid = "key_unavailable";
+    } else if (
+      key.status === "active" &&
+      supported &&
+      group?.status === "active"
+    ) {
       try {
         models = await this.client.listModels(key.key);
       } catch (error) {

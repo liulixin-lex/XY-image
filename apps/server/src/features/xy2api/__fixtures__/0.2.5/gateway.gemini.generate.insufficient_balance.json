@@ -1,0 +1,45 @@
+{
+  "scenario": "gateway.gemini.generate.insufficient_balance",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "7e3a0be6-f522-436c-be71-eaac1c2f4e3f",
+      "x-request-id": "f1aeaffc-f036-4c48-ba95-58576ca79945"
+    },
+    "json": {
+      "error": {
+        "code": 403,
+        "message": "Insufficient account balance",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  }
+}

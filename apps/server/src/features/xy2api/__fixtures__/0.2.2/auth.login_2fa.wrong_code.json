@@ -1,0 +1,25 @@
+{
+  "scenario": "auth.login_2fa.wrong_code",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login/2fa",
+    "auth": "none",
+    "body": {
+      "temp_token": "fixture-temp_token-0006",
+      "totp_code": "000000"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "9bba260b-19b5-4ed4-a7eb-2206494ddece"
+    },
+    "json": {
+      "code": 400,
+      "message": "invalid totp code",
+      "reason": "TOTP_INVALID_CODE"
+    }
+  }
+}

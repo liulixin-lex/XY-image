@@ -1,0 +1,27 @@
+{
+  "scenario": "gateway.images.unknown_model",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-does-not-exist",
+      "prompt": "fixture"
+    }
+  },
+  "response": {
+    "status": 502,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "6fda08e2-90b4-4230-9b25-a8277bb329a6",
+      "x-request-id": "49271ae9-003f-4a22-87ff-4df064682b83"
+    },
+    "json": {
+      "error": {
+        "message": "Upstream request failed",
+        "type": "upstream_error"
+      }
+    }
+  }
+}

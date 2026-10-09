@@ -1,0 +1,33 @@
+{
+  "scenario": "gateway.chat.moderation_blocked",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-5.4",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "fixture xylabblockedword"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "96b1e6c7-a754-4bca-9560-13f327b274d1",
+      "x-request-id": "c0461cc5-710d-47ae-a2b8-09f23ebde7e5"
+    },
+    "json": {
+      "error": {
+        "message": "内容审计命中风险规则，请调整输入后重试",
+        "type": "content_policy_violation"
+      }
+    }
+  }
+}

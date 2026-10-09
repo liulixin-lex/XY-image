@@ -1,0 +1,28 @@
+{
+  "scenario": "gateway.images.after_upstream_500",
+  "tier": "A",
+  "note": "immediately after upstream_500",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture"
+    }
+  },
+  "response": {
+    "status": 503,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "fad34f7d-9c72-48a6-967d-da3ff47d6152",
+      "x-request-id": "eeba5f2e-7743-4a13-9d7a-aca6ba6f3702"
+    },
+    "json": {
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error"
+      }
+    }
+  }
+}

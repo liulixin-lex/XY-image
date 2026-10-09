@@ -220,8 +220,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     options.connectionManager ?? new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
   const cleanupTimer = setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
+  // Logs the main site's xy2api release and whether it is a verified version.
+  if (!process.env.VITEST) xy2api.compat.start();
   app.addHook("onClose", async () => {
     clearInterval(cleanupTimer);
+    xy2api.compat.stop();
     await pgmq?.shutdown();
     await xy2api.providers.network.close();
   });

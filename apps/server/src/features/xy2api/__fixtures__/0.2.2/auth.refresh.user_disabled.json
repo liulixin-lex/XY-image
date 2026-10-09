@@ -1,0 +1,24 @@
+{
+  "scenario": "auth.refresh.user_disabled",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "auth": "none",
+    "body": {
+      "refresh_token": "fixture-refresh_token-0019"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "0f583ab3-bcc3-4bad-97f4-78d5a5571d92"
+    },
+    "json": {
+      "code": 403,
+      "message": "user is not active",
+      "reason": "USER_NOT_ACTIVE"
+    }
+  }
+}

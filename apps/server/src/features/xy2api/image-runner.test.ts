@@ -160,6 +160,31 @@ describe("image billing lifecycle", () => {
       "key_unavailable",
     );
   });
+  it.each([
+    // xy2api risk-control block (shape from the recorded fixtures)
+    {
+      error: {
+        message: "内容审计命中风险规则，请调整输入后重试",
+        type: "content_policy_violation",
+      },
+    },
+    // a refusal we cannot classify
+    {
+      error: { code: 403, message: "custom rule", status: "PERMISSION_DENIED" },
+    },
+  ])("keeps the key usable after a 403 refusal %#", async (body) => {
+    const fixture = setup();
+    fixture.generate.mockRejectedValue(
+      new GatewayError(mapGatewayError({ status: 403, body })),
+    );
+    await expect(fixture.execute()).rejects.toThrow();
+    expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe(
+      "not_charged",
+    );
+    expect(fixture.tables.xy2api_api_keys?.[0]?.invalid_reason ?? null).toBe(
+      null,
+    );
+  });
   it("retries only storage uploads and preserves charged billing on failure", async () => {
     const fixture = setup();
     fixture.uploads.mockResolvedValue({ error: "fixture storage failure" });

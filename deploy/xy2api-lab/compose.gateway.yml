@@ -1,0 +1,63 @@
+# Pinned xy2api release + postgres + redis, layered on compose.yml.
+# Compose interpolates every service even when filtered by profile, so the
+# gateway lives in its own file and is only merged when a gateway is wanted.
+services:
+  xy2api:
+    image: ghcr.io/liulixin-lex/xy2api:${XY2API_TAG:?XY2API_TAG is required}
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_MODE: release
+      RUN_MODE: standard
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: xy2api
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DATABASE_DBNAME: xy2api
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ADMIN_EMAIL: ${XY2API_ADMIN_EMAIL:?XY2API_ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${XY2API_ADMIN_PASSWORD:?XY2API_ADMIN_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
+      TZ: Asia/Shanghai
+      # The mock upstream is plain http on a private docker network.
+      SECURITY_URL_ALLOWLIST_ENABLED: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+    ports:
+      - "127.0.0.1:${XY2API_PORT:-18180}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-upstream:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 6s
+      retries: 60
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: xy2api
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: xy2api
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xy2api -d xy2api"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30

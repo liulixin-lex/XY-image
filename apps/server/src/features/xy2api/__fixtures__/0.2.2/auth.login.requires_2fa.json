@@ -1,0 +1,29 @@
+{
+  "scenario": "auth.login.requires_2fa",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "auth": "none",
+    "body": {
+      "email": "lab-2fa@xy-lab.test",
+      "password": "fixture-password-0004"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "9480743f-7a4b-459f-b94c-9d5b0c24834f"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "requires_2fa": true,
+        "temp_token": "fixture-temp_token-0005",
+        "user_email_masked": "l***a@xy-lab.test"
+      }
+    }
+  }
+}

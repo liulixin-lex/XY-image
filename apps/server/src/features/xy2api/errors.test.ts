@@ -79,4 +79,103 @@ describe("gateway errors", () => {
       ),
     ).not.toContain("synthetic-sensitive-text");
   });
+
+  // xy2api risk control (on at gguuai.com): recorded shapes, see
+  // __fixtures__/<version>/gateway.*.moderation_blocked.json
+  const moderationMessage = "内容审计命中风险规则，请调整输入后重试";
+  it.each([
+    [
+      403,
+      {
+        error: { message: moderationMessage, type: "content_policy_violation" },
+      },
+    ],
+    [
+      403,
+      {
+        error: {
+          code: 403,
+          message: moderationMessage,
+          status: "PERMISSION_DENIED",
+        },
+      },
+    ],
+    // block_status is admin-configurable (400-599)
+    [451, { error: { message: "blocked", type: "content_policy_violation" } }],
+    [503, { error: { message: "blocked", type: "content_policy_violation" } }],
+  ])("maps a %s moderation block to safety_filter", (status, body) => {
+    expect(mapGatewayError({ status, body })).toMatchObject({
+      code: "safety_filter",
+      billing: "not_charged",
+    });
+  });
+
+  it("never treats an unrecognised refusal as an unusable key", () => {
+    // Custom moderation wording on the Gemini path, or a future xy2api rule:
+    // must not reach markKeyInvalid (image-runner) via key_unavailable.
+    const failure = mapGatewayError({
+      status: 403,
+      body: {
+        error: {
+          code: 403,
+          message: "该请求不符合本站规则",
+          status: "PERMISSION_DENIED",
+        },
+      },
+    });
+    expect(failure).toMatchObject({
+      code: "request_rejected",
+      billing: "not_charged",
+    });
+    expect(failure.userMessage).toBe(
+      "主站拒绝了这次请求：该请求不符合本站规则",
+    );
+    expect(mapGatewayError({ status: 409, body: {} })).toMatchObject({
+      code: "request_rejected",
+      userMessage: "主站拒绝了这次请求，请到主站查看账号和 Key 状态",
+    });
+    expect(
+      mapGatewayError({ status: 401, body: { code: "SOMETHING_NEW" } }).code,
+    ).toBe("key_unavailable");
+  });
+
+  it("sanitizes the main-site reason it shows", () => {
+    const { userMessage } = mapGatewayError({
+      status: 403,
+      body: {
+        error: {
+          message: `denied for sk-${"a".repeat(40)}\n token ${"Z".repeat(40)} ${"x".repeat(200)}`,
+        },
+      },
+    });
+    expect(userMessage).not.toMatch(/sk-a{6}|Z{32}|\n/);
+    expect(userMessage.length).toBeLessThanOrEqual(
+      "主站拒绝了这次请求：".length + 120,
+    );
+  });
+
+  it.each([
+    [403, "API key 已过期", "key_unavailable"],
+    [403, "API Key 所属专属分组不再允许当前用户使用", "key_unavailable"],
+    [403, "No active subscription found for this group", "key_unavailable"],
+    [429, "API key 额度已用完", "key_quota_exhausted"],
+    [
+      429,
+      "Too many invalid authentication attempts; retry later",
+      "rate_limited",
+    ],
+    [401, "User associated with API key not found", "xy2api_reauth_required"],
+  ])("maps Gemini-format %s %s", (status, message, code) => {
+    const google = status === 429 ? "RESOURCE_EXHAUSTED" : "PERMISSION_DENIED";
+    expect(
+      mapGatewayError({
+        status,
+        body: { error: { code: status, message, status: google } },
+      }).code,
+    ).toBe(code);
+  });
+
+  it.each([413, 422])("maps %s to invalid_input", (status) => {
+    expect(mapGatewayError({ status, body: {} }).code).toBe("invalid_input");
+  });
 });

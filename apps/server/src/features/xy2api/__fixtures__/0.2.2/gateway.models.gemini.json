@@ -1,0 +1,76 @@
+{
+  "scenario": "gateway.models.gemini",
+  "tier": "A",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "b866118a-ff1b-4dc7-b528-2b5a4f5b7365",
+      "x-request-id": "20124106-8de2-4a5c-9cfd-8376714bfe30"
+    },
+    "json": {
+      "data": [
+        {
+          "id": "gemini-2.0-flash",
+          "type": "model",
+          "display_name": "Gemini 2.0 Flash",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-2.5-flash",
+          "type": "model",
+          "display_name": "Gemini 2.5 Flash",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-2.5-flash-image",
+          "type": "model",
+          "display_name": "Gemini 2.5 Flash Image",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-2.5-pro",
+          "type": "model",
+          "display_name": "Gemini 2.5 Pro",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-3.5-flash",
+          "type": "model",
+          "display_name": "Gemini 3.5 Flash",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-3-flash-preview",
+          "type": "model",
+          "display_name": "Gemini 3 Flash Preview",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-3-pro-preview",
+          "type": "model",
+          "display_name": "Gemini 3 Pro Preview",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "type": "model",
+          "display_name": "Gemini 3.1 Pro Preview",
+          "created_at": ""
+        },
+        {
+          "id": "gemini-3.1-flash-image",
+          "type": "model",
+          "display_name": "Gemini 3.1 Flash Image",
+          "created_at": ""
+        }
+      ],
+      "object": "list"
+    }
+  }
+}

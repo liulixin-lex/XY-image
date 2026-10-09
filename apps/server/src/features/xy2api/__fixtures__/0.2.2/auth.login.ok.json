@@ -1,0 +1,50 @@
+{
+  "scenario": "auth.login.ok",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "auth": "none",
+    "body": {
+      "email": "lab-a@xy-lab.test",
+      "password": "fixture-password-0001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "4d6746bf-6583-4cf4-a61b-707287306a4e"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjE3OTE2MTIzODAsImlhdCI6MTc5MTUyNTk4MH0.fixture",
+        "refresh_token": "fixture-refresh_token-0002",
+        "expires_in": 86400,
+        "token_type": "Bearer",
+        "user": {
+          "id": 2,
+          "email": "lab-a@xy-lab.test",
+          "username": "lab-a",
+          "role": "user",
+          "balance": 50,
+          "frozen_balance": 0,
+          "concurrency": 5,
+          "status": "active",
+          "allowed_groups": null,
+          "last_active_at": "2026-10-09T14:06:19.347089+08:00",
+          "created_at": "2026-10-09T14:06:19.292371+08:00",
+          "updated_at": "2026-10-09T14:06:19.347091+08:00",
+          "balance_notify_enabled": true,
+          "balance_notify_threshold_type": "fixed",
+          "balance_notify_threshold": null,
+          "balance_notify_extra_emails": null,
+          "total_recharged": 0,
+          "rpm_limit": 0
+        }
+      }
+    }
+  }
+}

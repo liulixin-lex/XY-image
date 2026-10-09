@@ -1,0 +1,47 @@
+{
+  "scenario": "gateway.chat.plain",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "你好"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "0af00fbe-30ce-4604-bee4-8a581a2ee632",
+      "x-request-id": "2a102adc-47c1-46c3-8b3e-d544f14e56bc"
+    },
+    "json": {
+      "id": "chatcmpl-mock-332d8f90-e5f7-47c0-871e-0110067be794",
+      "object": "chat.completion",
+      "created": 1791525980,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "（模拟上游）收到：你好"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 12,
+        "completion_tokens": 3,
+        "total_tokens": 15
+      }
+    }
+  }
+}

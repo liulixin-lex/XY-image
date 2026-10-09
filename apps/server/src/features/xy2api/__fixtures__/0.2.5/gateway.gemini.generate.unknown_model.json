@@ -1,0 +1,45 @@
+{
+  "scenario": "gateway.gemini.generate.unknown_model",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-does-not-exist:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 503,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "eeff8415-ea19-480f-81b1-85f5de4bc47d",
+      "x-request-id": "7f0e0e77-907b-44bf-aef6-50dd92a2a820"
+    },
+    "json": {
+      "error": {
+        "code": 503,
+        "message": "Billing service temporarily unavailable. Please retry later.",
+        "status": "INTERNAL"
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "scenario": "gateway.gemini.generate.unknown_model",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-does-not-exist:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "0450898d-fa2d-4971-8385-88f3cb7fc74b",
+      "x-request-id": "3e8b4556-eedf-4640-b0cc-1e2f224ba3eb"
+    },
+    "json": {
+      "error": {
+        "code": 404,
+        "message": "models/gemini-does-not-exist is not found for API version v1beta, or is not supported for generateContent.",
+        "status": "NOT_FOUND"
+      }
+    }
+  }
+}

@@ -1,0 +1,361 @@
+{
+  "version": "0.2.5",
+  "recordedAt": "2026-10-09T06:07:51.746Z",
+  "recorder": "deploy/xy2api-lab/record-fixtures.mjs",
+  "scenarios": [
+    {
+      "scenario": "settings.public",
+      "tier": "B",
+      "status": 200,
+      "ms": 2
+    },
+    {
+      "scenario": "auth.login.ok",
+      "tier": "B",
+      "status": 200,
+      "ms": 54
+    },
+    {
+      "scenario": "auth.login.wrong_password",
+      "tier": "B",
+      "status": 401,
+      "ms": 50
+    },
+    {
+      "scenario": "auth.login.requires_2fa",
+      "tier": "B",
+      "status": 200,
+      "ms": 50
+    },
+    {
+      "scenario": "auth.login_2fa.wrong_code",
+      "tier": "B",
+      "status": 400,
+      "ms": 5
+    },
+    {
+      "scenario": "auth.login_2fa.ok",
+      "tier": "B",
+      "status": 200,
+      "ms": 7
+    },
+    {
+      "scenario": "auth.login_2fa.invalid_temp_token",
+      "tier": "B",
+      "status": 400,
+      "ms": 8
+    },
+    {
+      "scenario": "auth.me.ok",
+      "tier": "B",
+      "status": 200,
+      "ms": 5
+    },
+    {
+      "scenario": "auth.me.invalid_token",
+      "tier": "B",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "auth.refresh.ok",
+      "tier": "B",
+      "status": 200,
+      "ms": 5
+    },
+    {
+      "scenario": "auth.refresh.invalid",
+      "tier": "B",
+      "status": 401,
+      "ms": 3
+    },
+    {
+      "scenario": "keys.list",
+      "tier": "B",
+      "status": 200,
+      "ms": 7
+    },
+    {
+      "scenario": "keys.list.page_beyond",
+      "tier": "B",
+      "status": 200,
+      "ms": 3
+    },
+    {
+      "scenario": "auth.refresh.reused",
+      "tier": "B",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "auth.me.after_refresh_reuse",
+      "tier": "B",
+      "status": 200,
+      "ms": 5
+    },
+    {
+      "scenario": "auth.logout",
+      "tier": "B",
+      "status": 200,
+      "ms": 4
+    },
+    {
+      "scenario": "auth.me.after_logout",
+      "tier": "B",
+      "status": 200,
+      "ms": 6
+    },
+    {
+      "scenario": "auth.refresh.after_logout",
+      "tier": "B",
+      "status": 401,
+      "ms": 10
+    },
+    {
+      "scenario": "auth.me.user_disabled",
+      "tier": "B",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "auth.refresh.user_disabled",
+      "tier": "B",
+      "status": 403,
+      "ms": 5
+    },
+    {
+      "scenario": "auth.login.user_disabled",
+      "tier": "B",
+      "status": 403,
+      "ms": 51
+    },
+    {
+      "scenario": "gateway.models.user_disabled",
+      "tier": "A",
+      "status": 401,
+      "ms": 5
+    },
+    {
+      "scenario": "gateway.models.ip_restricted",
+      "tier": "A",
+      "status": 403,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.models.key_disabled",
+      "tier": "A",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.images.key_disabled",
+      "tier": "A",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.models.key_deleted",
+      "tier": "A",
+      "status": 401,
+      "ms": 1
+    },
+    {
+      "scenario": "gateway.models.invalid_key",
+      "tier": "A",
+      "status": 401,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.models.openai",
+      "tier": "A",
+      "status": 200,
+      "ms": 6
+    },
+    {
+      "scenario": "gateway.models.gemini",
+      "tier": "A",
+      "status": 200,
+      "ms": 7
+    },
+    {
+      "scenario": "gateway.usage.before",
+      "tier": "C",
+      "status": 200,
+      "ms": 7
+    },
+    {
+      "scenario": "gateway.usage.zero_balance",
+      "tier": "C",
+      "status": 200,
+      "ms": 6
+    },
+    {
+      "scenario": "gateway.images.generations.ok",
+      "tier": "A",
+      "status": 200,
+      "ms": 39
+    },
+    {
+      "scenario": "gateway.images.edits.ok",
+      "tier": "A",
+      "status": 200,
+      "ms": 28
+    },
+    {
+      "scenario": "gateway.images.generations.insufficient_balance",
+      "tier": "A",
+      "status": 403,
+      "ms": 3
+    },
+    {
+      "scenario": "gateway.images.generations.wrong_platform_key",
+      "tier": "A",
+      "status": 404,
+      "ms": 7
+    },
+    {
+      "scenario": "gateway.gemini.generate.ok",
+      "tier": "A",
+      "status": 200,
+      "ms": 29
+    },
+    {
+      "scenario": "gateway.gemini.generate.safety",
+      "tier": "A",
+      "status": 200,
+      "ms": 18
+    },
+    {
+      "scenario": "gateway.gemini.generate.insufficient_balance",
+      "tier": "A",
+      "status": 403,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.chat.stream_tool_call",
+      "tier": "A",
+      "status": 200,
+      "ms": 20
+    },
+    {
+      "scenario": "gateway.chat.plain",
+      "tier": "A",
+      "status": 200,
+      "ms": 19
+    },
+    {
+      "scenario": "gateway.images.moderation_blocked",
+      "tier": "A",
+      "status": 403,
+      "ms": 5
+    },
+    {
+      "scenario": "gateway.gemini.generate.moderation_blocked",
+      "tier": "A",
+      "status": 403,
+      "ms": 3
+    },
+    {
+      "scenario": "gateway.chat.moderation_blocked",
+      "tier": "A",
+      "status": 403,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.responses.moderation_blocked",
+      "tier": "A",
+      "status": 403,
+      "ms": 4
+    },
+    {
+      "scenario": "gateway.usage.after",
+      "tier": "C",
+      "status": 200,
+      "ms": 8
+    },
+    {
+      "scenario": "gateway.gemini.generate.unknown_model",
+      "tier": "A",
+      "status": 503,
+      "ms": 5
+    },
+    {
+      "scenario": "gateway.gemini.generate.after_unknown_model",
+      "tier": "A",
+      "status": 200,
+      "ms": 34
+    },
+    {
+      "scenario": "gateway.images.upstream_safety",
+      "tier": "A",
+      "status": 400,
+      "ms": 16
+    },
+    {
+      "scenario": "gateway.images.after_upstream_safety",
+      "tier": "A",
+      "status": 200,
+      "ms": 26
+    },
+    {
+      "scenario": "gateway.images.upstream_empty",
+      "tier": "A",
+      "status": 502,
+      "ms": 15
+    },
+    {
+      "scenario": "gateway.images.after_upstream_empty",
+      "tier": "A",
+      "status": 503,
+      "ms": 8
+    },
+    {
+      "scenario": "gateway.images.upstream_400",
+      "tier": "A",
+      "status": 400,
+      "ms": 18
+    },
+    {
+      "scenario": "gateway.images.after_upstream_400",
+      "tier": "A",
+      "status": 200,
+      "ms": 21
+    },
+    {
+      "scenario": "gateway.images.upstream_500",
+      "tier": "A",
+      "status": 502,
+      "ms": 18
+    },
+    {
+      "scenario": "gateway.images.after_upstream_500",
+      "tier": "A",
+      "status": 503,
+      "ms": 8
+    },
+    {
+      "scenario": "gateway.images.upstream_429",
+      "tier": "A",
+      "status": 429,
+      "ms": 22
+    },
+    {
+      "scenario": "gateway.images.after_upstream_429",
+      "tier": "A",
+      "status": 503,
+      "ms": 8
+    },
+    {
+      "scenario": "gateway.images.unknown_model",
+      "tier": "A",
+      "status": 502,
+      "ms": 21
+    },
+    {
+      "scenario": "gateway.images.after_unknown_model",
+      "tier": "A",
+      "status": 200,
+      "ms": 19
+    }
+  ]
+}

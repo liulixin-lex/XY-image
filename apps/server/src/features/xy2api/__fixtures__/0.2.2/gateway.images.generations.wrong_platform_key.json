@@ -1,0 +1,27 @@
+{
+  "scenario": "gateway.images.generations.wrong_platform_key",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "79d89438-e6af-462b-af7d-f5b3cfdb8485",
+      "x-request-id": "11b39509-b31a-4a04-b9d9-de45ec7d9d86"
+    },
+    "json": {
+      "error": {
+        "message": "Images API is not supported for this platform",
+        "type": "not_found_error"
+      }
+    }
+  }
+}

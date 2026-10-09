@@ -66,16 +66,40 @@ describe("xy2api client", () => {
       message: "主站请求失败，请稍后再试",
     });
   });
+  const remoteKey = (id: number, key = `sk-${"a".repeat(40)}${id}`) => ({
+    id,
+    key,
+    name: `key-${id}`,
+    status: "active",
+  });
   it("reads every page", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(response({ items: [{ id: 1 }], pages: 2 }))
-      .mockResolvedValueOnce(response({ items: [{ id: 2 }], pages: 2 }));
-    expect(
-      await new Xy2apiClient("https://example.com", fetcher).listKeys(
-        "synthetic",
-      ),
-    ).toEqual([{ id: 1 }, { id: 2 }]);
+      .mockResolvedValueOnce(response({ items: [remoteKey(1)], pages: 2 }))
+      .mockResolvedValueOnce(response({ items: [remoteKey(2)], pages: 2 }));
+    const keys = await new Xy2apiClient(
+      "https://example.com",
+      fetcher,
+    ).listKeys("synthetic");
+    expect(keys.map((key) => key.id)).toEqual([1, 2]);
+    expect(keys[0]).toMatchObject({ masked: false, quota: 0, quota_used: 0 });
     expect(fetcher.mock.calls[1]?.[0]).toContain("page=2");
+  });
+  it("skips unparseable keys, flags masked ones, and paginates by total", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(
+      response({
+        items: [{ id: 1 }, remoteKey(2, "sk-abcd…wxyz"), remoteKey(3)],
+        total: 3,
+      }),
+    );
+    const keys = await new Xy2apiClient(
+      "https://example.com",
+      fetcher,
+    ).listKeys("synthetic");
+    expect(keys.map((key) => [key.id, key.masked])).toEqual([
+      [2, true],
+      [3, false],
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

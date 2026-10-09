@@ -1,0 +1,138 @@
+name: xy2api contract
+
+# Records the xy2api wire contract from real xy2api images (mock upstream, no
+# paid calls) and replays it through our adapters. Catches main-site upgrades
+# that would break login / keys / generation before users do.
+#
+#   verified  newest entry of XY2API_VERIFIED_VERSIONS (sanity: lab + recorder)
+#   latest    whatever xy2api published last (the early-warning lane)
+#   input     optional extra tag from workflow_dispatch
+#
+# Opt-in: seeding a lab instance means accepting xy2api's admin compliance
+# commitment on that throwaway instance. A maintainer must set the repository
+# variable XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE=1 after reading it; until then the
+# job is skipped. Runbook: deploy/xy2api-lab/README.md, docs/XY2API_COMPAT.md.
+
+on:
+  schedule:
+    - cron: "23 1 * * *" # daily; xy2api ships every few days
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Extra xy2api image tag to record (e.g. 0.2.6)
+        required: false
+  pull_request:
+    paths:
+      - apps/server/src/features/xy2api/**
+      - apps/server/src/generation/providers/xy2api-*
+      - deploy/xy2api-lab/**
+      - .github/workflows/xy2api-contract.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xy2api-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Pick xy2api tags
+    if: vars.XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE == '1'
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Resolve tags
+        id: tags
+        env:
+          EXTRA_TAG: ${{ inputs.tag }}
+        run: node deploy/xy2api-lab/plan-tags.mjs
+
+  contract:
+    name: xy2api ${{ matrix.tag }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+    # Lab state defaults to $RUNNER_TEMP (lab.sh), outside the checkout.
+    # upload-artifact rejects paths containing "..", so no workspace/.. here.
+    env:
+      XY2API_TAG: ${{ matrix.tag }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10.26.2
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared contracts
+        run: pnpm --filter @loomic/shared build
+
+      - name: Start xy2api + mock upstream
+        run: deploy/xy2api-lab/lab.sh up
+      - name: Seed lab accounts
+        env:
+          XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE: "1"
+        run: deploy/xy2api-lab/lab.sh seed
+      - name: Record fixtures
+        id: record
+        run: |
+          export XY2API_FIXTURES_OUT="$RUNNER_TEMP/xy2api-fixtures"
+          deploy/xy2api-lab/lab.sh record
+          version=$(deploy/xy2api-lab/lab.sh version)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dir=$XY2API_FIXTURES_OUT/$version" >> "$GITHUB_OUTPUT"
+
+      - name: Replay recorded contract through adapters
+        env:
+          XY2API_FIXTURES_DIR: ${{ steps.record.outputs.dir }}
+        run: pnpm --filter @loomic/server exec vitest run src/features/xy2api/contract.replay.test.ts
+
+      - name: Summarize contract changes
+        if: always() && steps.record.outputs.dir != ''
+        env:
+          VERSION: ${{ steps.record.outputs.version }}
+          RECORDED: ${{ steps.record.outputs.dir }}
+        run: |
+          bundled=apps/server/src/features/xy2api/__fixtures__
+          if [ -d "$bundled/$VERSION" ]; then
+            base="$bundled/$VERSION"
+            echo "xy2api **$VERSION** is a verified version." >> "$GITHUB_STEP_SUMMARY"
+          else
+            base="$bundled/$(find "$bundled" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)"
+            {
+              echo "xy2api **$VERSION** is **not verified** yet."
+              echo "If the replay passed: copy the fixtures artifact to \`$bundled/$VERSION\`,"
+              echo "add \"$VERSION\" to XY2API_VERIFIED_VERSIONS (compat.ts) and open a PR."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo >> "$GITHUB_STEP_SUMMARY"
+          node deploy/xy2api-lab/diff-fixtures.mjs "$base" "$RECORDED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized fixtures
+        if: always() && steps.record.outputs.dir != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xy2api-fixtures-${{ steps.record.outputs.version }}-${{ matrix.tag }}
+          path: ${{ steps.record.outputs.dir }}
+          retention-days: 14
+
+      - name: Show xy2api logs on failure
+        if: failure()
+        run: deploy/xy2api-lab/lab.sh logs xy2api mock-upstream
+      - name: Stop stack
+        if: always()
+        run: deploy/xy2api-lab/lab.sh down

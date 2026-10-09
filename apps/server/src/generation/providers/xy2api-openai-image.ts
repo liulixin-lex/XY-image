@@ -62,12 +62,26 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         : ["16:9", "4:3"].includes(params.aspectRatio ?? "")
           ? "1536x1024"
           : "1024x1024";
+    // The SDK's APIError keeps only `body.error`, but xy2api answers its own
+    // refusals with a top-level {code,message} (e.g. 403 INSUFFICIENT_BALANCE).
+    // Keep the raw error body of this call so mapping sees what xy2api sent;
+    // otherwise a definite refusal would surface as "可能已扣费".
+    let errorBody: unknown;
     const client = new OpenAI({
       apiKey: ctx.apiKey,
       baseURL: `${ctx.baseUrl}/v1`,
       timeout: 600000,
       maxRetries: 0,
       defaultHeaders: { "User-Agent": "LoomicServer/1.0" },
+      fetch: async (input, init) => {
+        const response = await fetch(input, init);
+        if (!response.ok)
+          errorBody = await response
+            .clone()
+            .json()
+            .catch(() => undefined);
+        return response;
+      },
     });
     try {
       const request = {
@@ -126,6 +140,14 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       };
     } catch (error) {
       if (error instanceof BillingGuardError) throw error;
+      if (
+        errorBody !== undefined &&
+        error instanceof OpenAI.APIError &&
+        typeof error.status === "number"
+      )
+        throw new GatewayError(
+          mapGatewayError({ status: error.status, body: errorBody }),
+        );
       throw sanitizeGatewayError(error);
     }
   }

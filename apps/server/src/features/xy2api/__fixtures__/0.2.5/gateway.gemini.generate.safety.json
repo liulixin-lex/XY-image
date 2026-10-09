@@ -1,0 +1,48 @@
+{
+  "scenario": "gateway.gemini.generate.safety",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture [[mock:safety]]"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "3639b203-e346-427d-975f-e20b5e19f168",
+      "x-request-id": "080505af-a802-4a91-86c7-69a341d86fd5"
+    },
+    "json": {
+      "promptFeedback": {
+        "blockReason": "SAFETY"
+      },
+      "usageMetadata": {
+        "promptTokenCount": 30,
+        "totalTokenCount": 30
+      },
+      "modelVersion": "gemini-3.1-flash-image"
+    }
+  }
+}

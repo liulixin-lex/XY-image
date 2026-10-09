@@ -1,0 +1,28 @@
+{
+  "scenario": "gateway.images.upstream_safety",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture [[mock:safety]]"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "f7e546af-b455-4dda-a3af-0bcdece6c3f7",
+      "x-request-id": "158f8b51-6191-43c1-9319-982b83b136f5"
+    },
+    "json": {
+      "error": {
+        "code": "moderation_blocked",
+        "message": "Your request was rejected as a result of our safety system.",
+        "type": "image_generation_user_error"
+      }
+    }
+  }
+}

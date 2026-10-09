@@ -1,0 +1,20 @@
+{
+  "scenario": "auth.me.user_disabled",
+  "tier": "B",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "20094f8d-a422-4911-a47b-6ab450a4c871"
+    },
+    "json": {
+      "code": "USER_INACTIVE",
+      "message": "User account is not active"
+    }
+  }
+}
