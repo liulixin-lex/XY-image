@@ -48,6 +48,14 @@ async function gateway(status: number, body: unknown, delayMs = 0) {
     requests,
   };
 }
+// A port nothing listens on: connecting is refused, nothing is sent.
+async function closedPort() {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
 const catalog = loadImageCatalog();
 const openai = new Xy2apiOpenAIImageProvider(catalog, {
   imageOutputFormat: "jpeg",
@@ -132,6 +140,26 @@ describe("per-call gateway image transports", () => {
     });
     expect(server.requests).toHaveLength(1);
   });
+  it.each(["openai", "gemini"])(
+    "calls a refused connection not charged, not 待核对 (%s)",
+    async (kind) => {
+      const ctx = {
+        apiKey: "synthetic-key",
+        baseUrl: `http://127.0.0.1:${await closedPort()}`,
+      };
+      await expect(
+        kind === "openai"
+          ? openai.generate({ model: "gpt-image-2", prompt: "fixture" }, ctx)
+          : gemini.generate(
+              { model: "gemini-3-pro-image", prompt: "fixture" },
+              ctx,
+            ),
+      ).rejects.toMatchObject({
+        code: "xy2api_unavailable",
+        failure: { billing: "not_charged" },
+      });
+    },
+  );
   it("uses Gemini native routing, the exact alias, and per-user credentials", async () => {
     const server = await gateway(200, {
       candidates: [

@@ -111,6 +111,7 @@ export const gatewayMessages = {
   upstream_busy: "主站暂时繁忙，请稍后再试",
   upstream_too_large: "图片响应过大，请降低画质后重试",
   upstream_unknown: "请求中断，可能已扣费，请先到主站用量页核对",
+  xy2api_unavailable: "暂时连不上主站，这次没有发出请求，也没有扣费",
   run_image_limit: "本轮生图次数已达上限，请开启新一轮对话",
   concurrency_limit: "当前生图任务已达上限，请等待完成",
   storage_failed: "图片已生成但保存失败，请联系管理员并到主站核对用量",
@@ -126,12 +127,74 @@ export type GatewayFailure = {
   requestId?: string;
 };
 
+/**
+ * The request never reached the main site, so nothing was charged: a known
+ * outcome, not 待核对. See neverSent and ORIGIN_NOT_REACHED.
+ */
+function unavailableFailure(): GatewayFailure {
+  return {
+    code: "xy2api_unavailable",
+    retryable: true,
+    billing: "not_charged",
+    userMessage: gatewayMessages.xy2api_unavailable,
+  };
+}
+
+// Cloudflare answers for the main site when it could not reach it at all:
+// web server down (521), connection timed out (522), origin unreachable
+// (523), TLS to the origin failed (525, 526), origin DNS or route error
+// (530). The request never got to xy2api. 520 and 524 did reach it (it
+// answered oddly or too slowly) and stay unknown.
+const ORIGIN_NOT_REACHED = new Set([521, 522, 523, 525, 526, 530]);
+
+// Failures before any byte of the request left this server.
+const NEVER_SENT_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/**
+ * True when a fetch failed before the request was sent: connection refused,
+ * DNS failure, connect timeout, TLS handshake failure. fetch reports them as
+ * "fetch failed" with the system error as its cause (an AggregateError when
+ * several addresses were tried); the OpenAI client wraps that once more.
+ * A reset or a timeout after connecting is not here: the request may have
+ * arrived, and the outcome stays unknown (待核对).
+ */
+export function neverSent(error: unknown): boolean {
+  const queue: unknown[] = [error];
+  for (let seen = 0; queue.length > 0 && seen < 16; seen++) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    const { code, cause, errors } = current as {
+      code?: unknown;
+      cause?: unknown;
+      errors?: unknown;
+    };
+    if (typeof code === "string" && NEVER_SENT_CODES.has(code)) return true;
+    queue.push(cause);
+    if (Array.isArray(errors)) queue.push(...errors);
+  }
+  return false;
+}
+
 export function mapGatewayError(input: {
   status?: number | undefined;
   body?: unknown;
   responseReceived?: boolean;
 }): GatewayFailure {
   const { status, body } = input;
+  if (status && ORIGIN_NOT_REACHED.has(status)) return unavailableFailure();
   const id = extractXy2apiErrorId(status ?? 0, body);
   const b = record(body);
   const e = record(b.error);
@@ -259,6 +322,8 @@ export class Xy2apiError extends Error {
 export function sanitizeGatewayError(error: unknown): GatewayError {
   if (error instanceof GatewayError) return error;
   const e = record(error);
+  if (typeof e.status !== "number" && neverSent(error))
+    return new GatewayError(unavailableFailure());
   return new GatewayError(
     mapGatewayError({
       status: typeof e.status === "number" ? e.status : undefined,
