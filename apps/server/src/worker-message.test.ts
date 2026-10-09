@@ -127,6 +127,32 @@ describe("worker completion and redelivery", () => {
     await f.run();
     expect(f.ctx.deliveries?.remove).not.toHaveBeenCalled();
   });
+  it("keeps a job stopped before it was sent canceled, not failed", async () => {
+    const f = fixture();
+    // An agent run stopped between this worker's status check and the
+    // dispatch: the runner refuses the canceled job.
+    f.execute.mockImplementation(async () => {
+      f.job.status = "canceled";
+      throw new BillingGuardError("invalid_input");
+    });
+    await f.run();
+    expect(f.ctx.jobService.markDeadLetter).not.toHaveBeenCalled();
+    expect(f.ctx.pgmq.archive).toHaveBeenCalledOnce();
+    expect(f.job.status).toBe("canceled");
+  });
+  it("still records the failure of a canceled job that was already sent", async () => {
+    const f = fixture();
+    f.execute.mockImplementation(async () => {
+      Object.assign(f.job, { status: "canceled", billing_status: "unknown" });
+      throw new BillingGuardError("upstream_unknown", 502);
+    });
+    await f.run();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledWith(
+      "job-1",
+      "upstream_unknown",
+      expect.any(String),
+    );
+  });
   it.each(["succeeded", "dead_letter", "canceled"])(
     "archives a %s delivery without sending another request",
     async (status) => {

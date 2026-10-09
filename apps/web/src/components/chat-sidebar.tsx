@@ -66,6 +66,9 @@ type ChatSidebarProps = {
   selectedCanvasElements?: CanvasSelectedElement[];
 };
 
+/** The run command could not go out (not connected); nothing was started. */
+class RunNotSentError extends Error {}
+
 export function ChatSidebar({
   accessToken,
   canvasId,
@@ -128,6 +131,24 @@ export function ChatSidebar({
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
+  // The run this page is streaming (sent here, or resumed after a reload),
+  // for the stop button. A stop asked for before the server acknowledged the
+  // run is sent as soon as its id arrives.
+  const activeRunIdRef = useRef<string | null>(null);
+  const stopRequestedRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
+  // Sending waits for the connection (a run command sent before it is lost).
+  // The first connect is only announced when it takes a while.
+  const [hasConnected, setHasConnected] = useState(ws.connected);
+  const [slowFirstConnect, setSlowFirstConnect] = useState(false);
+  useEffect(() => {
+    if (ws.connected) setHasConnected(true);
+  }, [ws.connected]);
+  useEffect(() => {
+    if (hasConnected || ws.connected) return;
+    const timer = setTimeout(() => setSlowFirstConnect(true), 1_500);
+    return () => clearTimeout(timer);
+  }, [hasConnected, ws.connected]);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -443,21 +464,20 @@ export function ChatSidebar({
       };
       updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
 
-      // Persist user message (fire-and-forget)
-      saveMessage(accessTokenRef.current, currentSessionId, {
-        role: "user",
-        content: text,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      }).catch((err) =>
-        console.error("[chat] Failed to save user message:", err),
-      );
-
-      // Auto-title from first user message
-      autoTitleSession(text);
+      // Persisted (fire-and-forget) once the run request has gone out; a
+      // message that was never sent is taken back instead (see catch below).
+      const persistUserMessage = () =>
+        saveMessage(accessTokenRef.current, currentSessionId, {
+          role: "user",
+          content: text,
+          contentBlocks: [
+            { type: "text" as const, text },
+            ...mentionBlocks,
+            ...imageBlocks,
+          ],
+        }).catch((err) =>
+          console.error("[chat] Failed to save user message:", err),
+        );
 
       // Create assistant placeholder
       const assistantId = `assistant-${Date.now()}`;
@@ -467,6 +487,8 @@ export function ChatSidebar({
       ]);
       setStreaming(true);
       abortRef.current = false;
+      stopRequestedRef.current = false;
+      setStopping(false);
 
       try {
         const perf = {
@@ -572,7 +594,7 @@ export function ChatSidebar({
             reject(new Error("WebSocket ack timeout — connection may be down"));
           }, 10_000);
 
-          ws.startRun(
+          const sent = ws.startRun(
             {
               sessionId: currentSessionId,
               conversationId: canvasId,
@@ -602,16 +624,39 @@ export function ChatSidebar({
               );
               const id = ack.payload.runId as string;
               runIdRef.current = id;
+              activeRunIdRef.current = id;
+              if (stopRequestedRef.current) ws.cancelRun(id);
               resolve(id);
             },
           );
+          if (!sent) {
+            clearTimeout(timeout);
+            cleanup();
+            reject(new RunNotSentError());
+            return;
+          }
+          void persistUserMessage();
+          // Auto-title from the first user message (still before any render,
+          // so the session counts as empty here).
+          autoTitleSession(text);
         });
         clearAttachments();
         setMessageMentions([]);
 
         await streamDone;
         cleanup();
-      } catch {
+      } catch (error) {
+        if (error instanceof RunNotSentError) {
+          // Nothing went out (the connection dropped as it was sent): take
+          // the message back so it can be sent again once connected.
+          console.warn("[chat] run not sent: not connected");
+          updateSessionMessages(currentSessionId, (prev) =>
+            prev.filter((m) => m.id !== userMsg.id && m.id !== assistantId),
+          );
+          chatInputRef.current?.restore(text);
+          showToast("还没连上服务器，这条消息没有发出。连上后再发一次。", "error");
+          return;
+        }
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
             if (m.id !== assistantId) return m;
@@ -630,6 +675,9 @@ export function ChatSidebar({
           }),
         );
       } finally {
+        activeRunIdRef.current = null;
+        stopRequestedRef.current = false;
+        setStopping(false);
         setStreaming(false);
       }
     },
@@ -654,6 +702,24 @@ export function ChatSidebar({
       activeSessionIdRef,
     ],
   );
+
+  // Stops the streaming run. The server ends it with run.canceled, which
+  // settles the message like any other end; an image job not sent yet is
+  // canceled, one already sent still lands on the canvas (agent/runtime.ts).
+  const handleStop = useCallback(() => {
+    if (!ws.connected) {
+      showToast("连接已断开，重新连上后再停止", "error");
+      return;
+    }
+    setStopping(true);
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      console.log(`[chat] stop requested for run ${runId}`);
+      ws.cancelRun(runId);
+    } else {
+      stopRequestedRef.current = true;
+    }
+  }, [ws, showToast]);
 
   // ── Mention picker ──
   const mentionPickerItems: MessageMentionPickerItem[] = [
@@ -808,6 +874,7 @@ export function ChatSidebar({
           .activeRunId;
         if (activeRunId && typeof activeRunId === "string") {
           setStreaming(true);
+          activeRunIdRef.current = activeRunId;
 
           const assistantId = `resumed_${activeRunId}`;
           // Must use updateSessionMessages (not setMessages) so the placeholder
@@ -864,6 +931,8 @@ export function ChatSidebar({
               evt.type === "run.canceled"
             ) {
               notifyGenerationSettled();
+              activeRunIdRef.current = null;
+              setStopping(false);
               setStreaming(false);
               unsub();
             }
@@ -949,12 +1018,14 @@ export function ChatSidebar({
         </button>
       </div>
 
-      {/* Disconnected banner */}
-      {!ws.connected && (
+      {/* Connection banner: a dropped connection, or a slow first connect */}
+      {!ws.connected && (hasConnected || slowFirstConnect) && (
         <div role="status" className="flex items-center gap-2 border-b border-line bg-white/[0.05] px-4 py-2">
-          <LiveDot className="bg-alert" />
+          <LiveDot {...(hasConnected ? { className: "bg-alert" } : {})} />
           <span className="text-[12px] text-fg-soft">
-            连接已断开，正在重连。进行中的生成不受影响。
+            {hasConnected
+              ? "连接已断开，正在重连。进行中的生成不受影响。"
+              : "正在连接…"}
           </span>
         </div>
       )}
@@ -1007,7 +1078,10 @@ export function ChatSidebar({
         <ChatInput
           ref={chatInputRef}
           onSend={handleSend}
-          disabled={streaming || sessionsLoading}
+          disabled={streaming || sessionsLoading || !ws.connected}
+          running={streaming}
+          onStop={handleStop}
+          stopping={stopping}
           attachments={imageAttachments}
           onAddFiles={addFiles}
           onRemoveAttachment={removeAttachment}

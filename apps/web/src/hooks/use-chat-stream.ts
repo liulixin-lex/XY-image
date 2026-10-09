@@ -173,19 +173,28 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           break;
 
         case "run.canceled":
-          // Clean up running tool blocks when run is aborted (e.g. billing error)
+          // Stopped (the stop button, or a billing error). Running tools are
+          // closed as stopped, the same way the server saves the message
+          // (apps/server ws/assistant-draft.ts), so a reload looks the same.
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
-              const hasRunning = m.contentBlocks.some(
-                (b) => b.type === "tool" && b.status === "running",
-              );
-              if (!hasRunning) return m;
+              if (m.contentBlocks.length === 0) {
+                return {
+                  ...m,
+                  contentBlocks: [{ type: "text" as const, text: "已停止。" }],
+                };
+              }
               return {
                 ...m,
                 contentBlocks: m.contentBlocks.map((block) =>
                   block.type === "tool" && block.status === "running"
-                    ? { ...block, status: "completed" as const }
+                    ? {
+                        ...block,
+                        status: "completed" as const,
+                        output: { stopped: true },
+                        outputSummary: "已停止",
+                      }
                     : block,
                 ),
               };

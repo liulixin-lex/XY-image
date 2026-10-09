@@ -25,10 +25,11 @@ type RPCHandler = (
 
 export type WebSocketHandle = {
   connected: boolean;
+  /** False when the command could not go out (not connected); no ack follows. */
   startRun: (
     payload: RunCreateRequest,
     onAck?: (ack: WsCommandAck) => void,
-  ) => void;
+  ) => boolean;
   cancelRun: (runId: string) => void;
   onEvent: (cb: EventCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
@@ -263,6 +264,7 @@ export function useWebSocket(
         // Remove the dangling ack listener so callers don't hang forever
         ackListeners.current.delete("agent.run");
       }
+      return sent;
     },
     [sendCommand],
   );

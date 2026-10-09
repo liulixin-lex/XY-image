@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, BoxSelectIcon, ImageIcon, ImagePlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, BoxSelectIcon, ImageIcon, ImagePlusIcon, SlidersHorizontalIcon, SquareIcon, XIcon } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import type { MessageMention } from "@loomic/shared";
@@ -15,6 +15,11 @@ import { cn } from "../lib/utils";
 type ChatInputProps = {
   onSend: (message: string) => void;
   disabled?: boolean;
+  /** A run is streaming: the send button becomes a stop button. */
+  running?: boolean;
+  onStop?: () => void;
+  /** Stop was asked for; waiting for the run to end. */
+  stopping?: boolean;
   attachments?: ImageAttachmentState[];
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -29,11 +34,16 @@ type ChatInputProps = {
 export type ChatInputHandle = {
   /** Remove the @query text from input after picker selection */
   clearAtQuery: () => void;
+  /** Put back a message that could not be sent (unless something new was typed). */
+  restore: (text: string) => void;
 };
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({
   onSend,
   disabled,
+  running,
+  onStop,
+  stopping,
   attachments,
   onAddFiles,
   onRemoveAttachment,
@@ -52,6 +62,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const modelBtnRef = useRef<HTMLButtonElement>(null);
 
   useImperativeHandle(ref, () => ({
+    restore(text: string) {
+      setValue((prev) => (prev.trim() ? prev : text));
+    },
     clearAtQuery() {
       setValue((prev) => {
         const lastAtIdx = prev.lastIndexOf("@");
@@ -293,15 +306,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={disabled || !hasContent || isUploading}
-            aria-label="发送"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-line-strong"
-          >
-            <ArrowUpIcon className="size-4" strokeWidth={2} />
-          </button>
+          {running && onStop ? (
+            <button
+              type="button"
+              onClick={onStop}
+              disabled={stopping}
+              aria-label={stopping ? "正在停止" : "停止"}
+              title={stopping ? "正在停止" : "停止"}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong text-fg transition-colors hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-60"
+            >
+              <SquareIcon className="size-3.5" fill="currentColor" strokeWidth={0} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={disabled || !hasContent || isUploading}
+              aria-label="发送"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-line-strong"
+            >
+              <ArrowUpIcon className="size-4" strokeWidth={2} />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -2,11 +2,15 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchJobMock } = vi.hoisted(() => ({ fetchJobMock: vi.fn() }));
+const { fetchJobMock, fetchJobsMock } = vi.hoisted(() => ({
+  fetchJobMock: vi.fn(),
+  fetchJobsMock: vi.fn(),
+}));
 
 vi.mock("../src/lib/server-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/server-api")>()),
   fetchJob: fetchJobMock,
+  fetchJobs: fetchJobsMock,
 }));
 
 import { useJobFallbackPolling } from "../src/hooks/use-job-fallback-polling";
@@ -115,7 +119,11 @@ describe("useJobFallbackPolling", () => {
         accessTokenRef: { current: "tok" },
       }),
     );
-    return { check: result.current.checkForTimedOutJobs, onJobSucceeded };
+    return {
+      check: result.current.checkForTimedOutJobs,
+      watch: result.current.watchCanvasJobs,
+      onJobSucceeded,
+    };
   }
 
   it("waits out storage retries past the timeout limit, then syncs the canvas", async () => {
@@ -185,5 +193,80 @@ describe("useJobFallbackPolling", () => {
     check(completed({ summary: "Generated image", jobId: "job-1" }));
     await act(() => vi.advanceTimersByTimeAsync(60_000));
     expect(fetchJobMock).not.toHaveBeenCalled();
+  });
+
+  it("watches this canvas's image jobs still on their way (reload, stopped run)", async () => {
+    const job = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      job_type: "image_generation",
+      canvas_id: "canvas-1",
+      status: "running",
+      error_code: null,
+      ...extra,
+    });
+    fetchJobsMock.mockResolvedValue({
+      jobs: [
+        job("running", {}),
+        job("held", { status: "queued", error_code: "storage_retrying" }),
+        job("done", { status: "succeeded" }),
+        job("other-canvas", { canvas_id: "canvas-2" }),
+      ],
+    });
+    fetchJobMock.mockResolvedValue({ job: { status: "running" } });
+    const { watch } = setup();
+
+    let watched = 0;
+    await act(async () => {
+      watched = await watch("canvas-1");
+    });
+    expect(watched).toBe(2);
+    expect(fetchJobsMock).toHaveBeenCalledWith("tok", {
+      jobType: "image_generation",
+    });
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetchJobMock.mock.calls.map(([, id]) => id)).toEqual(["running"]);
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    const polled = new Set(fetchJobMock.mock.calls.map(([, id]) => id));
+    expect([...polled].sort()).toEqual(["held", "running"]);
+
+    // Watching again does not start a second poll for the same job.
+    await act(async () => {
+      await watch("canvas-1");
+    });
+    fetchJobMock.mockClear();
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetchJobMock.mock.calls.map(([, id]) => id)).toEqual(["running"]);
+  });
+
+  it("after a run ends, watches only the jobs created before it ended", async () => {
+    const job = (id: string, created_at: string) => ({
+      id,
+      job_type: "image_generation",
+      canvas_id: "canvas-1",
+      status: "running",
+      error_code: null,
+      created_at,
+    });
+    fetchJobsMock.mockResolvedValue({
+      jobs: [
+        job("stopped-run", "2026-10-09T10:00:00Z"),
+        job("next-run", "2026-10-09T10:00:05Z"),
+      ],
+    });
+    fetchJobMock.mockResolvedValue({ job: { status: "running" } });
+    const { watch } = setup();
+
+    let watched = 0;
+    await act(async () => {
+      watched = await watch("canvas-1", {
+        createdBefore: Date.parse("2026-10-09T10:00:03Z"),
+      });
+    });
+    expect(watched).toBe(1);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetchJobMock.mock.calls.map(([, id]) => id)).toEqual([
+      "stopped-run",
+    ]);
   });
 });

@@ -7,7 +7,6 @@ import {
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@loomic/shared";
-import type { ContentBlock, ToolBlock } from "@loomic/shared";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
@@ -20,6 +19,10 @@ import type {
   RequestAuthenticator,
   UserSupabaseClient,
 } from "../supabase/user.js";
+import {
+  applyToAssistantDraft,
+  createAssistantDraft,
+} from "./assistant-draft.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
@@ -406,9 +409,8 @@ async function handleRunCommand(
     connectionManager.sendTo(connectionId, { type: "keep-alive" });
   }, 15_000);
 
-  // Accumulate assistant content blocks for server-side persistence
-  const assistantText: string[] = [];
-  const assistantBlocks: ContentBlock[] = [];
+  // The assistant message, saved when the run ends
+  const draft = createAssistantDraft();
 
   try {
     let firstEvent = true;
@@ -424,48 +426,14 @@ async function handleRunCommand(
       // Broadcast to all viewers
       connectionManager.pushToCanvas(canvasId, event);
 
-      // Accumulate content for server-side persistence
-      if (event.type === "message.delta") {
-        const lastBlock = assistantBlocks[assistantBlocks.length - 1];
-        if (lastBlock && lastBlock.type === "text") {
-          (lastBlock as { type: "text"; text: string }).text += event.delta;
-        } else {
-          assistantBlocks.push({ type: "text", text: event.delta });
-        }
-        assistantText.push(event.delta);
-      } else if (event.type === "tool.started") {
-        assistantBlocks.push({
-          type: "tool",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          status: "running" as const,
-          ...(event.input ? { input: event.input } : {}),
-        });
-      } else if (event.type === "tool.completed") {
-        const idx = assistantBlocks.findIndex(
-          (b) =>
-            b.type === "tool" &&
-            (b as ToolBlock).toolCallId === event.toolCallId,
-        );
-        if (idx >= 0) {
-          assistantBlocks[idx] = {
-            ...(assistantBlocks[idx] as ToolBlock),
-            status: "completed" as const,
-            ...(event.output ? { output: event.output } : {}),
-            ...(event.outputSummary
-              ? { outputSummary: event.outputSummary }
-              : {}),
-            ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-          };
-        }
-      }
+      applyToAssistantDraft(draft, event);
     }
     log.lap("stream_done", { runId });
 
     // ── Server-side assistant message persistence ──
     if (
       services.chatService &&
-      (assistantText.length > 0 || assistantBlocks.length > 0)
+      (draft.text.length > 0 || draft.blocks.length > 0)
     ) {
       try {
         await services.chatService.createMessage(
@@ -473,8 +441,8 @@ async function handleRunCommand(
           payload.sessionId,
           {
             role: "assistant",
-            content: assistantText.join(""),
-            contentBlocks: assistantBlocks,
+            content: draft.text.join(""),
+            contentBlocks: draft.blocks,
           },
         );
         log.lap("assistant_message_persisted", { runId });
