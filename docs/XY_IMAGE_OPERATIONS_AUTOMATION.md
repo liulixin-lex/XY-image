@@ -5,7 +5,7 @@
 ## 能力与限制
 
 - `operations.mjs backup`：先验证远端 restic 仓库可访问，再调用维护窗口备份、校验本地哈希、加密上传、确认 snapshot ID、执行仓库 metadata check，然后按本项目 host/tag 保留周期执行 forget/prune。全部成功才删除本次明文暂存并记录成功时间。失败保留暂存，下一次不清理旧失败备份。
-- `operations.mjs monitor`：检查本机 API ready、必要容器的状态/health、部署和备份盘可用空间、最近备份年龄及失败/恢复标志；状态变化立即通知，持续故障按 reminderMinutes 再通知，恢复发 resolved。投递失败返回非零且不标记已发送。通知仅包含固定故障代码、部署别名、时间，不发送路径、凭据或错误原文。
+- `operations.mjs monitor`：检查本机 API ready、必要容器的状态/health、部署和备份盘可用空间、最近备份年龄及失败/恢复标志，以及需要人工处理的计费事项（只取数量）：补传用完重试、图片留在 `xy2api_pending_deliveries` 等人工恢复的（`images_held_for_recovery`），超过 `billingUnknownHours`（默认 30 小时；自动核对 24 小时内会下结论）仍是“待核对”的（`billing_unknown_stale`），查询失败为 `billing_check_unknown`；处理方法见 [XY2API 运维](XY2API_OPERATIONS.md)；状态变化立即通知，持续故障按 reminderMinutes 再通知，恢复发 resolved。投递失败返回非零且不标记已发送。通知仅包含固定故障代码、部署别名、时间，不发送路径、凭据或错误原文。
 - 默认每天维护备份、每分钟监控。备份会中断业务；`Persistent=false` 故意禁止机器重启后立即补跑维护任务。错过备份由年龄检查告警。定时器不会自动重启服务、重跑生图或重复收费请求。
 - 单机监控无法报告宿主机彻底断电、网络全断或监控进程本身停摆。生产仍须外部存活/告警送达检查；本次未虚构外部服务。
 - 本地文件删除并非安全擦除；暂存盘应使用磁盘加密且限制访问。restic 密码需要在服务器以外离线托管；丢失密码无法恢复。`restic check` 默认是仓库元数据校验，不代表读取全部备份数据或完成恢复。

@@ -238,6 +238,7 @@ test("monitor alerts on backup, disk and worker health then deduplicates and rep
       statfs: async () => ({ bavail: healthy ? 1024 ** 3 : 1, bsize: 4096 }),
       run: async (_command, args) => {
         assert.ok(!args.includes("restart"));
+        if (args.includes("psql")) return "0|0\n";
         return JSON.stringify(
           config.requiredServices.map((Service) => ({
             Service,
@@ -277,6 +278,62 @@ test("monitor alerts on backup, disk and worker health then deduplicates and rep
     await rm(root, { recursive: true, force: true });
   }
 });
+test("monitor alerts on paid work that needs a person, by count only", async () => {
+  const { root, config } = await setup();
+  try {
+    await atomicJson(path.join(config.stateDir, "backup.json"), {
+      lastSuccessAt: fixedNow().toISOString(),
+      status: "ok",
+    });
+    let counts = "2|3\n";
+    const queries = [];
+    const events = [];
+    const dependencies = {
+      now: fixedNow,
+      statfs: async () => ({ bavail: 1024 ** 3, bsize: 4096 }),
+      run: async (_command, args) => {
+        if (args.includes("psql")) {
+          queries.push(args.at(-1));
+          if (counts instanceof Error) throw counts;
+          return counts;
+        }
+        return JSON.stringify(
+          config.requiredServices.map((Service) => ({
+            Service,
+            State: "running",
+            Health: "healthy",
+          })),
+        );
+      },
+      fetch: async (url, options) => {
+        if (String(url).startsWith("https:"))
+          events.push(JSON.parse(options.body));
+        return new Response(null, { status: 200 });
+      },
+    };
+    assert.deepEqual((await monitor(config, dependencies)).problems, [
+      "billing_unknown_stale",
+      "images_held_for_recovery",
+    ]);
+    // The 待核对 threshold defaults to 30 hours (the reconciler settles in 24).
+    assert.match(queries[0], /interval '30 hours'/);
+    assert.match(queries[0], /j\.status = 'dead_letter'/);
+    counts = "garbage";
+    assert.deepEqual((await monitor(config, dependencies)).problems, [
+      "billing_check_unknown",
+    ]);
+    counts = new Error("synthetic-sensitive-psql-error");
+    assert.deepEqual((await monitor(config, dependencies)).problems, [
+      "billing_check_unknown",
+    ]);
+    counts = "0|0\n";
+    assert.equal((await monitor(config, dependencies)).status, "ok");
+    assert.equal(events.at(-1).status, "resolved");
+    assert.ok(!JSON.stringify(events).includes("synthetic-"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 test("failed webhook delivery does not mark alert sent and retries at next monitor run", async () => {
   const { root, config } = await setup();
   try {
@@ -284,14 +341,16 @@ test("failed webhook delivery does not mark alert sent and retries at next monit
     const dependencies = {
       now: fixedNow,
       statfs: async () => ({ bavail: 1024 ** 3, bsize: 4096 }),
-      run: async () =>
-        JSON.stringify(
-          config.requiredServices.map((Service) => ({
-            Service,
-            State: "running",
-            Health: "healthy",
-          })),
-        ),
+      run: async (_command, args) =>
+        args.includes("psql")
+          ? "0|0\n"
+          : JSON.stringify(
+              config.requiredServices.map((Service) => ({
+                Service,
+                State: "running",
+                Health: "healthy",
+              })),
+            ),
       fetch: async (url) => {
         if (String(url).startsWith("https:")) {
           attempts += 1;

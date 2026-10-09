@@ -372,7 +372,8 @@ async function redeliver(
       .recordFailure(jobId, reason)
       .catch(() => held.attempts + 1);
     if (attempts >= MAX_DELIVERY_ATTEMPTS) {
-      // TODO(agent01): alerting on this line; recovery steps in docs/XY2API_OPERATIONS.md.
+      // The ops monitor alerts while such rows exist (images_held_for_recovery,
+      // deploy/selfhost/operations.mjs); recovery: docs/XY2API_OPERATIONS.md.
       console.error(
         `[image-runner] job ${jobId} storage failed ${attempts} times; image kept in xy2api_pending_deliveries for manual recovery: ${reason}`,
       );

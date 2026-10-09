@@ -39,7 +39,7 @@ bash apps/server/scripts/check-xy2api-migrations.sh
 
 ## 构建和预发
 
-统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、36份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
+统一使用 [自建运行手册](XY_IMAGE_SELFHOST.md) 的 Compose 流程：先基础栈、38份迁移及真实类型生成，再构建/启动 app profile。不要使用单独 docker run 脱离 Compose 网络；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 和内部数据库地址只在该网络内可解析。
 
 构建强制 shared build 和 server typecheck；`.dockerignore` 排除真实 env、凭据目录及前端。SERVICE_MODE 区分同一镜像的 API/Worker；非root、只读根文件系统、tmpfs临时文件。API固定单实例。`GET /api/health` 只验证进程，内部 `/api/ready` 验证依赖且由公网反代隐藏。
 
@@ -97,7 +97,7 @@ group by 1, 2;
 
 主站返回图片即已扣费。之后写 Storage（每轮最多三次上传）或写 `asset_objects` 失败时，服务端把图片字节存进 `public.xy2api_pending_deliveries`（仅服务端可访问，迁移 `20261009000005`），任务回到 `queued` 并带 `error_code = storage_retrying`。Worker 用同一条队列消息补传，间隔 30 秒、1、2、4、8 分钟，之后每 10 分钟一次；连同第一次一共 12 次，约 75 分钟。补传不调用主站、不再扣费；补传成功后任务转为 `succeeded`，Worker 在记录成功之后才删除暂存行。同步画布接口遇到这种情况返回 502 `storage_retrying`，并把任务交给 Worker 补传。
 
-用户看到的是“保存中”：不能取消，不占生图并发名额；Agent 会告诉用户图片正在保存、保存好后自动出现在画布上，不要重新生成。补传成功后 Worker 把图放到当时的画布上（见“画布图片存储”），开着的页面轮询到任务成功后合并进来。12 次都失败后任务转为 `dead_letter` / `storage_failed`，暂存行保留，等人工恢复。暂存失败（例如数据库也不可用）时直接 `storage_failed`，这时图片字节丢失，只能到主站核对补偿。日志关键字：`image held`、`storage attempt`、`delivered on storage attempt`、`for manual recovery`、`could not be held`。
+用户看到的是“保存中”：不能取消，不占生图并发名额；Agent 会告诉用户图片正在保存、保存好后自动出现在画布上，不要重新生成。补传成功后 Worker 把图放到当时的画布上（见“画布图片存储”），开着的页面轮询到任务成功后合并进来。12 次都失败后任务转为 `dead_letter` / `storage_failed`，暂存行保留，等人工恢复；运维监控（`operations.mjs monitor`）在还有这种行时报 `images_held_for_recovery`。暂存失败（例如数据库也不可用）时直接 `storage_failed`，这时图片字节丢失，只能到主站核对补偿。日志关键字：`image held`、`storage attempt`、`delivered on storage attempt`、`for manual recovery`、`could not be held`。
 
 查看暂存中的图片：
 
@@ -157,7 +157,7 @@ where billing_status = 'unknown' and xy2api_request_id is not null
 order by created_at desc;
 ```
 
-人工在主站核对后可以直接改结论（只改仍是 `unknown` 的任务）：`update public.background_jobs set billing_status = 'charged' where id = '<job_id>' and billing_status = 'unknown';`，没扣费就改成 `'not_charged'`。
+超过 30 小时（`billingUnknownHours`）仍是“待核对”的任务，运维监控报 `billing_unknown_stale`，直到人工处理完。人工在主站核对后可以直接改结论（只改仍是 `unknown` 的任务）：`update public.background_jobs set billing_status = 'charged' where id = '<job_id>' and billing_status = 'unknown';`，没扣费就改成 `'not_charged'`。
 
 ### 工作区成员与数据隔离
 

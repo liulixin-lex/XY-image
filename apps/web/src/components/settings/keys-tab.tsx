@@ -289,8 +289,9 @@ function KeyRow({
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-fg-muted sm:justify-end sm:text-right">
-        {/* TODO(xy2api): quota/quotaUsed are assumed to be USD like the balance;
-            confirm the unit with the main site before showing other currencies. */}
+        {/* quota/quotaUsed are USD like the balance and quota <= 0 means no
+            limit (xy2api source 9717116f1); the deployed main site's version
+            is still to be checked when it is connected. */}
         <span className="tabular">
           {item.quota > 0
             ? `额度 ${formatUsd(item.quotaUsed)} / ${formatUsd(item.quota)}`

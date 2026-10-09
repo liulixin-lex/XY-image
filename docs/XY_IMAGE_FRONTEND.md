@@ -39,9 +39,9 @@
 5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）。10-09 起不再写工作区设置（运行时已改读账户偏好，`model-resolver.ts`）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
 6. **自己的服务商不走主站计费。** 用自定义服务商对话时费用由服务商收取，不从主站余额扣，界面要写明；`provider_*` 错误码一律 `maybeCharged: false`，文案不对服务商那边的扣费下任何结论。生图（生图页、画布生图、助手的生图工具）仍然只走主站。
 
-## 自定义对话模型服务商（前端已完成，等后端）
+## 自定义对话模型服务商
 
-用户 10-08 的需求：「对话模型可以用户自定义配置模型提供商」。按方案文档（`/workspace/XY-IMAGE-AGENT03-PLAN.md` 第 6 节）的默认决定 D1–D5：每个用户配自己的；只用于设计助手对话；第一版只支持 OpenAI 兼容接口；费用由服务商收；只允许 https 公网地址。接口细节以方案文档 6.4 与 6.4.1 为准。
+用户 10-08 的需求：「对话模型可以用户自定义配置模型提供商」。前后端都已完成：后端由 agent03 实现（`apps/server/src/http/chat-providers.ts`、`features/chat-providers/`：Key 加密存储、只允许 https 公网地址的 SSRF 防护、运行时按偏好选服务商），`provider_*` 错误码在 `@loomic/shared` 的 `errorCodeValues` 里。按方案文档（`/workspace/XY-IMAGE-AGENT03-PLAN.md` 第 6 节）的默认决定 D1–D5：每个用户配自己的；只用于设计助手对话；第一版只支持 OpenAI 兼容接口；费用由服务商收；只允许 https 公网地址。接口细节以方案文档 6.4 与 6.4.1 为准。
 
 | 部分 | 文件 | 说明 |
 | --- | --- | --- |
@@ -71,7 +71,7 @@
 - **画布主题**：画布用 Excalidraw 深色主题，主题统一从 `hooks/use-canvas-theme.ts` 取。注意 next-themes 的 `resolvedTheme` 不理会 `forcedTheme`（会一直返回 `light`），所以要读 `forcedTheme ?? resolvedTheme`。深色主题靠 CSS 滤镜 `invert(93%) hue-rotate(180deg)` 反相画布，位图会再反相回来，颜色正确；默认白底显示为中性黑 #121212。缩略图和给设计助手的画布截图走 `exportToBlob`，没有设 `exportWithDarkMode`，导出仍是浅色。背景色选择器的色块套用同一个滤镜（`CANVAS_DARK_FILTER`），看到的就是画布上的颜色，存的 hex 不变。
 - **画布图片**（`lib/canvas-files.ts`）：服务端把画布图片存在 `project-assets/<工作区>/canvas-files/<画布>/<文件 ID>.<扩展名>`，读取时只给 `storageUrl`，前端下载后转成 Excalidraw 需要的 data URL。保存时只有服务端还没有的文件带 `dataURL`，其余只带 ID 和类型，服务端沿用已存的那份；所以自动保存和关页时的 keepalive（上限 64 KiB）不再带整张图。保存响应里的 `missingFileIds` 是画面上用到、但服务端没有数据的文件（比如另一个标签页的保存把它丢了，或者撤销删除时服务端已经删掉了那张图的对象），编辑器会带数据重发，每个文件最多 2 次。服务端只留画面上图片用到的文件，删掉的图片的对象会被删除（保存后画布为空时不删）。Agent 插入的图是指向生成结果的标记，`canvas.sync` 时只下载编辑器还没有的文件。2026-10-09 之前的画布图片是 base64 存在 `canvases.content` 里的，下次保存时自动转存。保存请求还带 `deletedElementIds`（`lib/canvas-save.ts`）：只列用户删掉的、服务端放上来的图（`customData.jobId`），服务端据此保留页面还没加载的新图。`canvas.sync` 和任务轮询拉到服务端画布后用 Excalidraw 的 `reconcileElements` 合并（本地版本更新的、本地删掉的、只在本地的都保留），不再整份替换。Agent 工具结果带 `pending: "storage"`（图片在补传）时，`use-job-fallback-polling` 每 15 秒查一次任务，最长 90 分钟；超时的任务仍是 5 秒一次、最长 10 分钟。对话里这两种情况不显示“图片生成失败”，而是“图片已生成，正在保存”或“图片还在生成”，说明好了会自动放到画布上（`tool-block-view.tsx`）。画布生图面板和前端放置的助手出图经 `/api/proxy-image` 读取生成结果（`fetchAsDataURL`）：这个接口只读本站 Storage（`SUPABASE_URL` 下 `/storage/v1/object/public|sign/` 的 png/jpeg/webp/gif，25 MB 以内），别的地址一律 403。
 - **设计助手对话**（`components/chat-sidebar.tsx`）：WebSocket 没连上时不能发送（按钮不可用，文字留在输入框里；首次连接超过 1.5 秒才显示“正在连接…”，断线后显示“连接已断开，正在重连”）。`startRun` 返回命令有没有发出去；发出的那一刻正好断线时，消息从对话里撤回、文字放回输入框，并提示没有发出。用户消息和自动标题在运行请求发出后才保存。2026-10-09 之前页面刚打开就发送的消息会被悄悄丢掉：命令没发出去，重连后重新读消息又把“没有收到回复”的提示也冲掉了。运行中发送按钮变成“停止”（`chat-input.tsx`），点了发 `agent.cancel`；还没拿到运行 ID 时先记下，拿到就发。服务端以 `run.canceled` 结束，`use-chat-stream` 把还在跑的工具标成已停止（`output.stopped`，和服务端保存的消息一致，刷新后也一样）；什么都还没回来时显示“已停止。”（服务端保存同一行，`RUN_STOPPED_TEXT`，刷新后还在）。停在生图途中：Worker 还没取走的任务直接取消，不扣费；已经发出的照常生成，Worker 放到画布上，卡片写“已经开始生成的图片仍会放到画布上”。运行失败时：主站拒绝的（`run.failed` 的 `details.gatewayCode`，比如内容审核、余额不足、Key 不可用）交给问题中心，对话里写“没能完成：<原因>”；其他失败写“抱歉，处理过程中遇到问题，请重试。”。这一行由 `@loomic/shared` 的 `runFailureText` 生成，服务端保存消息时用同一行，刷新后还在。断线期间服务端结束了运行时，重连后服务端补发缓存的事件，页面照常结束这次运行；服务端已经没有这次运行（进程被强杀，或缓存过期）时，等 3 秒补发后仍没结束就在本地结束：已保存的回复照常显示，没保存的写“连接断开期间这条回复没有完成，不会自动重发。需要的话可以再发一次。”（只在页面上，不保存），并按失败的运行去查画布上还在生成的图（`RunLostError`）。画布页在打开时和对话停止或失败 3 秒后，会查这块画布还在生成的图（`watchCanvasJobs`），轮询到完成就同步画布，停止后还有图在路上时提示“还有 N 张图在生成，好了会自动放到画布上”。
-- **画布手机端**：<640px 时品牌套件选择器和设计助手按钮都只显示图标（选择器用 Base UI 菜单，自动避开屏幕边缘），；缩放条移到工具栏上方；画布内生图面板贴底全宽停靠（桌面端放不下时会翻到占位框上方）。
+- **画布手机端**：<640px 时品牌套件选择器和设计助手按钮都只显示图标（选择器用 Base UI 菜单，自动避开屏幕边缘）；缩放条移到工具栏上方；画布内生图面板贴底全宽停靠（桌面端放不下时会翻到占位框上方）。空白画布的提示在手机和平板上（窄于 `md` 或没有鼠标，`md:pointer-fine:`）指向右上角的对话按钮，桌面才提示按 C（`canvas-empty-hint.tsx`）。手机上的关键路径有实验环境端到端（`08-mobile.mjs`，390×844 触屏）。
 
 ## 测试与构建
 
@@ -79,7 +79,7 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 25 个文件，152 个用例
+npx vitest run                     # 25 个文件，154 个用例
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 
@@ -96,10 +96,10 @@ cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 | 事项 | 现状 | 建议 |
 | --- | --- | --- |
 | 默认对话模型 | **已解决**：运行时读账户偏好（`model-resolver.ts`） | 10-09 agent01 删掉了前端双写和 `workspaceModel`，模型 id 解析改用 shared 的 `parseChatModelRef` |
-| 自定义对话模型服务商 | 前端已按方案 6.4 / 6.4.1 完成；后端接口、表、加密、SSRF 防护、运行时都还没做 | agent03 实现方案第 6 节；`provider_*` 错误码要加进 `@loomic/shared` 的 `errorCodeValues`，`run.failed` 才能带出来；`parseChatModelRef` 进 shared 后前端改为复用（`lib/chat-models.ts` 有 TODO） |
-| Key 额度单位 | `quota` 和 `quotaUsed` 按美元显示，`quota <= 0` 显示为「额度不限」 | 和主站确认单位（`keys-tab.tsx` 里有 TODO） |
+| 自定义对话模型服务商 | **已解决**：后端接口、表、加密、SSRF 防护、运行时已实现（agent03）；`provider_*` 错误码进了 shared，`run.failed` 能带出来；`lib/chat-models.ts` 复用 shared 的 `parseChatModelRef` | — |
+| Key 额度单位 | **已核实**：主站源码（`9717116f1`）里 `quota` 和 `quotaUsed` 是美元，`quota <= 0` 表示不限，界面一致 | 主站实际部署的版本还没核对，正式联调时看一眼 |
 | 示例图版权 | `public/images/showcase/` 中 3/8/9/12 已换成 Unsplash License 图片（出处见 `components/landing/showcase.ts`）；其余 8 张继承自上游，来源未核实 | 上线前把其余 8 张换成本站生成或有授权的图 |
-| Google Fonts | 前端已改为先走后端代理 `GET {API}/api/fonts/css2?family=&text=`（`lib/font-api.ts` 的 `loadFontStylesheet`），代理样式表加载失败时回退直连 `fonts.googleapis.com`；代理在本页成功过一次之后，单个字体失败只回退这一个。字体库预览只取字体名用到的字形（`text=`），品牌字体卡片加载完整字体；同一字体加载过完整版后不再追加子集（子集的 @font-face 没有 unicode-range，会盖住完整版）。**后端代理还没做**（agent03，方案文档第 5 节），上线前国内网络仍会走回退 | 后端实现 `/api/fonts/css2` 与 `/api/fonts/files/*`；字体文件跨域加载需要 CORS 头 |
+| Google Fonts | 前端已改为先走后端代理 `GET {API}/api/fonts/css2?family=&text=`（`lib/font-api.ts` 的 `loadFontStylesheet`），代理样式表加载失败时回退直连 `fonts.googleapis.com`；代理在本页成功过一次之后，单个字体失败只回退这一个。字体库预览只取字体名用到的字形（`text=`），品牌字体卡片加载完整字体；同一字体加载过完整版后不再追加子集（子集的 @font-face 没有 unicode-range，会盖住完整版）。后端代理已实现（`apps/server/src/http/fonts.ts`、`features/fonts/font-proxy.ts`，带 CORS 头，和其他接口一样受来源白名单约束） | **已解决**；直连回退保留，代理不可用时仍能显示 |
 | P1 功能 | 单张价格预估、一键创建 Key、主站嵌入登录都还没做 | 后端接口就绪前，界面上不出现这些入口 |
 | 起手式 | `lib/starter-prompts.ts` 里是写死的六个中文起手式 | 以后改成运营可配置 |
 

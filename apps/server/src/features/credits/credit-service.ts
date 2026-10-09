@@ -291,8 +291,7 @@ export function createCreditService(options: {
 
       // Atomic plan update + credit grant via RPC to avoid read-then-write race condition.
       // The RPC uses FOR UPDATE row locking so concurrent deductions cannot be overwritten.
-      // TODO: Remove `as any` after running `supabase gen types` to regenerate database.ts
-      const { error } = await (admin.rpc as any)("grant_plan_credits", {
+      const { error } = await admin.rpc("grant_plan_credits", {
         p_workspace_id: workspaceId,
         p_plan: plan,
         p_credits: config.monthlyCredits,
