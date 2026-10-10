@@ -2,7 +2,7 @@
 
 更新于 2026-10-10（第三版界面 F2、节点画布）。本文写给接手 `apps/web` 的开发者。它和 [`XY2API_FRONTEND_HANDOFF.md`](./XY2API_FRONTEND_HANDOFF.md)（后端接口规范）是一对：那份规定接口，这份讲前端怎么用这些接口、为什么这样做，以及还剩哪些坑。
 
-产品背景和用户画像见 `apps/web/PRODUCT.md`，视觉方向见 `apps/web/.impeccable/surfaces/src-app-page-tsx.md`，从代码反推的设计系统（token、组件、规则）见 `apps/web/DESIGN.md`（机器可读的补充在 `apps/web/.impeccable/design.json`）。**注意**：DESIGN.md 和 design.json 还是第二版「夜色光场」，F2 做完后重写；在那之前以 `app/globals.css` 顶部注释和方向合同为准。
+产品背景和用户画像见 `apps/web/PRODUCT.md`，视觉方向见 `apps/web/.impeccable/surfaces/src-app-page-tsx.md`，从代码反推的设计系统（token、组件、规则）见 `apps/web/DESIGN.md`（机器可读的补充在 `apps/web/.impeccable/design.json`，由 DESIGN.md 生成；2026-10-10 按 F2 重写）。改 token 或签名组件时三处一起改：`app/globals.css`、DESIGN.md、design.json。
 
 ## 一句话
 
@@ -66,7 +66,7 @@
 - **形状与材质**：`sk` / `sk-in` / `sk-frame` 是斜切形（按钮、页签、贴纸、斜切大图）；卡片和面板 16px 圆角。`glass`（漂浮在画面上的控件和面板）和 `glass-strong`（菜单、弹窗），`prefers-reduced-transparency` 时退回实色。阴影带偏移和模糊，颜色压向房间的石墨色，不用纯黑。
 - **字体**（`app/layout.tsx`、`app/display-font.css`）：标题和主按钮用 GGUU Display（优设标题黑的子集，`font-display`），张数、计时、余额这类大数字用 Big Shoulders Display（`numeral`），正文 Geist + Noto Sans SC，数据用 Geist Mono（`data-label`）。
 - **布局**：已登录页面共用 `app/(workspace)/layout.tsx`：顶部导航（`components/app-sidebar.tsx`，名字沿用上游；手机端是底部浮动栏），内容容器 `max-w-[1600px]`。
-- 品牌名集中在 `lib/brand.ts`；图标在 `components/brand/brand-mark.tsx`。`public/` 下的 favicon、logo、apple-touch-icon、og-image 由 `scripts/generate-brand-assets.mjs` 生成，用法（字体目录、sharp 路径）写在脚本头部。改了图标要同步脚本里的几何。
+- 品牌名集中在 `lib/brand.ts`；图标在 `components/brand/brand-mark.tsx`。`public/` 下的 favicon、logo、apple-touch-icon、og-image 由 `scripts/generate-brand-assets.mjs` 生成（F2：珊瑚斜块；分享图是亮色房间里的落地页海报，配图用 Unsplash 授权的 showcase-8），用法（字体目录、sharp 路径）写在脚本头部。改了图标、房间颜色或首屏文案要同步脚本。
 - 在 `<a>` 上用按钮样式时，直接用 `buttonVariants()`（已经过 tailwind-merge）。不要给 Base UI 的 `Button` 传 `render={<a/>}`。
 - **动效**：每个动效在 `prefers-reduced-motion` 下都直接显示最终状态（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 统一关闭）。
 - **账户页面**（M-F，2026-10-10）：设置、品牌套件、技能三页的分类都用 `components/ui/poster-tabs.tsx`（`PosterTabs` + `posterPanelProps`）：斜切页签，当前页签是墨色，和顶部导航一致；有完整的 tab 语义，←/→ 切换，Home/End 跳到两头。分组标题用 `poster-label`（设置的 `SettingsSection`、品牌套件的 `SectionHeader`）。品牌套件有了页头，加载和出错时也保留页头（`BrandKitFrame`），套件列表、色块、字体和图片格子都是 14px 圆角的面板，添加格子悬停时变珊瑚色；空状态和「添加自定义技能」用落地页同款的珊瑚贴纸图标和珊瑚斜切按钮。技能卡片用「名字按钮 + `::after` 盖住整张卡」的写法，整张卡可点、开关和菜单仍是独立控件，键盘也能用；市场卡片本身就是按钮。输入框统一是 `bg-tint/[0.06]`，聚焦时珊瑚内描边。

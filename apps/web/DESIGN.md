@@ -1,35 +1,74 @@
 ---
 name: GGUU AI IMAGE
-description: 用主站账号与余额生成图片的夜色光场工作台
+description: 用主站账号与余额生成图片的柔和海报工作台
 colors:
-  ground-deep: "#060912"
-  ground: "#0a0f1e"
-  panel: "#131b31"
-  well: "#0e1528"
-  fg: "#eef2fa"
-  fg-soft: "#b0b9ce"
-  fg-muted: "#8590a8"
-  line: "rgb(255 255 255 / 0.1)"
-  line-strong: "rgb(255 255 255 / 0.18)"
-  amb-default: "rgb(72 214 204)"
-  amb-2-default: "rgb(70 120 255)"
-  alert: "#ff8a80"
-  alert-wash: "rgb(255 138 128 / 0.12)"
-  ok: "#5ee0b4"
-  glass: "rgb(18 25 44 / 0.55)"
-  glass-strong: "rgb(15 21 38 / 0.86)"
+  wall: "#f5f2f3"
+  wall-2: "#ede9eb"
+  floor: "#e6e1e4"
+  floor-2: "#dbd5d9"
+  panel: "#fbfafb"
+  well: "#f0ecee"
+  fg: "#24212b"
+  fg-soft: "#5c5766"
+  fg-muted: "#6f6a78"
+  line: "rgb(36 33 43 / 0.1)"
+  line-strong: "rgb(36 33 43 / 0.18)"
+  tint-wash: "rgb(36 33 43 / 0.06)"
+  coral: "#e5533d"
+  coral-hover: "#d6452f"
+  coral-ink: "#ffffff"
+  coral-text: "#bf3b2a"
+  coral-soft: "rgb(229 83 61 / 0.11)"
+  coral-on-ink: "#ff8068"
+  alert: "#b4233f"
+  alert-wash: "rgb(180 35 63 / 0.09)"
+  warn: "#b9560f"
+  warn-wash: "rgb(185 86 15 / 0.1)"
+  ok: "#1f8a5b"
+  amb-default: "rgb(224 122 102)"
+  amb-2-default: "rgb(196 70 128)"
+  glass: "rgb(255 255 255 / 0.62)"
+  glass-strong: "rgb(255 255 255 / 0.86)"
+  scrim: "rgb(28 25 34 / 0.72)"
+  wall-dark: "#1c1a22"
+  wall-2-dark: "#17151c"
+  floor-dark: "#131118"
+  panel-dark: "#25222c"
+  fg-dark: "#f2eff4"
+  fg-soft-dark: "#beb8c6"
+  fg-muted-dark: "#a39dad"
+  coral-dark: "#ff8068"
+  coral-ink-dark: "#24141a"
+  coral-text-dark: "#ff977f"
+  alert-dark: "#ff7b93"
+  warn-dark: "#ffa066"
+  ok-dark: "#5fd3a1"
+  glass-strong-dark: "rgb(37 34 44 / 0.9)"
 typography:
   display:
     fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
-    fontSize: "clamp(52px, 7.8vw, 128px)"
+    fontSize: "clamp(88px, min(14vw, 19.5dvh), 212px)"
     fontWeight: 400
-    lineHeight: 0.98
+    lineHeight: 1
     letterSpacing: "-0.01em"
   headline:
     fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
     fontSize: "clamp(36px, 4.2vw, 56px)"
     fontWeight: 400
     lineHeight: 1.02
+  section-label:
+    fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
+    fontSize: "17px"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0.02em"
+  numeral:
+    fontFamily: "Big Shoulders Display, Geist, system-ui, sans-serif"
+    fontSize: "26px"
+    fontWeight: 800
+    lineHeight: 0.9
+    letterSpacing: "0.005em"
+    fontFeature: "tnum, lnum"
   title:
     fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "17px"
@@ -39,7 +78,7 @@ typography:
     fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 400
-    lineHeight: 1.75
+    lineHeight: 1.8
   body-sm:
     fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "14px"
@@ -48,13 +87,8 @@ typography:
   label:
     fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "13px"
-    fontWeight: 500
+    fontWeight: 600
     lineHeight: 1.4
-  caption:
-    fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
-    fontSize: "12px"
-    fontWeight: 400
-    lineHeight: 1.5
   data:
     fontFamily: "Geist Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "11px"
@@ -64,223 +98,262 @@ typography:
     fontFeature: "tnum"
 rounded:
   sm: "6px"
-  md: "10px"
-  lg: "14px"
+  control: "10px"
+  lg: "12px"
   frame: "14px"
-  xl: "18px"
-  2xl: "22px"
+  card: "16px"
+  float: "20px"
   pill: "999px"
 spacing:
   gutter-mobile: "16px"
   gutter-tablet: "32px"
-  gutter-desktop: "48px"
+  gutter-desktop: "clamp(20px, 2.4vw, 40px)"
   container: "1600px"
+  studio-settings: "368px"
 components:
-  button-primary:
-    backgroundColor: "{colors.fg}"
-    textColor: "{colors.ground}"
-    rounded: "{rounded.md}"
-    padding: "0 20px"
-    height: "44px"
-  button-primary-hover:
-    backgroundColor: "#ffffff"
-  button-outline:
-    backgroundColor: "rgb(255 255 255 / 0.04)"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.md}"
+  button-accent:
+    backgroundColor: "{colors.coral}"
+    textColor: "{colors.coral-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.control}"
     height: "36px"
+    padding: "0 14px"
+  button-accent-hover:
+    backgroundColor: "{colors.coral-hover}"
+  button-poster:
+    backgroundColor: "{colors.coral}"
+    textColor: "{colors.coral-ink}"
+    typography: "{typography.section-label}"
+    rounded: "{rounded.frame}"
+    height: "48px"
+    padding: "0 24px"
+  button-ink:
+    backgroundColor: "{colors.fg}"
+    textColor: "{colors.wall}"
+    rounded: "{rounded.control}"
+    height: "36px"
+    padding: "0 14px"
+  button-outline:
+    textColor: "{colors.fg}"
+    rounded: "{rounded.control}"
+    height: "36px"
+    padding: "0 14px"
   button-ghost:
     textColor: "{colors.fg-soft}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.control}"
     height: "36px"
-  chip:
-    backgroundColor: "{colors.glass}"
+  nav-tab:
+    textColor: "{colors.fg-soft}"
+    typography: "{typography.label}"
+    rounded: "{rounded.control}"
+    height: "34px"
+    padding: "0 12px"
+  nav-tab-active:
+    backgroundColor: "{colors.fg}"
+    textColor: "{colors.wall}"
+  segmented-option:
+    backgroundColor: "{colors.tint-wash}"
+    textColor: "{colors.fg-soft}"
+    typography: "{typography.label}"
+    rounded: "{rounded.control}"
+    height: "36px"
+  segmented-option-active:
+    backgroundColor: "{colors.fg}"
+    textColor: "{colors.wall}"
+  input-field:
+    backgroundColor: "{colors.tint-wash}"
     textColor: "{colors.fg}"
-    rounded: "{rounded.pill}"
-    padding: "6px 14px"
-  nav-pill:
-    backgroundColor: "{colors.glass}"
-    rounded: "{rounded.lg}"
-    padding: "5px"
-  nav-item-active:
-    backgroundColor: "rgb(255 255 255 / 0.1)"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.control}"
+    height: "44px"
+    padding: "0 14px"
+  card:
+    backgroundColor: "{colors.panel}"
     textColor: "{colors.fg}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.card}"
+    padding: "20px"
+  sticker:
+    backgroundColor: "{colors.coral}"
+    textColor: "{colors.coral-ink}"
+    typography: "{typography.section-label}"
+    rounded: "{rounded.control}"
     padding: "8px 14px"
-  composer:
-    backgroundColor: "{colors.glass}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.2xl}"
-    padding: "16px"
-  info-card:
+  dialog:
     backgroundColor: "{colors.glass-strong}"
     textColor: "{colors.fg}"
-    rounded: "{rounded.xl}"
-    padding: "16px"
+    rounded: "{rounded.float}"
+    padding: "24px"
 ---
 
 # Design System: GGUU AI IMAGE
 
-<!-- 2026-10-08 由 agent02 按 impeccable documenter 流程，从已上线代码（apps/web/src/app/globals.css、components/ambient、components/landing、components/studio、components/ui/button.tsx）反推写成。改 token 时同步本文件和 .impeccable/design.json。 -->
+<!-- 2026-10-10 agent01 按 impeccable document 流程，从 F2（海报 · 柔和版）已上线的代码重写：apps/web/src/app/globals.css、components/ui/{button-variants,select,poster-tabs,dialog}.tsx、components/app-sidebar.tsx、components/landing/*、components/studio/*、components/brand/brand-mark.tsx。替换 10-08 的「夜色光场」版本。改 token 时同步本文件，再跑 `node scripts/build-design-sidecar.mjs` 重新生成 .impeccable/design.json；方向合同在 .impeccable/surfaces/src-app-page-tsx.md。 -->
 
 ## Overview
 
-**Creative North Star: "夜色光场：页面的光来自正在看的那张图"**
+**Creative North Star: "一张会换颜色的海报"**
 
-GGUU AI IMAGE 是一间深墨蓝的夜色房间，房间里唯一的光源是正在看的那张图。图本身被放大、高斯模糊后铺成整页环境光；从图里取出的两种主色写进 `--amb` / `--amb-2`，主按钮的光晕、焦点环、品牌图标、状态点都跟着它变色。换一张图，房间的颜色就跟着换。生成的结果也挂到同一块倾斜的「氛围屏」上，地面有一条淡光带和屏幕倒影，空间感来自光和倒影，不靠装饰。
+GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅灰的墙往下过渡成稍深的地面，中间有一条地平线；正在看的那张图把整个房间淡淡地染成它的颜色（墙、地面、光晕、背后的色块），换一张图，房间跟着换色。海报的语法负责说话：超大的优设标题黑写主张，斜切的按钮和页签做选择，微微歪着的珊瑚贴纸做标记，Big Shoulders 大号数字报张数、余额和计时。
 
-密度上，落地页（Persuade）让作品占满首屏；工作台（Operate：生图、画布、设置）把同一种光收敛成安静的底色，控件只在图片上方漂浮时才用磨砂玻璃。文案直白亲切：说「生成」「图片」「余额」，不用暗房、冲印、显影一类行话。
+亮暗两套主题是同一张海报在不同光线下：亮色是午后的粉灰房间，石墨紫墨字；暗色是低光下的深紫黑房间，近白的字，珊瑚提亮一档。落地页（Persuade）让作品和标题占满首屏；工作台（Operate：生图、画布、设置、品牌套件、技能）把同一套语法收紧：斜切只给选项和主动作，面板是安静的 16px 圆角卡片，磨砂玻璃只给漂浮在房间或图片上的控件和弹窗。
 
-用户明确否决过的方向：Loomic 品牌、琥珀 / 黄色铺色、纯黑白的「暗房接触印样」（太素、太黑话）。
+用户明确否决过的方向：Loomic 品牌；琥珀 / 黄色铺色；纯黑白、硬黑边、零模糊投影的刺眼海报；暗房、冲印、显影一类行话。
 
 **Key Characteristics:**
-- 光来自图片：环境色在运行时从当前图片取样，GSAP 0.9s 补间到 `<html>` 上。
-- 深墨蓝底（色相约 225–230），不用中性黑。
-- 磨砂玻璃只给漂浮在图片上的控件：导航、输入框、信息卡、浮层。
-- 近白主按钮带环境色光晕；危险和异常用珊瑚红，从不只靠颜色表达。
-- 标题用得意黑（GGUU Display）的斜体气质，正文 Geist + 思源黑体，数据 Geist Mono。
+- 房间而不是平面：墙到地面的过渡、地平线、接触阴影和倒影给出空间感。
+- 环境色来自图片：`--amb` / `--amb-2` 在运行时从当前图片取样，GSAP 补间写到 `<html>`。
+- 一种强调色：珊瑚，只给每屏最要紧的那个动作和被选中的那张图。
+- 斜切加小圆角（-10°）是选择和行动的形状；卡片和面板保持正放。
+- 状态永远配文字，颜色只是辅助。
 
 ## Colors
 
-一间被图片照亮的墨蓝房间：底色冷而深，唯一的彩色来自当前图片。
+一种石墨紫的中性色系，加一个珊瑚强调色和一组来自图片的环境色；暗色主题用同一套名字（frontmatter 里带 `-dark` 的值）。
 
 ### Primary
-- **环境光 Ambient**（默认 rgb(72 214 204)，运行时取自图片）：主按钮光晕、焦点环、文本选区、输入框光标、运行中状态点、品牌图标里的光球。它不是固定的品牌色，是「当前这张图的颜色」。
-- **环境光副色 Ambient 2**（默认 rgb(70 120 255)）：和主环境光一起构成渐变光球、头像底色和图表第二色。
+- **珊瑚 Coral**（亮 #e5533d / 暗 #ff8068）：每屏最要紧的那个动作（「生成 N 张」「开始生成」「登录」「重绘 N 张」）、选中图片的外圈（`ring-picked`：一圈墙色缝再一圈珊瑚）、分区名前的斜杠、生成中的状态点、品牌标。亮色上配白字，暗色上配深色字（#24141a）。写成文字时用 `coral-text`（亮 #bf3b2a / 暗 #ff977f）保证对比度；压在墨色底上的珊瑚字用 `coral-on-ink`。浅底 `coral-soft` 用在选中项的背景和扩图预览的条纹。
+
+### Secondary
+- **环境色 Ambient**（默认 rgb(224 122 102) 珊瑚肉色 / rgb(196 70 128) 莓果）：从当前图片取样，染房间的墙、地面光晕和大图背后的色块；暗色下也给大图投出同色的光（`shadow-lit`）。它是氛围，不是控件颜色：按钮、文字、边框都不用它。
 
 ### Neutral
-- **夜底 Ground**（#0a0f1e）：页面底色，`<html>` 背景。
-- **深夜 Ground Deep**（#060912）：最深一层：首屏暗角、头像上的文字色。
-- **面板 Panel**（#131b31）：实色面板、浮层、侧栏；减少透明度偏好下玻璃退回这个颜色。
-- **井 Well**（#0e1528）：凹陷区域和次级填充（shadcn `muted` / `secondary`）。
-- **月光白 Fg**（#eef2fa）：正文主色，也是主按钮的底色。
-- **雾 Fg Soft**（#b0b9ce）：副文、次级按钮文字。
-- **远雾 Fg Muted**（#8590a8）：占位符、说明、时间戳；在 Ground 上对比度约 5.9:1。
-- **细线 Line / Line Strong**（白 10% / 18%）：分隔线、玻璃描边、输入框边框。
+- **墙 Wall**（#f5f2f3 → #ede9eb；暗 #1c1a22 → #17151c）：页面底色，从上往下过渡。
+- **地面 Floor**（#e6e1e4 / #dbd5d9；暗 #131118 / #0f0e13）：地平线以下，以及弹窗和大图里放图的舞台。
+- **面板 Panel**（#fbfafb；暗 #25222c）：卡片、设置分组、编辑器侧栏。
+- **凹槽 Well**（#f0ecee；暗 #17151c）：提示词框这类往下凹的输入区。
+- **墨 Ink**（#24212b；暗 #f2eff4）：正文和标题；也是「墨色」选中态（导航页签、分段选项、用户消息气泡）的底色。
+- **次级字 / 弱字**（#5c5766 / #6f6a78；暗 #beb8c6 / #a39dad）：说明和辅助信息。
+- **线 Line**（墨色 10% / 18%）：分隔和描边，只在需要分组时用。
+- **叠加 Tint**：亮色是墨，暗色是近白，写成 `bg-tint/[0.06]` 这类，用于输入框底、未选中的分段选项、悬停。
 
-### Status
-- **珊瑚 Alert**（#ff8a80，底色 12% 的 Alert Wash）：失败、待核对、余额不足、断线重连。一定配文字说明，不单靠颜色。
-- **青绿 Ok**（#5ee0b4）：就绪、已连接。
+### 状态色
+- **待核对 Warn**（#b9560f；暗 #ffa066）配浅底：结果未知、图片可能已经生成。
+- **失败 Alert**（#b4233f；暗 #ff7b93）配浅底：和珊瑚明显分开的深红。
+- **成功 Ok**（#1f8a5b；暗 #5fd3a1）：只在设置里的 Key 状态这类地方用；生成成功的图不标状态。
 
 ### Named Rules
-**The Picture Is The Light Rule.** 页面上任何「发光」的东西都读 `--amb` / `--amb-2`，不写死颜色；没有图片时用默认青蓝光。
+**The One Coral Rule.** 每屏只有一个珊瑚动作。第二个按钮用墨色、描边或幽灵样式；珊瑚铺成大面积底色就错了。
 
-**The No Amber Rule.** 不用琥珀、黄色或米黄铺底（用户明确否决）；警示用珊瑚红。
+**The Words First Rule.** 状态颜色永远和文字一起出现（「待核对」「未发出」「没生成出来」）。去掉颜色后意思不变，才算合格。
 
-**The Night Is Blue Rule.** 页面底色永远是墨蓝，不是中性黑。（第三版起画布跟随亮暗主题，这条例外已取消；本文件整体待按 F2 重写。）
+**The No Amber Rule.** 不用琥珀或黄色铺色。橙色只出现在「待核对」的文字和浅底上。
 
 ## Typography
 
-**Display Font:** GGUU Display（得意黑 Smiley Sans 的子集，按 unicode-range 分成 100 片，按需加载；OFL 1.1）
-**Body Font:** Geist + Noto Sans SC（回退 PingFang SC / Microsoft YaHei）
-**Label/Mono Font:** Geist Mono（只用于数据：模型、尺寸、请求 ID、计时）
+**Display Font:** GGUU Display（优设标题黑的子集，按 unicode-range 分片自托管；回退 Noto Sans SC、苹方）
+**Numeral Font:** Big Shoulders Display（只用拉丁数字）
+**Body Font:** Geist + Noto Sans SC（回退苹方、微软雅黑）
+**Label/Mono Font:** Geist Mono
 
-**Character:** 得意黑的斜切笔画给标题一点向前的动势，和倾斜的氛围屏呼应；正文的 Geist + 思源黑体保持冷静清楚。
+**Character:** 优设标题黑是海报上的大字，粗、略带倾斜感，说主张和名字；Big Shoulders 是海报上的大号数字，窄而高；Geist 和思源黑体负责安静、好读的正文。
 
 ### Hierarchy
-- **Display**（400，clamp(52px, 7.8vw, 128px)，行高 0.98，字距 -0.01em）：落地页首屏「想到什么，/就生成什么」；强调词用 `color-mix(in oklab, 环境光 42%, white)`，不用渐变文字。
-- **Headline**（400，clamp(36px, 4.2vw, 56px)，行高 1.02）：工作台各页 H1（`components/page-header.tsx`）、生图页「今天想生成点什么？」、错误页标题。
-- **Title**（600，15–17px）：卡片和区块标题、对话侧栏标题。
-- **Body**（400，16px，行高 1.75；首屏副文 18px，宽度约 26em）：说明文字。
-- **Body small**（400，14–15px，行高 1.6）：工作台里的密集正文：队列行、信息卡里的描述、设置项说明、导航项。
-- **Label**（500，12.5–13px）：按钮、芯片、导航、表单标签。
-- **Caption**（400–500，12px）：元信息和提示：规格行、时间、表单下方提示、「示例」角标。
-- **Data**（Geist Mono 11px，等宽数字）：`data-label` 工具类，只放数据。
+- **Display**（400，clamp(88px, min(14vw, 19.5dvh), 212px)，行高 1）：只在落地页首屏，「一句话」；第二行「生成你想要的图」约 96px，「想要的图」用珊瑚。
+- **Headline**（400，clamp(36px, 4.2vw, 56px)，行高 1.02）：工作台各页的页头（`PageHeader`）和落地页分区标题。
+- **Section label**（400，17px，字距 0.02em）：分区名和字段名，前面带珊瑚斜杠「/ 提示词」（`poster-label`）；主按钮的标签也用这一档字体（`poster` 尺寸 19–21px）。
+- **Numeral**（800，26px 起，行高 0.9）：张数步进器、画质 1K/2K/4K、余额、序号「01」、计时。
+- **Title**（600，17px，行高 1.4）：卡片标题、弹窗标题。
+- **Body**（400，16px，行高 1.8；工作台 14–15px，行高 1.6–1.7）：说明文字，最长约 34em。
+- **Label**（600，13px）：分段选项、导航页签、按钮。
+- **Data**（Geist Mono 11px，等宽数字）：请求 ID、比例、模型名这类数据。
 
 ### Named Rules
-**The Display Is Rare Rule.** GGUU Display 只用于页面级标题（每屏最多一处），从不用于按钮、标签和正文。
+**The Display Is A Voice Rule.** 优设标题黑只用于标题、分区名、主按钮和贴纸，不用于段落、表单输入和长句。
 
-**The Mono Is Data Rule.** 等宽字只用于真实数据，不当成「科技感」装饰。
-
-**The 11px Floor Rule.** 任何文字不小于 11px（中文在 10px 下笔画糊成一团）。2026-10-08 已把残留的 10px 标签（工具卡片、提及标签、「默认」「重试」角标等）统一提到 11px。
+**The Latin Digits Rule.** Big Shoulders 只排数字和 K、× 这类符号；中文单位（张、倍）用正文字体跟在后面。
 
 ## Layout
 
-- 已登录页面共用 `app/(workspace)/layout.tsx`：文档整体滚动，顶部吸顶导航（滚动后加 `bg-ground/70` 模糊底和细线），内容容器 `max-w-[1600px]`，左右留白 16 / 32 / 48px（`px-4 sm:px-8 lg:px-12`）。
-- 落地页首屏 1440×900：左侧两行大标题、副文、760px 宽玻璃输入框压在大屏左缘；右侧从约 44% 处起一块 rotateY 约 -24° 的氛围屏，屏下是缩略图条。
-- 生图页 `/studio`：`lg` 起左右两栏（`minmax(0,5fr)` / `minmax(0,6fr)`，`xl` 起左栏固定 600px），左边写描述和处理队列，右边是氛围屏和信息卡；下方是按天分组的全部作品网格（2–6 列，4:5 卡片）。
-- 画布 `/canvas`：节点画布（React Flow）铺满，左上项目菜单、项目名、保存状态和品牌套件，右上余额和头像，左侧竖排工具栏，左下小地图和缩放条，右侧可拖宽的设计助手侧栏；手机端侧栏变成全屏覆盖层。
-- 断点沿用 Tailwind：sm 640、md 768、lg 1024、xl 1280。手机端导航是底部浮动玻璃条，`main` 底部留出 112px。
+房间模型：页面上半是墙，下半是地面，落地页首屏的地平线大约在 y≈742（1440×900）；斜切大图立在地平线上，带接触阴影和倒影。工作台不画地平线，只保留墙到地面的渐变和环境色光晕。
+
+- **容器**：内容最宽 1600px（生图页 1680px），左右边距手机 16px、平板 32px、桌面 clamp(20px, 2.4vw, 40px)。
+- **顶部导航**：吸顶，高 64px（桌面 72px），滚动后加半透明墙色底和一条细线。手机上换成底部浮动栏（磨砂玻璃，18px 圆角，避开安全区）。
+- **生图页**：桌面三栏，设置 368px、结果、记录栏 84px；平板两栏；手机单栏。结果按一次请求分组，每组一个标题行（提示词 + 说明行 + 时间贴纸）。
+- **编辑器 / 大图弹窗**：左边是放图的舞台（地面色），右边 360–368px 的侧栏；手机上上下排列，舞台约占 46% 高度。
+- **画布**：铺满视口，工具栏和设计助手侧栏漂浮在上面。
+- **节奏**：字段之间 20px，分组之间 24–32px；落地页分区之间用大段留白而不是分隔线。
 
 ## Elevation & Depth
 
-深度来自光，不来自堆叠卡片：环境色场在最远层，氛围屏在中层，玻璃控件在最近层。阴影都带偏移和柔和模糊，颜色压向夜底（rgb(2 4 10)），不用零偏移的彩色光圈当装饰。唯一的彩色光是主按钮和受光图片的环境色溢光。
+深度来自光：带偏移的柔和阴影，颜色压向房间的暖石墨色（亮色 rgb(84 52 60)，暗色用黑），从不用纯黑硬投影。面板静止时只有很轻的阴影，悬停时加深；漂浮的控件用磨砂玻璃，顶边一条高光代替描边。
 
 ### Shadow Vocabulary
-- **subtle**（`0 1px 2px rgb(2 4 10 / 0.35)`）：小按钮、标签。
-- **card**（`0 1px 2px rgb(2 4 10 / 0.3), 0 12px 28px -14px rgb(2 4 10 / 0.6)`）：静止的卡片。
-- **card-hover**（`0 2px 4px rgb(2 4 10 / 0.35), 0 24px 48px -18px rgb(2 4 10 / 0.75)`）：卡片悬停抬起。
-- **float**（`0 6px 14px rgb(2 4 10 / 0.35), 0 30px 64px -20px rgb(2 4 10 / 0.8)`）：浮层、工具栏。
-- **glow-amb**（`0 10px 30px -10px rgb(var(--amb) / 0.7), inset 0 -2px 0 rgb(10 15 30 / 0.12)`）：主按钮。
-- **lit**（`0 0 0 1px rgb(255 255 255 / 0.14), 0 60px 120px -40px rgb(2 4 10 / 0.9), 0 0 140px -30px rgb(var(--amb) / 0.55)`）：被照亮的图片（大图、看大图）。
+- **Subtle**（`0 1px 2px var(--shadow)`）：小控件。
+- **Card**（`0 1px 2px var(--shadow), 0 22px 40px -26px var(--shadow-2)`）：结果卡片和面板；悬停换成 **Card hover**（`0 2px 4px var(--shadow), 0 30px 50px -24px var(--shadow-2)`）。
+- **Float**（`0 6px 14px var(--shadow), 0 30px 64px -20px var(--shadow-2)`）：漂浮的工具条和菜单。
+- **Accent pool**（`0 14px 30px -12px var(--acc-glow)`）：珊瑚主按钮下面的一汪珊瑚光。
+- **Picked**（`0 0 0 3px var(--ground), 0 0 0 5px var(--acc), 0 26px 46px -22px var(--acc-glow)`）：被选中的那张图。
+- **Lit**（亮：接触阴影加长投影；暗：再加一圈环境色光晕 `0 0 140px -30px rgb(var(--amb) / 0.6)`）：立在房间里的大图和编辑中的原图。
+- **Glass / Glass strong**（`blur(20–24px) saturate(125–140%)`，顶边 1px 高光）：导航、浮动工具条、菜单、弹窗；系统要求减少透明时退回实色面板。
 
 ### Named Rules
-**The Glass Floats Rule.** `glass`（55% 不透明的墨蓝 rgb(18 25 44)，模糊 26px、饱和 170%）只给漂浮在图片或画布上的控件；压在复杂图片上的信息卡、输入框和浮层用 `glass-strong`（86% 不透明）。不支持 backdrop-filter 或用户偏好减少透明度时，两者都退回实色 Panel。
+**The Lit Not Lined Rule.** 用光和阴影分层，不用硬描边。描边只在输入框、分段选项这类需要「边界可点」的地方出现，并且是墨色 10–18% 的细线。
+
+**The Opaque Workbench Rule.** 要在上面精细操作的弹窗（局部重绘 / 扩图编辑器）用实色面板，不能让背后的结果列表透出来。
 
 ## Shapes
 
-- 胶囊（999px）：芯片、分段选择、状态标签、手机底部导航按钮。
-- 10px（`rounded-md`）：按钮、输入框、菜单项。
-- 14px（`rounded-lg` / `frame`）：导航胶囊外框、图片缩略图、卡片。
-- 18–22px：玻璃面板、输入框（生图 Composer 22px）、信息卡、大面板。
-- 品牌图标：深色方块里一颗悬在地平线上的光球和它的倒影，就是氛围屏房间的缩影。
+两种形状语言并存，各管各的：
+
+- **斜切 Slant**（`skewX(-10deg)` 加 10–14px 小圆角，`sk` / `sk-in`）：按钮（`slant`）、导航页签、分段选项、海报页签（`PosterTabs`）、贴纸、比例格子、落地页的大图和缩略图（`sk-frame`，图片反向倾斜并放大 1.16 倍铺满）。文字永远在 `sk-in` 里摆正。
+- **正放圆角 Upright**：控件 10px，图片 14px，卡片和面板 16px，大的浮层和弹窗 20px；全圆只给状态点。
+- **贴纸 Sticker**：珊瑚底的小牌子，旋转 -6° 到 1.5°，像随手贴上去的；设计助手的出图卡片上，「已放到画布」贴纸在流式时盖章动一下。
+- **品牌标**：珊瑚圆角方块，斜得比按钮更多（-14°），16px 时读作「一道珊瑚斜杠」。
+
+**The Slant Means Choose Rule.** 斜切只给「可以选、可以按」的东西。面板、卡片、输入框、整块区域不斜。
 
 ## Components
 
 ### Buttons
-近白、带光、直接。
-- **Shape:** 10px 圆角（落地页首屏和 404 页的大号主按钮 18px）。
-- **Primary（`glow`）:** Fg 底、Ground 字、600 字重、glow-amb 光晕；默认高 36px，`lg` 高 44px、左右 20px、15px 字。
-- **Hover / Focus:** 悬停变纯白；按下下移 1px、缩放 0.99；焦点为 2px 环境色描边、偏移 2px；禁用时去掉光晕、透明度 50%。
-- **Outline / Secondary / Ghost:** 白 4% 底加 Line Strong 边框 / 白 8% 底 / 透明底 Fg Soft 字，悬停加亮一级。
-- 链接用按钮外观时调用 `buttonVariants()`，不要给 Base UI `Button` 传 `render={<a/>}`。
+- **Shape:** 柔和圆角（10px），主行动作可以加斜切；`poster` 尺寸高 48px，14px 圆角，优设标题黑 19px 标签。
+- **Accent（珊瑚）:** 每屏最要紧的动作，白字（暗色深字），下面一汪珊瑚光；悬停加深，按下下沉 1px 并缩到 0.98。
+- **Ink（墨色，default）:** 强的次要动作，暗色主题下自动反色。
+- **Outline / Secondary / Ghost:** 安静的动作，叠加色 5–10% 的底或细描边。
+- **Destructive:** 深红浅底加深红字，不用实心红。
+- **Focus:** 2px 珊瑚轮廓，偏移 2px。禁用时 50% 透明、不可点。
 
-### Chips
-- **Style:** 胶囊形玻璃（或白 6–8% 底），12.5–13px 字。
-- **State:** 选中为白 10% 底加 Fg 字；分段选择（1K / 2K）是同一胶囊里的两段。
+### Poster tabs and segmented choices
+- **Style:** 斜切小块，未选中是叠加色 5.5% 的底和次级字；选中是墨色底加墙色字（暗色反过来）。
+- **State:** 完整的 tab / radio 语义，方向键切换。画质 1K/2K/4K 用 `lg` 尺寸，高 48px，Big Shoulders 26px 数字。
+- **Ratio grid:** 每个比例画一个小框图标加比例文字，当前模型不支持的会禁用并在读屏里说明。
 
 ### Cards / Containers
-- **Corner Style:** 14–22px。
-- **Background:** 漂浮在图上的用 `glass` / `glass-strong`，普通内容区用 Panel 或白 4–6% 底。
-- **Shadow Strategy:** card → card-hover；不嵌套卡片。
-- **Border:** 1px Line。
+- **Corner Style:** 16px（结果图片 14px）。
+- **Background:** 面板色；放图的区域用地面色。
+- **Shadow Strategy:** Card / Card hover，选中的图用 Picked。
+- **Border:** 默认没有，靠阴影分层。
+- **Internal Padding:** 20–24px。
 
 ### Inputs / Fields
-- **Style:** 透明底、Line Strong 边框或放在玻璃面板里；光标颜色是环境光。
-- **Focus:** 边框提到白 25%，外圈 1px 环境色 25% 加一层向下的环境色溢光（Composer）。
-- **Error / Disabled:** 错误用珊瑚边框和 Alert Wash 底并配文字；禁用透明度 60%。
+- **Style:** 叠加色 6% 的底，10–14px 圆角，没有描边；提示词框是凹下去的 `well` 底。
+- **Focus:** 珊瑚内描边（`inset 0 0 0 1px var(--acc)`），大输入框再加一圈 3px 珊瑚浅光；光标是珊瑚色。
+- **Labels:** 字段名用分区名样式「/ 改成什么」，旁边可带一句弱字说明。
 
 ### Navigation
-- **Style:** 居中的玻璃胶囊（14px 外框，5px 内边距），项目 10px 圆角、14px 字、500 字重。
-- **States:** 默认 Fg Soft，悬停白 6–8% 底，当前页白 10% 底加 Fg。
-- **Mobile:** 底部浮动 `glass-strong` 条，四个入口，当前项白 10% 底。
+- **桌面：** 字标（珊瑚斜块 + GGUU + 「AI IMAGE」小签）、斜切页签（13.5px 半粗，当前页墨色底）、右侧余额（Big Shoulders 数字）、充值、主题切换、头像。
+- **手机：** 底部浮动磨砂栏，图标加两字标签，当前项加粗。
 
-### 氛围屏 LightScreen（签名组件）
-`components/ambient/light-screen.tsx`。一张大图斜挂在房间里（落地页 rotateY -24°、生图页 -14°、手机 -6°），带地面倒影；换图时新图先亮后落（GSAP 1.1s expo.out），旧图淡出；细指针设备上会轻微朝向光标。减少动态时直接显示最终状态，没有 JavaScript 时倾斜仍是纯 CSS。
+### Result card and toolbar（生图页的签名组件）
+每张结果是一张 14px 圆角的图卡，组标题是提示词（优设标题黑）加一行等宽说明（「扩图 · 16:9 · 2K · 1 张 · GPT Image 2」）和时间贴纸。选中或悬停时，底部浮出一条深色磨砂工具条：珊瑚「以此为参考」、变体、局部重绘、扩图、看大图、下载。生成中是斜纹加往复的进度条（不显示假的百分比）；刚完成的图从模糊揭开显现（`RevealImage`）。只有「待核对」和「未发出」两种标记，成功的图不标计费状态。
 
-### 环境光 AmbientField（签名组件）
-`components/ambient/ambient-provider.tsx`。固定在视口后面的当前图片，模糊 110px、饱和 1.7；`useAmbientImage(src)` 换图换光，客户端跳转时保留最后一张图的光。
+### Mask editor（局部重绘 / 扩图）
+实色弹窗：左边地面色舞台放原图，右边 368px 侧栏放海报页签、字段和珊瑚主按钮。局部重绘的涂抹层以 55% 不透明的珊瑚红叠在图上，笔刷光标是白圈加细黑边；底部一条磨砂工具条放画笔 / 擦除、笔刷大小、撤销 / 重做 / 清空。扩图预览把新增的部分画成珊瑚浅色斜纹，外面一圈珊瑚细线框出新画框。
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** 让发光的元素读 `rgb(var(--amb))`：主按钮光晕、焦点环、运行中状态点、选区。
-- **Do** 只在控件漂浮于图片或画布之上时用 `glass`；信息卡、输入框、浮层压在复杂图片上用 `glass-strong`。
-- **Do** 用珊瑚红（#ff8a80）表达失败、待核对和断线，并配一句说清问题和下一步的话。
-- **Do** 每个动效都在 prefers-reduced-motion 下退化为直接切换（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 里统一关闭）。
-- **Do** 文案直白：「开始生成」「做同款」「去主站核对」。
+- **Do** 每屏只放一个珊瑚动作，其他按钮用墨色、描边或幽灵样式。
+- **Do** 只用语义 token（`fg`、`panel`、`tint`、`acc`……），不写死白色或黑色，两套主题才能同时成立；压在照片上的文字例外，两种主题都用白字加 `scrim` 遮罩。
+- **Do** 把斜切留给按钮、页签、分段选项、贴纸和落地页的大图，文字放在 `sk-in` 里摆正。
+- **Do** 状态写成文字再配颜色：「待核对」（橙）、「未发出」（灰）、「没生成出来」（深红）。
+- **Do** 每个动效在 `prefers-reduced-motion` 下直接显示最终状态；磨砂玻璃在 `prefers-reduced-transparency` 下退回实色。
+- **Do** 文案直白：「生成」「图片」「余额」「改成什么」。
 
 ### Don't:
-- **Don't** 用琥珀、黄色或米黄铺底，也不要回到纯黑白的暗房风格。
-- **Don't** 用暗房、冲印、曝光、显影这类比喻当界面文案。
-- **Don't** 用渐变文字、标题上方的小标签（eyebrow / kicker）、区块编号或 unicode 字符当图标。
-- **Don't** 给画布叠加改变图片颜色的混合层：图片必须按原色显示。
-- **Don't** 把 Loomic 品牌放回界面；包名 `@loomic/*` 不变只是为了构建。
-
-## 位图来源（provenance）
-
-- `public/images/showcase/showcase-3/8/9/12`：Unsplash 图片，Unsplash License（可免费商用，不强制署名），作者和原图链接记在 `components/landing/showcase.ts` 顶部注释里。
-- `public/images/showcase/` 里其余 8 张：继承自上游，来源和版权未核实，上线前要换成本站生成或有授权的图（`showcase.ts` 有 TODO）。
-- 换图流程：把裁好的 900×1200（竖）或 1200×900（横）JPG 放进 `public/images/showcase/`，运行 `scripts/prepare-showcase.mjs <编号…>` 生成 `web/`、`lg/` 两档 WebP 并打印光色，再把光色填进 `showcase.ts`。
-- `public/favicon.svg`、`logo.svg`、`apple-touch-icon.png`、`og-image.png`：由 `scripts/generate-brand-assets.mjs` 生成（OG 背景用 showcase-5 模糊而成，字体为得意黑 / Geist / 思源黑体子集）。
-- `public/fonts/display/*`：`scripts/split-display-font.py` 由得意黑（OFL 1.1）切分并改名生成，许可证在同目录 `OFL.txt`。
+- **Don't** 用琥珀或黄色铺色，也不做纯黑白、硬黑边、零模糊投影的刺眼海报。
+- **Don't** 出现 Loomic 品牌，或暗房、冲印、显影这类行话。
+- **Don't** 把斜切用在整块面板、卡片或输入框上。
+- **Don't** 用纯黑投影或硬描边分层；阴影压向房间的石墨色。
+- **Don't** 只靠颜色表达状态，也不给成功的图贴「已扣费」一类标签。
+- **Don't** 在工作界面放付费说明；计费说明只在落地页一节。
+- **Don't** 把环境色用在按钮、文字或边框上。
