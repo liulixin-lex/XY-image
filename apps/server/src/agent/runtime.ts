@@ -13,6 +13,7 @@ import { createSupabaseFetch } from "../supabase/transport.js";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
 import type {
+  BackgroundJob,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
@@ -97,6 +98,22 @@ export function buildUserMessage(
 
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
+}
+
+/**
+ * What a job that settled without an image tells the chat card: its code
+ * and billing state, so the card says 「没生成出来」 only when nothing was
+ * charged and 待核对 otherwise (the studio's describeOutcome rule).
+ */
+function settledFailure(
+  job: Pick<BackgroundJob, "status" | "error_code" | "billing_status">,
+) {
+  const errorCode =
+    job.error_code ?? (job.status === "canceled" ? "canceled" : undefined);
+  return {
+    ...(errorCode ? { errorCode } : {}),
+    billingStatus: job.billing_status ?? ("unknown" as const),
+  };
 }
 
 function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
@@ -761,10 +778,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               current.status === "dead_letter" ||
               current.status === "canceled"
             ) {
-              jobLap("job_poll_done", { pollCount, status: current.status });
+              jobLap("job_poll_done", {
+                pollCount,
+                status: current.status,
+                billing: current.billing_status,
+              });
               return {
                 jobId: job.id,
                 error: current.error_message ?? `Job ${current.status}`,
+                ...settledFailure(current),
               };
             }
 
@@ -776,10 +798,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               jobLap("job_poll_done", {
                 pollCount,
                 status: "failed_max_retries",
+                billing: current.billing_status,
               });
               return {
                 jobId: job.id,
                 error: current.error_message ?? "Job failed after max retries",
+                ...settledFailure(current),
               };
             }
           }

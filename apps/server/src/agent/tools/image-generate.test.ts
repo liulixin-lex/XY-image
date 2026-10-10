@@ -63,4 +63,51 @@ describe("generate_image tool", () => {
       quality: "auto",
     });
   });
+  it("passes a settled job's code and billing state on, so the chat can tell failed from 待核对", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const submitImageJob = vi.fn<SubmitImageJobFn>(async () => ({
+      jobId: "job-2",
+      error: "内容未通过审核",
+      errorCode: "safety_filter",
+      billingStatus: "not_charged",
+    }));
+    const generate = createImageGenerateTool({ submitImageJob });
+    const result = await generate.invoke({
+      title: "猫",
+      prompt: "画一只猫",
+      aspectRatio: "1:1",
+    });
+    expect(result).toMatchObject({
+      error: "内容未通过审核",
+      errorCode: "safety_filter",
+      billingStatus: "not_charged",
+      jobId: "job-2",
+    });
+  });
+
+  it("says unknown when the wait itself broke, and nothing sent when a guard refused", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const input = { title: "猫", prompt: "画一只猫", aspectRatio: "1:1" };
+    const pollBroke = createImageGenerateTool({
+      submitImageJob: async () => {
+        throw new Error("job_query_failed");
+      },
+    });
+    expect(await pollBroke.invoke(input)).toMatchObject({
+      billingStatus: "unknown",
+    });
+
+    const refused = createImageGenerateTool({
+      submitImageJob: async () => {
+        throw Object.assign(new Error("主站余额不足"), {
+          name: "BillingGuardError",
+          code: "insufficient_balance",
+        });
+      },
+    });
+    expect(await refused.invoke(input)).toMatchObject({
+      errorCode: "insufficient_balance",
+      billingStatus: "none",
+    });
+  });
 });
