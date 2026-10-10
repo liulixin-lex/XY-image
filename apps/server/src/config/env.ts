@@ -23,7 +23,10 @@ export type ServerEnv = {
   chatModels: string[];
   chatProviderAllowHttp: boolean;
   chatProviderAllowedHosts: string[];
+  /** Image requests one user may have in flight at the main site (worker dispatch gate). */
   maxConcurrentJobs: number;
+  /** Image jobs one user may have queued or in flight (API admission; a studio batch counts each picture). */
+  maxPendingImageJobs: number;
   maxImagesPerRun: number;
   sessionRevalidateMinutes: number;
   imageOutputFormat: "jpeg" | "png" | "webp";
@@ -205,6 +208,7 @@ export function loadServerEnv(
       .map((value) => value.trim())
       .filter(Boolean),
     maxConcurrentJobs: integer("LOOMIC_MAX_CONCURRENT_JOBS", 2),
+    maxPendingImageJobs: integer("LOOMIC_MAX_PENDING_IMAGE_JOBS", 8),
     maxImagesPerRun: integer("LOOMIC_MAX_IMAGES_PER_RUN", 6),
     sessionRevalidateMinutes: integer(
       "LOOMIC_SESSION_REVALIDATE_MINUTES",

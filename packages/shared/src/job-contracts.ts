@@ -107,6 +107,63 @@ export const createImageJobRequestSchema = z.object({
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 
+/**
+ * Most pictures one studio request can ask for. Each picture is its own job
+ * (and its own main-site charge); the jobs share `batch_id` in their payload.
+ */
+export const IMAGE_BATCH_MAX = 4;
+
+export const createImageBatchRequestSchema = createImageJobRequestSchema.extend(
+  {
+    count: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+  },
+);
+export type CreateImageBatchRequest = z.infer<
+  typeof createImageBatchRequestSchema
+>;
+
+/** Batch fields the server adds to each job's payload. */
+export const imageBatchPayloadSchema = z.object({
+  batch_id: z.string().uuid(),
+  batch_index: z.number().int().min(0),
+  batch_size: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+});
+export type ImageBatchPayload = z.infer<typeof imageBatchPayloadSchema>;
+
+export const imageBatchResponseSchema = z.object({
+  batch_id: z.string().uuid(),
+  /** How many pictures were asked for; `jobs` can be shorter if submission stopped part way. */
+  requested: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+  jobs: z.array(backgroundJobSchema),
+});
+export type ImageBatchResponse = z.infer<typeof imageBatchResponseSchema>;
+
+/** Jobs of a batch that were still waiting (never sent to the main site) and are now canceled. */
+export const cancelImageBatchResponseSchema = z.object({
+  batch_id: z.string().uuid(),
+  canceled: z.array(z.string().uuid()),
+});
+export type CancelImageBatchResponse = z.infer<
+  typeof cancelImageBatchResponseSchema
+>;
+
+// --- Prompt rewrite (studio "优化提示词") ---
+
+export const optimizePromptRequestSchema = z.object({
+  prompt: z.string().trim().min(1).max(2000),
+  aspect_ratio: z.string().max(10).optional(),
+});
+export type OptimizePromptRequest = z.infer<typeof optimizePromptRequestSchema>;
+
+export const optimizePromptResponseSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+  /** Chat model reference that wrote it, e.g. "openai:gpt-5.4-mini". */
+  model: z.string(),
+});
+export type OptimizePromptResponse = z.infer<
+  typeof optimizePromptResponseSchema
+>;
+
 // --- API Response schemas ---
 
 export const jobResponseSchema = z.object({

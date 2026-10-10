@@ -17,6 +17,7 @@ import {
   createCanvasFilesSweeper,
   createSweepStore,
 } from "./features/canvas/canvas-files-sweeper.js";
+import { createDispatchGate } from "./features/jobs/dispatch-gate.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import {
@@ -72,6 +73,7 @@ async function main() {
   });
 
   const deliveries = createPendingDeliveryStore(env.supabaseDbUrl);
+  const dispatchGate = createDispatchGate(env.supabaseDbUrl);
 
   // Settles 待核对 image jobs from the xy2api usage list (billing-reconciler.ts).
   const reconcileServices = env.xy2apiBillingReconcile
@@ -105,6 +107,7 @@ async function main() {
     getAdminClient,
     env,
     deliveries,
+    dispatchGate,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {
@@ -165,6 +168,7 @@ async function main() {
     await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
     await deliveries.close();
+    await dispatchGate.close();
     await closeSupabaseTransport();
     console.log(`${tag} Shutdown complete.`);
     process.exit(0);
@@ -182,7 +186,7 @@ async function main() {
     (q) => `${q}=${CONCURRENCY_BY_QUEUE[q] ?? 1}`,
   ).join(", ");
   console.log(
-    `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
+    `${tag} Started. concurrency={${concurrencyDesc}}, perUserInFlight=${env.maxConcurrentJobs}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
 
   while (running) {

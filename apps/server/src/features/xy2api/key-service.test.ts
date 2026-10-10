@@ -238,6 +238,39 @@ describe("user key synchronization", () => {
     ]);
     expect(order).toEqual([1, 2]);
   });
+  it("admits a batch only while the user stays within the pending limit", async () => {
+    const fixture = setup();
+    await fixture.keys.syncKeys("user-1");
+    vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 5 });
+    const job = (status: string, billing_status = "none") => ({
+      created_by: "user-1",
+      status,
+      billing_status,
+    });
+    fixture.tables.background_jobs = [
+      ...Array.from({ length: 5 }, () => job("queued")),
+      job("running", "pending"),
+      // Not counted: done, or charged and only waiting for storage.
+      job("succeeded", "charged"),
+      job("queued", "charged"),
+      { ...job("queued"), created_by: "user-2" },
+    ];
+    // 6 pending + 2 = the default limit of 8.
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { count: 2 }),
+    ).resolves.toMatchObject({ model: "gpt-image-2" });
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { count: 3 }),
+    ).rejects.toMatchObject({ code: "concurrency_limit", statusCode: 429 });
+    // A route that sends from the API process keeps the in-flight limit (2).
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { sendsNow: true }),
+    ).rejects.toMatchObject({ code: "concurrency_limit" });
+    fixture.tables.background_jobs = [job("running", "pending")];
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { sendsNow: true }),
+    ).resolves.toMatchObject({ quality: "standard" });
+  });
 });
 
 describe("keys the main site lists masked", () => {

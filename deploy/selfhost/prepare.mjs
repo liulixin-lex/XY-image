@@ -204,6 +204,7 @@ export async function prepare(options) {
       WORKER_POLL_INTERVAL_MS: "2000",
       WORKER_MAX_BATCH_SIZE: "3",
       LOOMIC_MAX_CONCURRENT_JOBS: "2",
+      LOOMIC_MAX_PENDING_IMAGE_JOBS: "8",
       LOOMIC_MAX_IMAGES_PER_RUN: "6",
       LOOMIC_SKILLS_ROOT: "/opt/loomic/skills",
     };

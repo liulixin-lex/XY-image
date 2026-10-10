@@ -52,6 +52,7 @@ import {
   type ProjectService,
   createProjectService,
 } from "./features/projects/project-service.js";
+import { createPromptOptimizer } from "./features/prompts/prompt-optimizer.js";
 import {
   type SettingsService,
   createSettingsService,
@@ -73,6 +74,7 @@ import { registerImageProxyRoute } from "./http/image-proxy.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
+import { registerPromptRoutes } from "./http/prompts.js";
 import { registerRunRoutes } from "./http/runs.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
@@ -341,6 +343,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     providers: xy2api.providers,
   });
   void registerImageModelRoutes(app, { auth, keys: xy2api.keys });
+  void registerPromptRoutes(app, {
+    auth,
+    optimizer: createPromptOptimizer({
+      keys: xy2api.keys,
+      providers: xy2api.providers,
+      env,
+    }),
+  });
   void registerChatRoutes(app, {
     auth,
     chatService,

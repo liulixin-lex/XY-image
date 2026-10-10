@@ -46,9 +46,11 @@ export function registerGenerateRoutes(
       const job = await options.xy2api.billing.withUserLock(
         user.id,
         async () => {
+          // Sent from this process, not the worker: no dispatch gate here.
           const prepared = await options.xy2api.billing.prepareImageJob(
             user,
             payload,
+            { sendsNow: true },
           );
           return jobService.createJob(user, {
             workspaceId: viewer.workspace.id,

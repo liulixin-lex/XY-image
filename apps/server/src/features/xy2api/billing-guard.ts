@@ -21,7 +21,10 @@ export class BillingGuard {
     private readonly keys: KeyService,
     private readonly client: Xy2apiClient,
     private readonly getAdmin: () => AdminSupabaseClient,
-    private readonly env: Pick<ServerEnv, "maxConcurrentJobs">,
+    private readonly env: Pick<
+      ServerEnv,
+      "maxPendingImageJobs" | "maxConcurrentJobs"
+    >,
   ) {}
   async withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(userId);
@@ -33,10 +36,25 @@ export class BillingGuard {
       if (this.locks.get(userId) === work) this.locks.delete(userId);
     }
   }
+  /**
+   * Checks key, model, quality and balance for `count` new image jobs and
+   * that the user stays within LOOMIC_MAX_PENDING_IMAGE_JOBS queued or in
+   * flight. How many actually reach the main site at once is the worker's
+   * dispatch gate (LOOMIC_MAX_CONCURRENT_JOBS); the rest wait unsent.
+   * `sendsNow` is for a route that sends from the API process without the
+   * worker (the sync agent route): it keeps the old, stricter rule that the
+   * user has fewer than LOOMIC_MAX_CONCURRENT_JOBS queued or running.
+   * Call inside withUserLock so two requests cannot both pass the count.
+   */
   async prepareImageJob(
     user: Pick<AuthenticatedUser, "id">,
     input: { model?: string | undefined; quality?: string | undefined },
+    options: { count?: number; sendsNow?: boolean } = {},
   ) {
+    const count = options.sendsNow ? 1 : (options.count ?? 1);
+    const limit = options.sendsNow
+      ? this.env.maxConcurrentJobs
+      : this.env.maxPendingImageJobs;
     const credential = await this.keys.resolveImageCredential(user.id);
     const prefs = await this.keys.preferences(user.id);
     const model =
@@ -61,7 +79,7 @@ export class BillingGuard {
     } catch (error) {
       if (error instanceof BillingGuardError) throw error;
     }
-    const { count, error } = await this.getAdmin()
+    const { count: pending, error } = await this.getAdmin()
       .from("background_jobs")
       .select("id", { count: "exact", head: true })
       .eq("created_by", user.id)
@@ -69,8 +87,12 @@ export class BillingGuard {
       // Charged images waiting for a storage retry no longer use the gateway.
       .neq("billing_status", "charged");
     checkStoreError(error);
-    if ((count ?? 0) >= this.env.maxConcurrentJobs)
+    if ((pending ?? 0) + count > limit) {
+      console.info(
+        `[billing-guard] user ${user.id} at the image job limit (${pending ?? 0} + ${count} > ${limit}${options.sendsNow ? ", sends now" : ""})`,
+      );
       throw new BillingGuardError("concurrency_limit", 429);
+    }
     return { keyId: credential.keyId, model, quality };
   }
 }

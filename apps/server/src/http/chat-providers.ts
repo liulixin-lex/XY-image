@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { ChatProviderError } from "../features/chat-providers/errors.js";
 import type { ChatProviderService } from "../features/chat-providers/service.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 import { RequestLimiter } from "../utils/request-limiter.js";
+import { isZodError } from "../utils/zod-error.js";
 import { sendAccountError } from "./account.js";
 
 export function registerChatProviderRoutes(
@@ -18,7 +18,7 @@ export function registerChatProviderRoutes(
   app.register(async (routes) => {
     routes.setErrorHandler((error, _request, reply) => {
       if (
-        error instanceof z.ZodError ||
+        isZodError(error) ||
         (!(error instanceof ChatProviderError) &&
           error &&
           typeof error === "object" &&

@@ -1,5 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import { ZodError } from "zod";
+import { isZodError } from "../utils/zod-error.js";
 
 /**
  * Logs a failed request at error only when it is the server's fault. A 4xx
@@ -23,7 +23,7 @@ export function logRouteError(
     {
       ...fields,
       status,
-      ...(error instanceof ZodError
+      ...(isZodError(error)
         ? { reason: "invalid request" }
         : { reason: error instanceof Error ? error.message : String(error) }),
     },
@@ -32,7 +32,7 @@ export function logRouteError(
 }
 
 function clientErrorStatus(error: unknown): number | undefined {
-  if (error instanceof ZodError) return 400;
+  if (isZodError(error)) return 400;
   const status =
     typeof error === "object" && error !== null && "statusCode" in error
       ? error.statusCode
