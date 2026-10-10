@@ -65,7 +65,15 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
   node --env-file=/run/xy-preflight.env --import tsx scripts/xy2api-preflight.ts
 ```
 
-脚本先读 models/usage，逐模型对目录列出的每个画质各调用一次（1K / 2K / 4K，质量取该模型最便宜的 `low`，没有则 `auto`），再对话；输出模型数量、余额、画质、质量、实际尺寸、耗时、字节数、MIME、请求 ID，不打印 Key 或模型回答。一个支持三档画质的模型会产生三次付费调用，执行前按模型数估算费用。失败退出码非零。
+脚本先读 models/usage，逐模型对目录列出的每个画质各调用一次（1K / 2K / 4K，质量取该模型最便宜的 `low`，没有则 `auto`），再对话；输出模型数量、余额、画质、质量、实际尺寸、耗时、字节数、MIME、请求 ID，不打印 Key 或模型回答。一个支持三档画质的模型会产生三次付费调用。失败退出码非零。
+
+付费调用之前，脚本先输出一行 `stage: "plan"`，列出将要发出的每次生图调用（`imageCalls` 是张数）。三个可选环境变量：
+
+- `PREFLIGHT_DRY_RUN=1`：只读模型和余额（免费），打印计划后退出，不发生图和对话请求。每次正式运行前先用它确认张数。
+- `PREFLIGHT_MODELS=gpt-image-2,nano-banana-pro`：只测这些模型（写 Key 的 `/v1/models` 里出现的 id）。
+- `PREFLIGHT_RESOLUTIONS=1K`：只测这些画质。模型不支持的组合列在 `skipped`，不发送。
+
+日常冒烟用 `PREFLIGHT_RESOLUTIONS=1K`（每个模型一张），上线前或改了尺寸参数后再全量跑。筛选值对不上任何模型或画质时脚本直接报错退出，不会退回全量运行。
 
 主站 xy2api 0.2.5 的生图计档规则（读源码确认，`image_billing_size.go` 等）：OpenAI 按返回图长边计档，≤1024 为 1K，≤2048 为 2K，更大为 4K；Gemini 按请求的 `imageConfig.imageSize`，缺省按 2K；Grok 读请求的 `size`（`1k` / `2k`），缺省按 2K。核对用量时用脚本输出的实际尺寸对照档位。
 
