@@ -115,28 +115,28 @@ export function FontPickerDialog({
         role="dialog"
         aria-modal="true"
         aria-label="添加字体"
-        className="w-full max-w-[420px] max-h-[520px] bg-popover rounded-lg shadow-lg border flex flex-col"
+        className="glass-strong flex max-h-[520px] w-full max-w-[420px] flex-col overflow-hidden rounded-[18px]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search */}
-        <div className="p-3 border-b">
+        <div className="border-b border-line p-3">
           <input
             type="text"
             placeholder="搜索字体"
             aria-label="搜索字体"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-3 py-1.5 text-sm border rounded-lg outline-none focus-visible:border-line-strong"
+            className="h-9 w-full px-3 text-[13px] rounded-[10px] bg-tint/[0.06] text-fg caret-acc placeholder:text-fg-muted outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)]"
           />
         </div>
 
         {/* Category filter */}
-        <div className="px-3 py-2 border-b">
+        <div className="border-b border-line px-3 py-2">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             aria-label="字体分类"
-            className="cursor-pointer bg-transparent text-sm outline-none"
+            className="cursor-pointer rounded-[8px] bg-transparent text-[13px] text-fg-soft outline-none focus-visible:outline-2 focus-visible:outline-acc"
           >
             {CATEGORIES.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
@@ -155,8 +155,11 @@ export function FontPickerDialog({
                 key={font.family}
                 type="button"
                 onClick={() => setSelected(font)}
-                className={`w-full px-4 py-2 text-left text-base hover:bg-muted cursor-pointer ${
-                  selected?.family === font.family ? "bg-muted" : ""
+                aria-pressed={selected?.family === font.family}
+                className={`w-full cursor-pointer px-4 py-2 text-left text-base text-fg outline-none focus-visible:bg-tint/[0.07] ${
+                  selected?.family === font.family
+                    ? "bg-acc-soft text-acc-text"
+                    : "hover:bg-tint/[0.06]"
                 }`}
                 style={{ fontFamily: `"${font.family}", sans-serif` }}
               >
@@ -166,17 +169,17 @@ export function FontPickerDialog({
           {fonts.length === 0 &&
             (status === "failed" ? (
               <div className="flex flex-col items-center gap-3 p-6 text-center">
-                <p className="text-sm text-muted-foreground">字体库没有加载出来</p>
+                <p className="text-sm text-fg-soft">字体库没有加载出来</p>
                 <button
                   type="button"
                   onClick={() => setAttempt((n) => n + 1)}
-                  className="cursor-pointer rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                  className="h-8 cursor-pointer rounded-[9px] bg-tint/[0.07] px-3 text-[13px] text-fg transition-colors hover:bg-tint/[0.11]"
                 >
                   重试
                 </button>
               </div>
             ) : (
-              <output className="block p-6 text-center text-sm text-muted-foreground">
+              <output className="block p-6 text-center text-sm text-fg-muted">
                 {status === "loading"
                   ? "正在加载字体…"
                   : search
@@ -189,11 +192,11 @@ export function FontPickerDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 p-3 border-t">
+        <div className="flex justify-end gap-2 border-t border-line p-3">
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border px-4 py-1.5 text-sm hover:bg-muted"
+            className="h-9 cursor-pointer rounded-[10px] px-4 text-[13px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
           >
             取消
           </button>
@@ -201,7 +204,7 @@ export function FontPickerDialog({
             type="button"
             onClick={handleAdd}
             disabled={!selected}
-            className="cursor-pointer rounded-md bg-primary px-4 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-9 cursor-pointer rounded-[10px] bg-acc px-4 text-[13px] font-semibold text-acc-ink transition-colors hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:opacity-40"
           >
             添加
           </button>

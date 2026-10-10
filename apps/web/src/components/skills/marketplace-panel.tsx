@@ -88,49 +88,49 @@ function MarketplaceSkillCard({
       : String(skill.downloads);
 
   return (
-    <motion.div
+    <motion.button
+      type="button"
       variants={cardVariants}
       layout
-      whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={() => onClick(skill)}
-      className="group cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/50"
+      className="group block w-full cursor-pointer rounded-[16px] bg-panel p-4 text-left shadow-card transition-[translate,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:shadow-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
     >
       {/* Header */}
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Package className="size-3.5 text-muted-foreground" />
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-tint/[0.07]">
+            <Package aria-hidden className="size-4 text-fg-soft" />
           </div>
-          <span className="truncate text-sm font-medium text-foreground">
+          <span className="truncate text-[15px] font-semibold text-fg">
             {skill.name}
           </span>
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
+        <span className="numeral shrink-0 text-[11px] text-fg-muted">
           v{skill.version}
         </span>
       </div>
 
       {/* Description */}
-      <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+      <p className="mb-3 line-clamp-2 text-[13px] leading-relaxed text-fg-soft">
         {skill.description}
       </p>
 
       {/* Divider */}
-      <div className="border-t border-border" />
+      <div className="border-t border-line" />
 
       {/* Footer */}
       <div className="mt-3 flex items-center justify-between">
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
           <User className="size-3" />
           {skill.author}
         </span>
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
           <Download className="size-3" />
-          {formattedDownloads}
+          <span className="numeral">{formattedDownloads}</span>
         </span>
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
 
@@ -169,7 +169,7 @@ function MarketplaceDetailDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {skill.name}
-            <span className="text-[11px] font-normal text-muted-foreground">
+            <span className="text-[11px] font-normal text-fg-muted">
               v{skill.version}
             </span>
           </DialogTitle>
@@ -179,29 +179,29 @@ function MarketplaceDetailDialog({
         {/* Meta grid */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">作者</span>
-            <p className="font-medium text-foreground">{skill.author}</p>
+            <span className="text-fg-muted">作者</span>
+            <p className="font-medium text-fg">{skill.author}</p>
           </div>
           {skill.license && (
             <div className="space-y-0.5">
-              <span className="text-muted-foreground">许可证</span>
-              <p className="font-medium text-foreground">{skill.license}</p>
+              <span className="text-fg-muted">许可证</span>
+              <p className="font-medium text-fg">{skill.license}</p>
             </div>
           )}
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">包名</span>
-            <p className="font-medium font-mono text-foreground">
+            <span className="text-fg-muted">包名</span>
+            <p className="font-medium font-mono text-fg">
               {skill.packageName}
             </p>
           </div>
           {skill.homepage && (
             <div className="space-y-0.5">
-              <span className="text-muted-foreground">主页</span>
+              <span className="text-fg-muted">主页</span>
               <a
                 href={skill.homepage}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
+                className="inline-flex items-center gap-1 font-medium text-fg hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
                 链接
@@ -217,7 +217,7 @@ function MarketplaceDetailDialog({
             {skill.keywords.map((kw: string) => (
               <span
                 key={kw}
-                className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+                className="rounded-[6px] bg-tint/[0.06] px-2 py-0.5 text-[11px] text-fg-muted"
               >
                 {kw}
               </span>
@@ -228,10 +228,10 @@ function MarketplaceDetailDialog({
         {/* README */}
         {skill.readme && (
           <div className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-fg-muted">
               README
             </span>
-            <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-secondary p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
+            <pre className="max-h-64 overflow-auto rounded-[12px] bg-tint/[0.05] p-3 font-mono text-xs leading-relaxed text-fg whitespace-pre-wrap break-words">
               {skill.readme}
             </pre>
           </div>
@@ -399,17 +399,17 @@ export function MarketplacePanel({
     <div>
       {/* Search input */}
       <div className="relative mb-4 sm:mb-6 sm:max-w-md">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-muted" />
         <input
-          type="text"
-          placeholder="搜索 skills.sh 市场..."
+          type="search"
+          placeholder="搜索 skills.sh 市场"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="搜索市场技能"
-          className="h-10 w-full rounded-lg border border-input bg-transparent pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-8"
+          className="h-11 w-full rounded-[10px] bg-tint/[0.06] pr-9 pl-8.5 text-sm text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted focus:shadow-[inset_0_0_0_1px_var(--acc)] sm:h-9"
         />
         {loading && (
-          <Loader2 className="absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+          <Loader2 aria-label="正在搜索" className="absolute top-1/2 right-3 size-3.5 -translate-y-1/2 animate-spin text-acc-text" />
         )}
       </div>
 
@@ -421,13 +421,13 @@ export function MarketplacePanel({
           transition={{ duration: 0.25 }}
           className="flex flex-col items-center justify-center py-20 text-center"
         >
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Package className="size-5 text-muted-foreground" />
+          <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
+            <Package className="size-5 text-fg-muted" />
           </div>
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-display text-[20px] text-fg">
             搜索社区技能
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[13px] text-fg-soft">
             输入关键词搜索 skills.sh 上的社区技能包
           </p>
         </motion.div>
@@ -441,22 +441,22 @@ export function MarketplacePanel({
           transition={{ duration: 0.25 }}
           className="flex flex-col items-center justify-center py-20 text-center"
         >
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Search className="size-5 text-muted-foreground" />
+          <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
+            <Search className="size-5 text-fg-muted" />
           </div>
-          <p className="text-sm font-medium text-foreground">
-            未找到匹配的技能
+          <p className="font-display text-[20px] text-fg">
+            没有找到匹配的技能
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            尝试其他搜索关键词
+          <p className="mt-1.5 text-[13px] text-fg-soft">
+            换个关键词再搜
           </p>
         </motion.div>
       )}
 
       {/* Results count */}
       {searched && skills.length > 0 && (
-        <p className="mb-4 text-xs text-muted-foreground">
-          找到 {total} 个技能
+        <p className="mb-4 text-xs text-fg-soft">
+          找到 <span className="numeral">{total}</span> 个技能
         </p>
       )}
 
@@ -496,7 +496,7 @@ export function MarketplacePanel({
       {detailLoading && detailOpen
         ? createPortal(
             <div className="fixed inset-0 z-50 flex items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              <Loader2 className="size-6 animate-spin text-fg-muted" />
             </div>,
             document.body,
           )

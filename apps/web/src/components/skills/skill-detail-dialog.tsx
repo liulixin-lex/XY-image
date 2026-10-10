@@ -50,7 +50,7 @@ function FileTreeItem({ file }: { file: SkillFileEntry }) {
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-mono text-foreground hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-mono text-fg hover:bg-tint/[0.05] transition-colors"
       >
         <ChevronRight
           className={cn(
@@ -61,7 +61,7 @@ function FileTreeItem({ file }: { file: SkillFileEntry }) {
         <span className="truncate">{file.filePath}</span>
       </button>
       {expanded && (
-        <pre className="px-3 pb-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-auto border-t border-border bg-secondary/50">
+        <pre className="px-3 pb-2 font-mono text-[11px] leading-relaxed text-fg-muted whitespace-pre-wrap break-words max-h-48 overflow-auto border-t border-line bg-tint/[0.04]">
           {file.content}
         </pre>
       )}
@@ -142,7 +142,7 @@ export function SkillDetailDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {skill.name}
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full bg-tint/[0.06] px-2 py-0.5 text-[11px] font-medium text-fg-muted">
               <SourceIcon className="size-3" />
               {sourceLabel}
             </span>
@@ -153,34 +153,34 @@ export function SkillDetailDialog({
         {/* Meta grid */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">作者</span>
-            <p className="font-medium text-foreground">{skill.author}</p>
+            <span className="text-fg-muted">作者</span>
+            <p className="font-medium text-fg">{skill.author}</p>
           </div>
           <div className="space-y-0.5">
-            <span className="text-muted-foreground">版本</span>
-            <p className="font-medium text-foreground">v{skill.version}</p>
+            <span className="text-fg-muted">版本</span>
+            <p className="font-medium text-fg">v{skill.version}</p>
           </div>
           {skill.license && (
             <div className="space-y-0.5">
-              <span className="text-muted-foreground">许可证</span>
-              <p className="font-medium text-foreground">{skill.license}</p>
+              <span className="text-fg-muted">许可证</span>
+              <p className="font-medium text-fg">{skill.license}</p>
             </div>
           )}
           <div className="space-y-0.5">
-            <span className="text-muted-foreground flex items-center gap-1">
+            <span className="text-fg-muted flex items-center gap-1">
               <Calendar className="size-3" />
               更新日期
             </span>
-            <p className="font-medium text-foreground">{updatedDate}</p>
+            <p className="font-medium text-fg">{updatedDate}</p>
           </div>
         </div>
 
         {/* SKILL.md content */}
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-xs font-medium text-fg-muted">
             SKILL.md
           </span>
-          <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-secondary p-3 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">
+          <pre className="max-h-64 overflow-auto rounded-[12px] bg-tint/[0.05] p-3 font-mono text-xs leading-relaxed text-fg whitespace-pre-wrap break-words">
             {skill.skillContent}
           </pre>
         </div>
@@ -188,10 +188,10 @@ export function SkillDetailDialog({
         {/* Attached files tree */}
         {skill.files && skill.files.length > 0 && (
           <div className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-fg-muted">
               附属文件 ({skill.files.length})
             </span>
-            <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
+            <div className="rounded-[12px] border border-line divide-y divide-line overflow-hidden">
               {skill.files.map((file: SkillFileEntry) => (
                 <FileTreeItem key={file.id} file={file} />
               ))}
@@ -286,7 +286,7 @@ export function SkillDetailDialog({
         </DialogFooter>
 
         {/* Created date small note */}
-        <p className="text-center text-[11px] text-muted-foreground">
+        <p className="text-center text-[11px] text-fg-muted">
           创建于 {createdDate}
         </p>
       </DialogContent>

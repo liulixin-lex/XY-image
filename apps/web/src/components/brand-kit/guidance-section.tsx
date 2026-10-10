@@ -71,7 +71,7 @@ export function GuidanceSection({ value, onSave }: GuidanceSectionProps) {
         onBlur={handleBlur}
         placeholder="写下品牌的语气、性格和视觉要求，比如：克制、留白多、避免卡通感…"
         rows={3}
-        className="w-full resize-none rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/60 transition-colors"
+        className="w-full resize-none rounded-[14px] bg-tint/[0.05] px-3.5 py-3 text-[14px] leading-relaxed text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted focus:shadow-[inset_0_0_0_1px_var(--acc)]"
       />
     </section>
   );

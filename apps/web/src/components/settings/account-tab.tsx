@@ -60,7 +60,8 @@ export function AccountTab() {
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
           <div>
             <BalanceFigure
-              className="block text-[40px] leading-none"
+              numeral
+              className="block text-[48px] leading-none"
               emptyLabel={data && data.preferences.image_key_id === null ? "未选择 Key" : "暂不可读"}
             />
             {data?.balance?.planName ? (
@@ -77,12 +78,19 @@ export function AccountTab() {
           </Button>
         </div>
         {links ? (
-          <div className="mt-6 flex flex-wrap gap-2">
-            <a href={links.recharge} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "accent" })}>
-              去主站充值
-              <ArrowUpRightIcon strokeWidth={1.75} />
+          <div className="mt-6 flex flex-wrap items-center gap-2.5">
+            <a
+              href={links.recharge}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants({ variant: "accent", size: "lg", slant: true })}
+            >
+              <span className="sk-in gap-1.5">
+                去主站充值
+                <ArrowUpRightIcon strokeWidth={2} />
+              </span>
             </a>
-            <a href={links.usage} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>
+            <a href={links.usage} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "secondary", size: "lg" })}>
               主站用量明细
               <ArrowUpRightIcon strokeWidth={1.75} />
             </a>

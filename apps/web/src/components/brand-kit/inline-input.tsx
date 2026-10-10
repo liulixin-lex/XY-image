@@ -62,8 +62,8 @@ export function InlineInput({
         placeholder={placeholder}
         className={cn(
           "w-full bg-transparent border-b border-transparent outline-none transition-colors",
-          "group-hover:border-dashed group-hover:border-muted-foreground/40",
-          "focus:border-dashed focus:border-muted-foreground/40",
+          "caret-acc group-hover:border-dashed group-hover:border-line-strong",
+          "focus:border-solid focus:border-acc",
           inputClassName,
         )}
       />

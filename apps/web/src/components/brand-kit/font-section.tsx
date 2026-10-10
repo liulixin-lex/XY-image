@@ -72,9 +72,9 @@ export function FontSection({
         {fonts.map((font) => (
           <div key={font.id} className="flex flex-col items-center gap-1.5">
             <div className="relative group">
-              <div className="w-[150px] h-[113px] rounded-frame border bg-muted/30 flex items-center justify-center">
+              <div className="flex h-[113px] w-[150px] items-center justify-center rounded-[14px] bg-panel shadow-card">
                 <span
-                  className="text-3xl font-light text-foreground/70 select-none"
+                  className="text-[32px] text-fg select-none"
                   style={{
                     fontFamily: font.text_content
                       ? `"${font.text_content}", sans-serif`
@@ -88,20 +88,19 @@ export function FontSection({
                 type="button"
                 onClick={() => onDeleteFont(font.id)}
                 className={cn(
-                  "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
-                  "flex items-center justify-center",
-                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity cursor-pointer",
+                  "absolute -top-2 -right-2 flex size-6 cursor-pointer items-center justify-center rounded-full bg-panel text-fg-soft shadow-card transition-[opacity,color] hover:text-alert",
+                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-acc [@media(hover:none)]:opacity-100",
                 )}
                 aria-label={`删除字体「${font.display_name}」`}
               >
-                <X className="h-3 w-3 text-muted-foreground" />
+                <X aria-hidden className="size-3.5" strokeWidth={2.2} />
               </button>
             </div>
             <InlineInput
               value={font.display_name}
               onCommit={(name) => onUpdateLabel(font.id, name)}
               className="w-[150px]"
-              inputClassName="text-xs text-center text-muted-foreground truncate"
+              inputClassName="truncate text-center text-[12px] text-fg-soft"
             />
           </div>
         ))}
@@ -112,35 +111,35 @@ export function FontSection({
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="w-[150px] h-[113px] rounded-frame border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+              className="flex h-[113px] w-[150px] cursor-pointer items-center justify-center rounded-[14px] border border-dashed border-line-strong bg-tint/[0.03] text-fg-muted transition-colors outline-none hover:border-acc hover:bg-acc-soft hover:text-acc-text focus-visible:outline-2 focus-visible:outline-acc"
               aria-label="添加字体"
             >
-              <Plus className="h-5 w-5 text-muted-foreground/60" />
+              <Plus aria-hidden className="size-5" strokeWidth={2} />
             </button>
 
             {menuOpen && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-[180px] rounded-lg border bg-popover p-1.5 shadow-lg">
+              <div className="glass-strong absolute top-full left-0 z-50 mt-1.5 w-[188px] rounded-[14px] p-1.5">
                 <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     setPickerOpen(true);
                   }}
-                  className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  className="flex w-full cursor-pointer items-center rounded-[9px] px-3 py-2 text-[13px] text-fg transition-colors hover:bg-tint/[0.07]"
                 >
                   从字体库选择
                 </button>
                 <button
                   type="button"
                   onClick={handleManualInput}
-                  className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  className="flex w-full cursor-pointer items-center rounded-[9px] px-3 py-2 text-[13px] text-fg transition-colors hover:bg-tint/[0.07]"
                 >
                   手动输入字体名称
                 </button>
               </div>
             )}
           </div>
-          <span className="text-xs text-muted-foreground/60">添加</span>
+          <span className="text-[12px] text-fg-muted">添加</span>
         </div>
       </div>
 

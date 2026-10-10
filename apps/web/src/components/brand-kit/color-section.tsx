@@ -65,21 +65,20 @@ export function ColorSection({
               <button
                 type="button"
                 onClick={() => handleSwatchClick(color)}
-                className="w-[69px] h-[69px] rounded-frame border cursor-pointer transition-shadow hover:shadow-md"
+                className="size-[69px] cursor-pointer rounded-[14px] shadow-card ring-1 ring-tint/10 ring-inset transition-shadow outline-none hover:shadow-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
                 style={{ backgroundColor: color.text_content ?? "#888888" }}
-                aria-label={`Edit color ${color.display_name}`}
+                aria-label={`修改颜色「${color.display_name}」`}
               />
               <button
                 type="button"
                 onClick={() => onDeleteColor(color.id)}
                 className={cn(
-                  "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
-                  "flex items-center justify-center",
-                  "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
+                  "absolute -top-2 -right-2 flex size-6 cursor-pointer items-center justify-center rounded-full bg-panel text-fg-soft shadow-card transition-[opacity,color] hover:text-alert",
+                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-acc [@media(hover:none)]:opacity-100",
                 )}
-                aria-label={`Delete color ${color.display_name}`}
+                aria-label={`删除颜色「${color.display_name}」`}
               >
-                <X className="h-3 w-3 text-muted-foreground" />
+                <X aria-hidden className="size-3.5" strokeWidth={2.2} />
               </button>
               {/* Popover anchored to the swatch being edited */}
               {editingAsset?.id === color.id && (
@@ -98,7 +97,7 @@ export function ColorSection({
               value={color.display_name}
               onCommit={(name) => onUpdateLabel(color.id, name)}
               className="w-[69px]"
-              inputClassName="text-xs text-center text-muted-foreground truncate"
+              inputClassName="truncate text-center text-[12px] text-fg-soft"
             />
           </div>
         ))}
@@ -110,10 +109,10 @@ export function ColorSection({
               ref={addButtonRef}
               type="button"
               onClick={handleAddClick}
-              className="w-[69px] h-[69px] rounded-frame border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+              className="flex size-[69px] cursor-pointer items-center justify-center rounded-[14px] border border-dashed border-line-strong bg-tint/[0.03] text-fg-muted transition-colors outline-none hover:border-acc hover:bg-acc-soft hover:text-acc-text focus-visible:outline-2 focus-visible:outline-acc"
               aria-label="添加颜色"
             >
-              <Plus className="h-5 w-5 text-muted-foreground/60" />
+              <Plus aria-hidden className="size-5" strokeWidth={2} />
             </button>
             {/* Popover anchored to add button */}
             {!editingAsset && (
@@ -126,7 +125,7 @@ export function ColorSection({
               />
             )}
           </div>
-          <span className="text-xs text-muted-foreground/60">添加</span>
+          <span className="text-[12px] text-fg-muted">添加</span>
         </div>
       </div>
     </section>

@@ -225,7 +225,7 @@ export function Segmented({
               );
             }}
             className={cn(
-              "sk flex-1 rounded-[10px] px-3 transition-[background-color,color,scale] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45",
+              "sk flex-1 rounded-[10px] px-3 whitespace-nowrap transition-[background-color,color,scale] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45",
               size === "lg" ? "numeral h-12 text-[26px]" : "h-9 text-[13px] font-semibold tabular",
               active
                 ? "bg-fg text-ground"

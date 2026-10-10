@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
+import { ListFilter, Plus, Puzzle, Search, ShieldCheck } from "lucide-react";
 
 import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 
@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/page-header";
 import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
+import { PosterTabs, posterPanelProps } from "@/components/ui/poster-tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -337,14 +338,6 @@ export default function SkillsPage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Loading
-  // ---------------------------------------------------------------------------
-
-  if (pageLoading) {
-    return <SkillsSkeleton />;
-  }
-
-  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -358,63 +351,51 @@ export default function SkillsPage() {
       <PageHeader
         title="技能"
         description="给助手装上可复用的做法和工具，对话时会按需调用。"
-        className="pb-6"
+        className="pb-5"
       />
       <div className="mx-auto max-w-[1600px] px-4 pb-12 sm:px-8 lg:px-12">
+      <PosterTabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        tabs={TABS.map((tab) => ({ value: tab, label: TAB_LABELS[tab] }))}
+        ariaLabel="技能分类"
+        idPrefix="skills"
+      />
 
-      {/* Tab navigation -- scrollable on narrow screens */}
-      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-border sm:mb-6">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            aria-pressed={activeTab === tab}
-            className={cn(
-              "min-h-[44px] whitespace-nowrap px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px sm:min-h-0",
-              activeTab === tab
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
-
+      <div {...posterPanelProps("skills", activeTab)} className="pt-6 sm:pt-8">
       {/* === Installed Tab === */}
-      {activeTab === "installed" && loadFailed && (
-        <div className="flex flex-col items-start gap-3 rounded-lg glass p-5">
+      {activeTab === "installed" && pageLoading && <SkillsSkeleton />}
+      {activeTab === "installed" && !pageLoading && loadFailed && (
+        <div className="glass flex flex-col items-start gap-3 rounded-[18px] p-5">
           <p className="text-sm text-fg">技能列表没有加载出来。</p>
-          <Button variant="outline" size="sm" onClick={() => void loadSkills()}>
+          <Button variant="secondary" size="sm" onClick={() => void loadSkills()}>
             重试
           </Button>
         </div>
       )}
-      {activeTab === "installed" && !loadFailed && (
+      {activeTab === "installed" && !pageLoading && !loadFailed && (
         <>
           {/* Search + Filter Bar -- wraps on small screens */}
-          <div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-6 sm:gap-3">
+          <div className="mb-5 flex flex-wrap items-center gap-2 sm:mb-6 sm:gap-2.5">
             {/* Category filter */}
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="secondary"
                     className="min-h-[44px] sm:min-h-0"
                   >
                     <ListFilter className="size-3.5" />
                     筛选
                     {selectedCategories.size > 0 && (
-                      <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[11px] font-medium text-background">
+                      <span className="numeral ml-0.5 flex size-[18px] items-center justify-center rounded-full bg-acc text-[11px] text-acc-ink">
                         {selectedCategories.size}
                       </span>
                     )}
                   </Button>
                 }
               />
-              <DropdownMenuContent align="start" sideOffset={4}>
+              <DropdownMenuContent align="start" sideOffset={6}>
                 {CATEGORIES.map((cat) => (
                   <DropdownMenuCheckboxItem
                     key={cat.value}
@@ -429,22 +410,29 @@ export default function SkillsPage() {
 
             {/* Search -- full width on mobile, constrained on desktop */}
             <div className="relative order-last w-full sm:order-none sm:max-w-sm sm:flex-1">
-              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-muted"
+              />
               <input
-                type="text"
+                type="search"
                 placeholder="搜索技能"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="搜索技能"
-                className="h-10 w-full rounded-lg border border-input bg-transparent pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-7"
+                className="h-11 w-full rounded-[10px] bg-tint/[0.06] pr-3 pl-8.5 text-sm text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted focus:shadow-[inset_0_0_0_1px_var(--acc)] sm:h-9"
               />
             </div>
 
             {/* Official filter toggle */}
             <Button
-              variant={officialOnly ? "default" : "outline"}
-              size="sm"
-              className="min-h-[44px] sm:min-h-0"
+              variant="secondary"
+              aria-pressed={officialOnly}
+              className={cn(
+                "min-h-[44px] sm:min-h-0",
+                officialOnly &&
+                  "bg-acc-soft text-acc-text hover:bg-acc-soft hover:text-acc-text",
+              )}
               onClick={() => setOfficialOnly((p) => !p)}
             >
               <ShieldCheck className="size-3.5" />
@@ -457,39 +445,23 @@ export default function SkillsPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-card p-3 sm:mb-6 sm:gap-5 sm:p-5"
+            className="glass mb-5 flex items-center gap-3.5 rounded-[18px] p-3.5 sm:mb-6 sm:gap-5 sm:p-5"
           >
-            {/* Puzzle illustration */}
-            <div className="hidden sm:flex shrink-0 items-center justify-center">
-              <div className="relative h-16 w-20">
-                {/* Card 1 */}
-                <div className="absolute left-0 top-1 h-14 w-12 rounded-lg border border-border bg-secondary shadow-sm" />
-                {/* Card 2 (overlapping) */}
-                <div className="absolute left-5 top-0 h-14 w-12 rounded-lg border border-border bg-card shadow-sm flex items-center justify-center">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    className="size-6 text-muted-foreground"
-                  >
-                    <path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />
-                  </svg>
-                </div>
-              </div>
+            <div className="hidden size-12 shrink-0 -rotate-6 items-center justify-center rounded-[13px] bg-acc text-acc-ink shadow-acc sm:flex">
+              <Puzzle aria-hidden className="size-6" strokeWidth={1.75} />
             </div>
 
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-medium text-foreground">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-[19px] leading-tight text-fg sm:text-[21px]">
                 添加自定义技能
               </h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-1 text-[13px] text-fg-soft">
                 把常用流程写成 SKILL.md，助手就能照着做
               </p>
             </div>
 
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-3.5" />
+            <Button variant="accent" slant onClick={() => setCreateOpen(true)}>
+              <Plus className="size-3.5" strokeWidth={2.4} />
               添加
             </Button>
           </motion.div>
@@ -502,15 +474,15 @@ export default function SkillsPage() {
               animate="visible"
               className="flex flex-col items-center justify-center py-20 text-center"
             >
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Search className="size-5 text-muted-foreground" />
+              <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
+                <Search aria-hidden className="size-5 text-fg-muted" />
               </div>
-              <p className="text-sm font-medium text-foreground">
-                {hasActiveFilters ? "未找到匹配的技能" : "暂无技能"}
+              <p className="font-display text-[20px] text-fg">
+                {hasActiveFilters ? "没有找到匹配的技能" : "还没有技能"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1.5 text-[13px] text-fg-soft">
                 {hasActiveFilters
-                  ? "尝试调整搜索或筛选条件"
+                  ? "换个关键词，或清掉筛选条件"
                   : "创建一个自定义技能，或去「市场」装一个"}
               </p>
             </motion.div>
@@ -572,6 +544,7 @@ export default function SkillsPage() {
         onUninstall={handleUninstall}
         onDelete={handleDelete}
       />
+      </div>
       </div>
     </div>
   );

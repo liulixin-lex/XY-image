@@ -5,10 +5,11 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, count }: SectionHeaderProps) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    <div className="mb-3.5 flex items-center gap-2">
+      {/* Poster label (display face, coral slash), as in settings sections. */}
+      <h3 className="poster-label text-[17px] leading-tight text-fg">{title}</h3>
       {count !== undefined && count > 0 && (
-        <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+        <span className="numeral rounded-full bg-tint/[0.07] px-2 py-0.5 text-[11.5px] text-fg-soft">
           {count}
         </span>
       )}

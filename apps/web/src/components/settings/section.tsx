@@ -30,9 +30,10 @@ export function SettingsSection({
       )}
     >
       <div>
-        <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
+        {/* Same voice as the studio's field labels: display face, coral slash. */}
+        <h2 className="poster-label text-[18px] leading-tight text-fg">{title}</h2>
         {description ? (
-          <p className="mt-1.5 text-[13px] leading-relaxed text-fg-soft">{description}</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-fg-soft">{description}</p>
         ) : null}
       </div>
       <div className="min-w-0">{children}</div>
