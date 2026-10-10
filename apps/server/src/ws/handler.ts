@@ -59,6 +59,24 @@ export async function registerWsRoute(
         return;
       }
 
+      // @fastify/websocket drops messages that arrive before a 'message'
+      // listener exists, and the token check below is async. A client that
+      // sends right after `open` (the browser chat, a resume) would lose that
+      // command and wait for an ack forever, so hold such messages until the
+      // connection is bound, then handle them in order.
+      const early: EarlyMessages = { messages: [], hold: () => {} };
+      early.hold = (raw) => {
+        if (early.messages.length < EARLY_MESSAGE_LIMIT) {
+          early.messages.push(raw);
+          return;
+        }
+        createPipelineLogger("ws").warn("early_messages_overflow", {
+          limit: EARLY_MESSAGE_LIMIT,
+        });
+        socket.close(1008, "Too many messages before login");
+      };
+      socket.on("message", early.hold);
+
       void authenticateAndBind(
         socket,
         token,
@@ -66,10 +84,19 @@ export async function registerWsRoute(
         options,
         agentRuns,
         connectionManager,
+        early,
       );
     },
   );
 }
+
+/** Commands a client may send before its token check finishes. */
+const EARLY_MESSAGE_LIMIT = 32;
+
+type EarlyMessages = {
+  messages: Array<Buffer | string>;
+  hold: (raw: Buffer | string) => void;
+};
 
 async function authenticateAndBind(
   socket: WebSocket,
@@ -78,6 +105,7 @@ async function authenticateAndBind(
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
+  early: EarlyMessages,
 ) {
   const log = createPipelineLogger("ws");
 
@@ -135,11 +163,20 @@ async function authenticateAndBind(
     }
   }, 30_000);
 
-  socket.on("message", (raw: Buffer | string) => {
+  const handle = (raw: Buffer | string) => {
     void onMessage(raw).catch(() => {
       socket.close(4001, "登录已过期");
     });
-  });
+  };
+  // Swap the holding listener for the real one in one synchronous step, so
+  // nothing slips between them and held messages go first.
+  socket.off("message", early.hold);
+  socket.on("message", handle);
+  const held = early.messages.splice(0);
+  if (held.length > 0)
+    log.info("early_messages", { connectionId, count: held.length });
+  for (const raw of held) handle(raw);
+
   async function onMessage(raw: Buffer | string) {
     let parsed: unknown;
     try {
