@@ -1,6 +1,6 @@
 # GGUU AI IMAGE 前端交接
 
-更新于 2026-10-10（第三版界面 F2、节点画布）。本文写给接手 `apps/web` 的开发者。它和 [`XY2API_FRONTEND_HANDOFF.md`](./XY2API_FRONTEND_HANDOFF.md)（后端接口规范）是一对：那份规定接口，这份讲前端怎么用这些接口、为什么这样做，以及还剩哪些坑。
+更新于 2026-10-10（第三版界面 F2、节点画布、技术栈与性能）。本文写给接手 `apps/web` 的开发者。它和 [`XY2API_FRONTEND_HANDOFF.md`](./XY2API_FRONTEND_HANDOFF.md)（后端接口规范）是一对：那份规定接口，这份讲前端怎么用这些接口、为什么这样做，以及还剩哪些坑。
 
 产品背景和用户画像见 `apps/web/PRODUCT.md`，视觉方向见 `apps/web/.impeccable/surfaces/src-app-page-tsx.md`，从代码反推的设计系统（token、组件、规则）见 `apps/web/DESIGN.md`（机器可读的补充在 `apps/web/.impeccable/design.json`，由 DESIGN.md 生成；2026-10-10 按 F2 重写）。改 token 或签名组件时三处一起改：`app/globals.css`、DESIGN.md、design.json。
 
@@ -62,15 +62,43 @@
 方向是第三版「海报 · 柔和版」（F2，2026-10-10 用户选定，替换第二版「夜色光场」，方向合同见 `apps/web/.impeccable/surfaces/src-app-page-tsx.md`）：页面像一个有光的房间，墙面过渡到地面，当前那张图的颜色淡淡地染满房间；石墨色的字，唯一的强调色是珊瑚，用在每屏最要紧的那个动作上；选项和主按钮是带小圆角的斜切形。品牌名 GGUU AI IMAGE。文案直白，不用行话；不用琥珀或黄色铺色，不做硬黑边、纯黑白的刺眼海报。
 
 - **亮暗主题**：next-themes（`components/providers.tsx`）默认跟随系统，可以手动切换并记住。`:root` 是亮色，`.dark` 换同一套名字。组件只用语义 token，不写死白色和黑色；`tint` 是叠加色（亮色下是墨色，暗色下是近白），写成 `bg-tint/[0.05]` 这类。压在照片上的文字两种主题都用白字加遮罩。
-- **Token**（`app/globals.css`，顶部注释讲了规则）：墙 `wall` / `wall-2`、地面 `floor`、面板 `panel`、文字 `fg` / `fg-soft` / `fg-muted`、线 `line` / `line-strong`；强调色珊瑚 `acc`（亮色 #e5533d，暗色 #ff8068 配深色字）；`warn`（橙）用于待核对，`alert`（深红，和珊瑚分开）用于失败，`ok` 绿；都配文字，不单靠颜色。`amb` / `amb-2` 是当前图片的环境色（`components/ambient/ambient-provider.tsx` 取色后由 GSAP 补间写到 `<html>`）。
-- **形状与材质**：`sk` / `sk-in` / `sk-frame` 是斜切形（按钮、页签、贴纸、斜切大图）；卡片和面板 16px 圆角。`glass`（漂浮在画面上的控件和面板）和 `glass-strong`（菜单、弹窗），`prefers-reduced-transparency` 时退回实色。阴影带偏移和模糊，颜色压向房间的石墨色，不用纯黑。
-- **字体**（`app/layout.tsx`、`app/display-font.css`）：标题和主按钮用 GGUU Display（优设标题黑的子集，`font-display`），张数、计时、余额这类大数字用 Big Shoulders Display（`numeral`），正文 Geist + Noto Sans SC，数据用 Geist Mono（`data-label`）。
+- **Token**（`app/globals.css`，顶部注释讲了规则）：墙 `wall` / `wall-2`、地面 `floor`、面板 `panel`、文字 `fg` / `fg-soft` / `fg-muted`、线 `line` / `line-strong`；强调色珊瑚 `acc`（亮色 #e5533d，暗色 #ff8068 配深色字）；`warn`（橙）用于待核对，`alert`（深红，和珊瑚分开）用于失败，`ok` 绿；都配文字，不单靠颜色。`amb` / `amb-2` 是当前图片的环境色（`components/ambient/ambient-provider.tsx` 取色后直接写到 `<html>`，给按钮光晕这类小处用）；房间里的大片染色由 `AmbientWash` 画：新颜色是一层新的渐变，用 opacity 淡入盖住旧的一层，淡完丢掉旧层（最多两层）。2026-10-10 之前是 GSAP 逐帧补间 `<html>` 上的变量，每帧整页重新计算样式和重绘，换图时卡顿。
+- **形状与材质**：`sk` / `sk-in` / `sk-frame` 是斜切形（按钮、页签、贴纸、斜切大图）；卡片和面板 16px 圆角。`glass`（贴在页面里的面板，半透明但不模糊）、`glass-float`（漂浮在画面或图片上的小控件，带背景模糊）和 `glass-strong`（菜单、弹窗），`prefers-reduced-transparency` 时退回实色；没有显卡加速的机器上所有背景模糊都关掉（见下面「技术栈与性能」的渲染档位）。新加的半透明面板默认用 `glass`，只有真的压在图片上、需要磨砂感的小件才用 `glass-float`。阴影带偏移和模糊，颜色压向房间的石墨色，不用纯黑。
+- **字体**（`app/layout.tsx`、`app/display-font.css`）：标题和主按钮用 GGUU Display（优设标题黑的子集，`font-display`），张数、计时、余额这类大数字用 Big Shoulders Display（`numeral`），正文 Geist + 系统中文字体（`--font-cjk`：苹方、冬青黑、微软雅黑、思源黑体），数据用 Geist Mono（`data-label`）。GGUU Display 按 unicode-range 分片，第一片 `display-ui.woff2` 是拉丁字母加界面源码里用到的全部汉字（约 70 KB，`layout.tsx` 预加载），所以界面文字首屏就用对字体；用户输入的提示词里的生僻字按需再拉其他分片。改了界面文案后重跑 `scripts/split-display-font.py`（用法在脚本头部），否则新出现的汉字会多拉一个分片。2026-10-10 之前正文用 next/font 的 Noto Sans SC，一个页面要下 700 KB 到 1.3 MB 字体。
 - **布局**：已登录页面共用 `app/(workspace)/layout.tsx`：顶部导航（`components/app-sidebar.tsx`，名字沿用上游；手机端是底部浮动栏），内容容器 `max-w-[1600px]`。
 - 品牌名集中在 `lib/brand.ts`；图标在 `components/brand/brand-mark.tsx`。`public/` 下的 favicon、logo、apple-touch-icon、og-image 由 `scripts/generate-brand-assets.mjs` 生成（F2：珊瑚斜块；分享图是亮色房间里的落地页海报，配图用 Unsplash 授权的 showcase-8），用法（字体目录、sharp 路径）写在脚本头部。改了图标、房间颜色或首屏文案要同步脚本。
 - 在 `<a>` 上用按钮样式时，直接用 `buttonVariants()`（已经过 tailwind-merge）。不要给 Base UI 的 `Button` 传 `render={<a/>}`。
-- **动效**：每个动效在 `prefers-reduced-motion` 下都直接显示最终状态（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 统一关闭）。
+- **动效**：只动 transform、opacity、filter（合成器线程就能做，不触发布局）。进场用 `animate-enter`（配 `--stagger` 变量做依次进场）、盖章 `animate-stamp`、出图揭开 `animate-reveal`、环境光淡入 `animate-ambient-in`，都在 globals.css；弹层和 toast 用 tw-animate-css 的 `animate-in` / `animate-out`；展开收起用 `grid-rows-[0fr]` → `grid-rows-[1fr]`，不动画高度。framer-motion 已经去掉，不要再加回来；GSAP 只剩落地页的少量编排。每个动效在 `prefers-reduced-motion` 下都直接显示最终状态（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 统一关闭）。
 - **账户页面**（M-F，2026-10-10）：设置、品牌套件、技能三页的分类都用 `components/ui/poster-tabs.tsx`（`PosterTabs` + `posterPanelProps`）：斜切页签，当前页签是墨色，和顶部导航一致；有完整的 tab 语义，←/→ 切换，Home/End 跳到两头。分组标题用 `poster-label`（设置的 `SettingsSection`、品牌套件的 `SectionHeader`）。品牌套件有了页头，加载和出错时也保留页头（`BrandKitFrame`），套件列表、色块、字体和图片格子都是 14px 圆角的面板，添加格子悬停时变珊瑚色；空状态和「添加自定义技能」用落地页同款的珊瑚贴纸图标和珊瑚斜切按钮。技能卡片用「名字按钮 + `::after` 盖住整张卡」的写法，整张卡可点、开关和菜单仍是独立控件，键盘也能用；市场卡片本身就是按钮。输入框统一是 `bg-tint/[0.06]`，聚焦时珊瑚内描边。
 - **设计助手侧栏**（M-E，2026-10-10）：标题用 `poster-label`（「/ 设计助手」）；用户消息是墨色气泡（`bg-fg text-ground`），里面的提及和图片小标签跟随 `currentColor`；助手文字不加底，流式光标是珊瑚色。输入框和生图页的提示词框一样：凹下去的 `well` 底，聚焦时珊瑚描边；发送是珊瑚斜切按钮，停止是墨色斜切按钮。空对话的起步建议是斜切小标签。工具卡片都是 14px 圆角：生成中沿用生图页的斜纹 + 往复进度条；出图卡片在图放到画布上（输出里有 `elementId`）时盖一个落地页同款的珊瑚贴纸「已放到画布」，流式时盖章动一下，历史消息和减少动效时直接显示。没出图的卡片按 `components/chat/media-outcome.ts` 判断，规则和生图页 `describeOutcome` 一致：任务说没扣费才写「没生成出来」加原因；没有账单状态（旧消息、工具抛错）、待结算或可能扣费的码都写「结果待核对 / 图片可能已经生成」，橙色底，带「打开生成记录」（`/settings?tab=records`，新标签页）。服务端在工具输出里带 `errorCode`、`billingStatus`（`apps/server/src/agent/runtime.ts` 的 `settledFailure`）。页头、收起时的打开按钮和断线提示在 `components/chat/chat-panel-chrome.tsx`。
+
+## 技术栈与性能（2026-10-10）
+
+用户反馈 v0.0.2 刷新、滚动、交互都顿挫，要求换「最佳语言搭配」重写。结论是不换语言：Midjourney、Leonardo、Krea、Ideogram 这类生图站的前端都是 TypeScript + React（多数用 Next.js）+ CSS，和本站一样。顿挫来自具体做法，所以技术栈不动，把慢的地方逐个改掉，布局和设计不变（和 v0.0.2 截图逐像素对比，差异只在正文字体的渲染）。
+
+用生产构建量的前后对比（预览数据，Chrome CPU 降速 4 倍，脚本在 `xy-ops/agent01/perf/`，没进仓库）：
+
+| 页面 | 指标 | v0.0.2 | 现在 |
+| --- | --- | --- | --- |
+| 落地页 | 字体下载 | 1365 KB | 177 KB |
+| 落地页 | 首次内容绘制 / 主线程阻塞 | 384 ms / 140 ms | 236 ms / 69 ms |
+| 生图页 | 字体下载 | 811 KB | 298 KB |
+| 生图页 | 最大内容绘制 / 主线程阻塞 | 900 ms / 103 ms | 712 ms / 55 ms |
+| 生图页 | 输入提示词时最慢的一次按键 | 80 ms | 32 ms |
+| 生图页 | 滚动时主线程任务 | 758 ms | 552 ms |
+| 其他页面 | 字体下载 | 约 730 KB | 177 KB |
+
+首屏 JS（gzip）：home 343→283 KB，studio 354→297，projects 268→229，settings 318→284，skills 304→268，brand-kit 273→237，canvas 492→473；落地页 309→320（React Compiler 的缓存代码，换来交互时少渲染）。
+
+改了什么，以后写代码要注意什么：
+
+1. **字体**：正文换成系统中文字体，标题字体按界面用字预加载（见上面「字体」）。不要再用 next/font 引入整套中文字体。
+2. **React Compiler**（`next.config.ts` 的 `experimental.reactCompiler`，`babel-plugin-react-compiler`）：构建时自动缓存组件和 hook，输入提示词、任务计时不再让整页重渲染。不符合 React 规则的组件会被跳过（不会编错），所以照 Rules of React 写：渲染时不改 ref、不改外部变量。新代码不需要手写 `useMemo` / `useCallback`。
+3. **计时**：`hooks/use-now.ts` 是全站共用的一秒时钟（一个 interval，最后一个使用者卸载时停）。用它的组件要尽量小，像 `batch-feed.tsx` 的 `Elapsed` 那样只包住计时文字；以前每个进行中任务的计时会让整个结果列表每秒重渲染。
+4. **动效和环境光**：只用合成器能做的 CSS 动画，换图时环境光用两层淡入淡出（见上面「动效」和 Token 里的 `amb`）。不要逐帧改 `<html>` 上的 CSS 变量。
+5. **渲染档位**（`lib/render-tier.ts`）：背景模糊在真显卡上很便宜，在没有显卡加速的机器（软件渲染、虚拟机、远程桌面）上很贵：实测软件合成时，顶部导航的磨砂底一项就占了页面滚动合成开销的六成左右。页面空闲时用 WebGL（`failIfMajorPerformanceCaveat` 加渲染器名字）判断一次，结果存在 localStorage `xy-render-tier`，下次打开由 `layout.tsx` 里的内联脚本在首帧前加上 `<html data-render="lite">`。lite 下所有 `backdrop-filter` 关掉，漂浮面板和滚动后的导航换成实色底，布局和颜色不变。判成 lite 后一直保留，判成 full 的每天复查一次。控制台日志 `[render] tier`。手动试 lite：`localStorage.setItem("xy-render-tier", JSON.stringify({ tier: "lite", at: Date.now() }))` 后刷新，删掉这个键恢复自动判断。
+6. **列表缩略图**：服务端交付图片时顺带用 sharp 写一张长边 768 的 `.thumb.webp`（`apps/server/src/features/xy2api/image-runner.ts` 的 `writeThumbnail`，失败只打 `[image-runner] thumbnail … skipped` 日志，不影响交付和计费），任务结果多了 `thumb_url` / `thumb_path`。结果列表、记录栏、首页最近生成和环境取色用 `listImage(job)`（有缩略图用缩略图，旧任务回到原图）；大图、下载、编辑和作为参考图仍然用原图 `job.url`。以前列表里每张都下原图（4K 是几千像素见方）再缩小显示。
+7. **开发服务器**：`pnpm dev` 用 Turbopack。`next dev` 不压缩、跑 React 开发模式、按需编译，本来就比线上慢很多，**判断流不流畅要看生产构建**（`pnpm --filter @loomic/web build` 后静态托管 `apps/web/out`），不要拿 :3000 的手感下结论。
 
 ## 节点画布
 
@@ -93,11 +121,11 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 32 个文件，225 个用例（2026-10-10）
+npx vitest run                     # 33 个文件，231 个用例（2026-10-10）
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 
-`test/setup.ts` 为 jsdom 补了 `matchMedia`。日志统一用 `[模块]` 前缀，例如 `[image-gen]`、`[studio]`、`[landing]`、`[ambient]`、`[auth]`、`[brand-kit]`、`[skills]`、`[canvas]`、`[node-canvas]`、`[chat-provider]`、`[settings]`、`[account]`、`[fonts]`，线上排查时可以按前缀过滤控制台。
+`test/setup.ts` 为 jsdom 补了 `matchMedia`。日志统一用 `[模块]` 前缀，例如 `[image-gen]`、`[studio]`、`[landing]`、`[ambient]`、`[auth]`、`[brand-kit]`、`[skills]`、`[canvas]`、`[node-canvas]`、`[chat-provider]`、`[settings]`、`[account]`、`[fonts]`、`[render]`，线上排查时可以按前缀过滤控制台。
 
 ## 已移除的上游内容
 
