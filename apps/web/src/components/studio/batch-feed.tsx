@@ -411,7 +411,7 @@ function Placeholder({
             href={usageUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-8 items-center gap-1 rounded-[9px] bg-warn px-3 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex h-8 items-center gap-1 rounded-[9px] bg-warn px-3 text-[12.5px] font-semibold text-ground transition-opacity hover:opacity-90"
           >
             去主站核对
             <ArrowUpRightIcon className="size-3.5" />

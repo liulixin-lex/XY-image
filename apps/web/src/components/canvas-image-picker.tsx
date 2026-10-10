@@ -65,8 +65,8 @@ function itemKeywords(item: MessageMentionPickerItem): string[] {
 function groupTitle(kind: MessageMentionPickerItem["kind"]): string {
   if (kind === "canvas-image") return "本项目";
   if (kind === "brand-kit-asset") return "品牌套件";
-  if (kind === "skill") return "Skills";
-  return "Model";
+  if (kind === "skill") return "技能";
+  return "模型";
 }
 
 export function MessageMentionPicker({
@@ -124,9 +124,9 @@ export function MessageMentionPicker({
     return (
       <div
         ref={containerRef}
-        className="absolute bottom-full left-2 mb-2 w-56 rounded-xl border border-border bg-popover p-3 shadow-lg"
+        className="glass-strong absolute bottom-full left-3 mb-2 w-60 rounded-[14px] p-3"
       >
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[12px] text-fg-soft">
           {items.length === 0 ? "还没有可以引用的图片" : `没有匹配「${query}」的内容`}
         </p>
       </div>
@@ -136,7 +136,7 @@ export function MessageMentionPicker({
   return (
     <div
       ref={containerRef}
-      className="absolute bottom-full left-2 mb-2 max-h-64 w-64 overflow-y-auto rounded-xl border border-border bg-popover shadow-lg"
+      className="glass-strong absolute bottom-full left-3 mb-2 max-h-72 w-72 overflow-y-auto rounded-[14px]"
     >
       <div className="p-2">
         {(
@@ -151,7 +151,7 @@ export function MessageMentionPicker({
           if (!sectionItems.length) return null;
           return (
             <div key={kind} className="mb-2 last:mb-0">
-              <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
+              <div className="mb-1 px-1.5 text-[11px] font-semibold text-fg-muted">
                 {groupTitle(kind)}
               </div>
               {sectionItems.map((item) => (
@@ -162,26 +162,26 @@ export function MessageMentionPicker({
                     onSelect(item);
                     onClose();
                   }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                  className="flex w-full items-center gap-2.5 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-acc-soft focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
                 >
                   <PickerLeadingVisual item={item} />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-foreground">
+                    <div className="truncate text-[13px] text-fg">
                       {itemLabel(item)}
                     </div>
                     {item.kind === "brand-kit-asset" && (
-                      <div className="truncate text-[11px] text-muted-foreground">
+                      <div className="truncate text-[11px] text-fg-muted">
                         {item.assetType}
                         {item.textContent ? ` · ${item.textContent}` : ""}
                       </div>
                     )}
                     {item.kind === "image-model" && item.description && (
-                      <div className="truncate text-[11px] text-muted-foreground">
+                      <div className="truncate text-[11px] text-fg-muted">
                         {item.description}
                       </div>
                     )}
                     {item.kind === "skill" && item.description && (
-                      <div className="truncate text-[11px] text-muted-foreground">
+                      <div className="truncate text-[11px] text-fg-muted">
                         {item.description}
                       </div>
                     )}
@@ -202,7 +202,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
       <img
         src={item.thumbnailUrl}
         alt={item.name}
-        className="h-8 w-8 shrink-0 rounded border border-border object-cover"
+        className="size-8 shrink-0 rounded-[8px] object-cover shadow-[inset_0_0_0_1px_var(--line)]"
       />
     );
   }
@@ -212,7 +212,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
       <img
         src={item.thumbnailUrl}
         alt={item.label}
-        className="h-8 w-8 shrink-0 rounded border border-border object-cover"
+        className="size-8 shrink-0 rounded-[8px] object-cover shadow-[inset_0_0_0_1px_var(--line)]"
       />
     );
   }
@@ -222,13 +222,13 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
       <img
         src={item.iconUrl}
         alt={item.label}
-        className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
+        className="size-8 shrink-0 rounded-full object-cover"
       />
     );
   }
 
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-muted text-[11px] font-medium uppercase text-muted-foreground">
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-tint/[0.07] text-[11px] font-semibold uppercase text-fg-soft">
       {item.kind === "brand-kit-asset"
         ? item.assetType.slice(0, 2)
         : item.kind === "skill"

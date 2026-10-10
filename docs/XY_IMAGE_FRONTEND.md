@@ -68,6 +68,7 @@
 - 品牌名集中在 `lib/brand.ts`；图标在 `components/brand/brand-mark.tsx`。`public/` 下的 favicon、logo、apple-touch-icon、og-image 由 `scripts/generate-brand-assets.mjs` 生成，用法（字体目录、sharp 路径）写在脚本头部。改了图标要同步脚本里的几何。
 - 在 `<a>` 上用按钮样式时，直接用 `buttonVariants()`（已经过 tailwind-merge）。不要给 Base UI 的 `Button` 传 `render={<a/>}`。
 - **动效**：每个动效在 `prefers-reduced-motion` 下都直接显示最终状态（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 统一关闭）。
+- **设计助手侧栏**（M-E，2026-10-10）：标题用 `poster-label`（「/ 设计助手」）；用户消息是墨色气泡（`bg-fg text-ground`），里面的提及和图片小标签跟随 `currentColor`；助手文字不加底，流式光标是珊瑚色。输入框和生图页的提示词框一样：凹下去的 `well` 底，聚焦时珊瑚描边；发送是珊瑚斜切按钮，停止是墨色斜切按钮。空对话的起步建议是斜切小标签。工具卡片都是 14px 圆角：生成中沿用生图页的斜纹 + 往复进度条；出图卡片在图放到画布上（输出里有 `elementId`）时盖一个落地页同款的珊瑚贴纸「已放到画布」，流式时盖章动一下，历史消息和减少动效时直接显示。没出图的卡片按 `components/chat/media-outcome.ts` 判断，规则和生图页 `describeOutcome` 一致：任务说没扣费才写「没生成出来」加原因；没有账单状态（旧消息、工具抛错）、待结算或可能扣费的码都写「结果待核对 / 图片可能已经生成」，橙色底，带「打开生成记录」（`/settings?tab=records`，新标签页）。服务端在工具输出里带 `errorCode`、`billingStatus`（`apps/server/src/agent/runtime.ts` 的 `settledFailure`）。页头、收起时的打开按钮和断线提示在 `components/chat/chat-panel-chrome.tsx`。
 
 ## 节点画布
 
@@ -90,7 +91,7 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 29 个文件，202 个用例（2026-10-10）
+npx vitest run                     # 30 个文件，215 个用例（2026-10-10）
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 

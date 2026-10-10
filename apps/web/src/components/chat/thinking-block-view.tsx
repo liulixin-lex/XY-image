@@ -1,7 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { ChevronRightIcon } from "lucide-react";
 import React, { useState } from "react";
+
+import { LiveDot } from "@/components/ambient/live-dot";
+import { cn } from "@/lib/utils";
 
 type ThinkingBlockViewProps = {
   thinking: string;
@@ -11,8 +15,8 @@ type ThinkingBlockViewProps = {
 /**
  * Collapsible thinking block with streaming animation.
  *
- * - During streaming: shows pulsing sparkle icon + thinking text
- * - After streaming: collapses into a toggleable "Thought for a moment" button
+ * - During streaming: the live dot + thinking text
+ * - After streaming: collapses into a 「思考过程」 toggle
  *
  * Memoized to avoid re-rendering non-streaming thinking blocks when new
  * message deltas arrive in the same message.
@@ -29,55 +33,30 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
       animate={{ opacity: 1, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="mb-2 overflow-hidden"
+      className="overflow-hidden"
     >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-[6px] text-[12px] font-medium text-fg-muted transition-colors hover:text-fg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
         aria-expanded={expanded || isStreaming}
         aria-label={isStreaming ? "助手正在思考" : "展开或收起思考过程"}
       >
         {isStreaming ? (
-          <motion.div
-            className="flex items-center gap-1.5"
-            initial={{ opacity: 0.5 }}
-            animate={{ opacity: [0.5, 1, 0.5] }}
-            transition={{
-              duration: 1.5,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 14 14"
-              fill="currentColor"
-              className="text-accent"
-            >
-              <path d="M7.314 1.451a5.527 5.527 0 0 0 5.519 5.242v.614a5.527 5.527 0 0 0-5.519 5.242l-.007.284h-.614l-.007-.284a5.527 5.527 0 0 0-5.519-5.242v-.614a5.527 5.527 0 0 0 5.519-5.242l.007-.284h.614zm4.31 8.125c.042.835.733 1.5 1.58 1.5v.176c-.847 0-1.538.664-1.58 1.5l-.002.081h-.176l-.002-.081a1.58 1.58 0 0 0-1.579-1.5v-.176c.846 0 1.537-.665 1.58-1.5l.001-.08h.176zM7 4.204A6.6 6.6 0 0 1 4.205 7 6.6 6.6 0 0 1 7 9.795 6.6 6.6 0 0 1 9.794 7 6.6 6.6 0 0 1 7 4.204" />
-            </svg>
+          <>
+            <LiveDot className="mx-[3px] size-1.5" />
             <span>正在思考…</span>
-          </motion.div>
+          </>
         ) : (
           <>
-            <motion.svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              animate={{ rotate: expanded ? 90 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <path
-                d="M4.5 2.5l3.5 3.5-3.5 3.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </motion.svg>
+            <ChevronRightIcon
+              aria-hidden
+              className={cn(
+                "size-3.5 transition-transform duration-200",
+                expanded && "rotate-90",
+              )}
+              strokeWidth={2}
+            />
             <span>思考过程</span>
           </>
         )}
@@ -92,7 +71,7 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
             transition={{ duration: 0.2 }}
             className="mt-1.5 overflow-hidden"
           >
-            <div className="border-l-2 border-accent/30 pl-3 text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap">
+            <div className="ml-[6px] border-l border-line-strong pl-3 text-[12px] leading-relaxed whitespace-pre-wrap text-fg-muted">
               {thinking || "\u2014"}
             </div>
           </motion.div>

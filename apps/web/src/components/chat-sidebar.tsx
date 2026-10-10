@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRightCloseIcon, MessageSquareIcon } from "lucide-react";
 
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
@@ -27,7 +26,6 @@ import {
 } from "../hooks/use-image-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAccount, useImageModels } from "../lib/account-context";
-import { BRAND } from "../lib/brand";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import { fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
@@ -46,7 +44,11 @@ import { LiveDot } from "./ambient/live-dot";
 import { useIssues } from "./issues/issue-provider";
 import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
-import { SessionSelector } from "./session-selector";
+import {
+  ChatConnectionBanner,
+  ChatOpenButton,
+  ChatPanelHeader,
+} from "./chat/chat-panel-chrome";
 
 type ChatSidebarProps = {
   accessToken: string;
@@ -1031,16 +1033,7 @@ export function ChatSidebar({
   if (!open) {
     return (
       <div className="absolute top-3 right-3 z-20">
-        <button
-          onClick={onToggle}
-          type="button"
-          aria-label={`打开${BRAND.agentName}`}
-          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-panel/80 backdrop-blur-xl px-3 text-[13px] text-fg shadow-subtle transition-colors hover:border-line-strong"
-        >
-          <MessageSquareIcon className="size-4" strokeWidth={1.75} />
-          <span className="hidden sm:inline">{BRAND.agentName}</span>
-          {streaming ? <LiveDot /> : null}
-        </button>
+        <ChatOpenButton onOpen={onToggle} streaming={streaming} />
       </div>
     );
   }
@@ -1061,41 +1054,19 @@ export function ChatSidebar({
   // between overlay (mobile/tablet) and inline (desktop) render paths.
   const panelContent = (
     <>
-      {/* Header */}
-      <div className="flex min-h-12 items-center justify-between gap-2 border-b border-line pr-2 pl-4">
-        <div className="flex min-w-0 items-center gap-1">
-          <h2 className="shrink-0 text-[14px] font-semibold text-fg">{BRAND.agentName}</h2>
-          {!sessionsLoading && (
-            <SessionSelector
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              onSelect={handleSelectSession}
-              onNewChat={handleNewChat}
-              onDelete={handleDeleteSession}
-            />
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg"
-          title="收起对话"
-          aria-label="收起对话"
-        >
-          <PanelRightCloseIcon className="size-4" strokeWidth={1.75} />
-        </button>
-      </div>
+      <ChatPanelHeader
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        showSessions={!sessionsLoading}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        onDeleteSession={handleDeleteSession}
+        onCollapse={onToggle}
+      />
 
       {/* Connection banner: a dropped connection, or a slow first connect */}
       {!ws.connected && (hasConnected || slowFirstConnect) && (
-        <div role="status" className="flex items-center gap-2 border-b border-line bg-tint/[0.05] px-4 py-2">
-          <LiveDot {...(hasConnected ? { className: "bg-alert" } : {})} />
-          <span className="text-[12px] text-fg-soft">
-            {hasConnected
-              ? "连接已断开，正在重连。进行中的生成不受影响。"
-              : "正在连接…"}
-          </span>
-        </div>
+        <ChatConnectionBanner dropped={hasConnected} />
       )}
 
       {/* Messages */}
@@ -1104,7 +1075,7 @@ export function ChatSidebar({
           console.error("[chat-sidebar] message area render crashed:", err)
         }
       >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4" aria-live="polite" aria-relevant="additions">
+        <div className="flex flex-1 flex-col gap-6 overflow-x-hidden overflow-y-auto px-4 pt-5 pb-4" aria-live="polite" aria-relevant="additions">
           {sessionsLoading || messagesLoading ? (
             <div className="flex h-full items-center justify-center" role="status" aria-label="读取对话">
               <LiveDot />

@@ -14,7 +14,7 @@ import { BRAND } from "@/lib/brand";
 
 type Starter = { icon: ReactNode; label: string; prompt: string };
 
-const ICON = "size-4 shrink-0 text-fg-muted";
+const ICON = "size-4 shrink-0";
 
 /** First-message starters shown in an empty conversation. Sent on click. */
 const STARTERS: Starter[] = [
@@ -56,26 +56,33 @@ type ChatSkillsProps = {
 
 export function ChatSkills({ onSend }: ChatSkillsProps) {
   return (
-    <div className="flex h-full flex-col justify-center gap-4 px-1">
+    <div className="flex h-full flex-col justify-center gap-5 px-1 pb-6">
       <div>
-        <p className="text-[15px] font-semibold text-fg">从哪儿开始</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-fg-soft">
-          {BRAND.agentName}会在画布上出图、排版。点一个直接开始，或在下面写你自己的需求。
+        <h3 className="poster-label text-[28px] leading-[1.1] text-fg">
+          从哪儿开始
+        </h3>
+        <p className="mt-2 max-w-[34ch] text-[13px] leading-relaxed text-fg-soft">
+          {BRAND.agentName}
+          会在画布上出图、排版。点一个直接开始，或在下面写你自己的需求。
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      {/* Slanted chips: the poster's call-to-action shape (globals.css `sk`). */}
+      <ul className="flex flex-wrap gap-2">
         {STARTERS.map((starter) => (
-          <button
-            key={starter.label}
-            type="button"
-            onClick={() => onSend(starter.prompt)}
-            className="flex h-10 min-w-0 items-center gap-2 rounded-md glass px-3 text-left text-[13px] text-fg transition-colors hover:border-line-strong hover:bg-ground"
-          >
-            {starter.icon}
-            <span className="truncate">{starter.label}</span>
-          </button>
+          <li key={starter.label}>
+            <button
+              type="button"
+              onClick={() => onSend(starter.prompt)}
+              className="sk inline-flex h-9 items-center rounded-[10px] bg-tint/[0.06] px-3.5 text-[13px] font-semibold text-fg transition-colors hover:bg-acc-soft hover:text-acc-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:translate-y-px"
+            >
+              <span className="sk-in gap-1.5">
+                {starter.icon}
+                {starter.label}
+              </span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

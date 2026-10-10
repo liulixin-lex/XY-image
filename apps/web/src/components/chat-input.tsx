@@ -199,14 +199,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const { selectionImageCount, selectionShapeCount, hasSelection } = selectionSummary;
 
   return (
-    <div className="px-3 pb-3">
+    <div className="px-3 pt-1 pb-3">
+      {/* The studio's prompt box: a recessed well, coral ring on focus. */}
       <div
-        className="flex min-h-[120px] flex-col justify-between gap-2 rounded-lg glass p-2 shadow-subtle transition-[border-color,box-shadow] focus-within:border-tint/25 focus-within:shadow-card"
+        className="flex min-h-[116px] flex-col justify-between gap-2 rounded-[16px] bg-well p-2 shadow-[inset_0_0_0_1px_var(--line)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--acc),0_0_0_3px_var(--acc-soft)]"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
         {hasSelection && (
-          <div className="flex items-center gap-2 rounded-md bg-tint/[0.05] px-2.5 py-1.5 text-xs text-fg-soft">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[10px] bg-panel px-2.5 py-1.5 text-[12px] text-fg-soft shadow-subtle">
             {selectionImageCount > 0 && (
               <span className="flex items-center gap-1">
                 <ImageIcon className="size-3.5" strokeWidth={1.75} />
@@ -236,10 +237,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 key={`${mention.mentionType}:${mention.id}`}
                 type="button"
                 onClick={() => onRemoveMention(mention)}
-                className="inline-flex items-center gap-1 rounded-sm border border-line bg-tint/[0.05] px-2 py-1 text-[11.5px] text-fg transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-1 rounded-[8px] bg-panel px-2 py-1 text-[11.5px] text-fg shadow-subtle transition-colors hover:bg-acc-soft focus-visible:outline-2 focus-visible:outline-acc"
                 title="移除引用"
+                aria-label={`移除引用 ${mention.label}`}
               >
-                <span className="text-fg-muted">@</span>
+                <span className="text-acc-text">@</span>
                 <span className="max-w-[180px] truncate">{mention.label}</span>
                 <XIcon className="size-3 text-fg-muted" />
               </button>
@@ -257,7 +259,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           aria-label="输入消息"
           rows={1}
           style={{ scrollbarWidth: "none" }}
-          className="min-h-[48px] max-h-60 resize-none bg-transparent px-1.5 pt-1 text-sm leading-[1.75] text-fg placeholder:text-fg-muted focus:outline-none [&::-webkit-scrollbar]:hidden"
+          className="min-h-[48px] max-h-60 resize-none bg-transparent px-1.5 pt-1 text-[14px] leading-[1.7] text-fg caret-acc placeholder:text-fg-muted focus:outline-none [&::-webkit-scrollbar]:hidden"
         />
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">
@@ -274,7 +276,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
                   title="添加图片"
                   aria-label="添加图片"
                 >
@@ -291,10 +293,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 title="生图模型偏好"
                 aria-label="生图模型偏好"
                 className={cn(
-                  "flex size-8 items-center justify-center rounded-md transition-colors",
+                  "flex size-8 items-center justify-center rounded-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-acc",
                   preference.mode === "manual"
                     ? "bg-fg text-ground"
-                    : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
+                    : "text-fg-soft hover:bg-tint/[0.07] hover:text-fg",
                 )}
               >
                 <SlidersHorizontalIcon className="size-4" strokeWidth={1.75} />
@@ -306,6 +308,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               />
             </div>
           </div>
+          {/* Send is the panel's one coral call to action (slanted, like the
+              studio's 生成); stop is ink, so a running chat never looks like
+              something to press again. */}
           {running && onStop ? (
             <button
               type="button"
@@ -313,9 +318,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               disabled={stopping}
               aria-label={stopping ? "正在停止" : "停止"}
               title={stopping ? "正在停止" : "停止"}
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong text-fg transition-colors hover:bg-tint/[0.08] disabled:cursor-wait disabled:opacity-60"
+              className="sk flex h-9 w-11 shrink-0 items-center justify-center rounded-[10px] bg-fg text-ground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-wait disabled:opacity-60"
             >
-              <SquareIcon className="size-3.5" fill="currentColor" strokeWidth={0} />
+              <span className="sk-in">
+                <SquareIcon className="size-3.5" fill="currentColor" strokeWidth={0} />
+              </span>
             </button>
           ) : (
             <button
@@ -323,9 +330,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               onClick={handleSubmit}
               disabled={disabled || !hasContent || isUploading}
               aria-label="发送"
-              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-fg/88 disabled:cursor-not-allowed disabled:bg-line-strong"
+              className="sk flex h-9 w-11 shrink-0 items-center justify-center rounded-[10px] bg-acc text-acc-ink shadow-acc transition-[background-color,box-shadow,translate] hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:translate-y-px disabled:cursor-not-allowed disabled:bg-tint/[0.09] disabled:text-fg-muted disabled:shadow-none"
             >
-              <ArrowUpIcon className="size-4" strokeWidth={2} />
+              <span className="sk-in">
+                <ArrowUpIcon className="size-[18px]" strokeWidth={2.25} />
+              </span>
             </button>
           )}
         </div>

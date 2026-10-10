@@ -21,7 +21,7 @@ const markdownComponents: Components = {
         <ChatImage
           src={href}
           alt={typeof children === "string" ? children : "Image"}
-          className="my-2 max-w-[280px] rounded-lg border border-border"
+          className="my-2 max-w-[280px] rounded-[12px] shadow-card"
         />
       );
     }
@@ -30,7 +30,7 @@ const markdownComponents: Components = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-foreground underline break-all"
+        className="break-all text-acc-text underline underline-offset-2"
       >
         {children}
       </a>
@@ -41,7 +41,7 @@ const markdownComponents: Components = {
       <ChatImage
         src={typeof src === "string" ? src : ""}
         alt={alt ?? "Image"}
-        className="my-2 max-w-[280px] rounded-lg border border-border"
+        className="my-2 max-w-[280px] rounded-[12px] shadow-card"
       />
     );
   },
@@ -73,7 +73,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   const safeText = text || "";
 
   return (
-    <div className="markdown-content text-sm leading-[1.6] text-foreground">
+    <div className="markdown-content text-[14px] leading-[1.7] text-fg">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         components={markdownComponents}
@@ -81,7 +81,10 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         {safeText}
       </ReactMarkdown>
       {showCursor && (
-        <span className="inline-block w-[2px] h-[14px] ml-0.5 -mb-[2px] bg-foreground animate-pulse rounded-full" />
+        <span
+          aria-hidden
+          className="ml-0.5 -mb-[2px] inline-block h-[15px] w-[2px] animate-pulse rounded-full bg-acc motion-reduce:animate-none"
+        />
       )}
     </div>
   );
