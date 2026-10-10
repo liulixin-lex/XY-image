@@ -98,10 +98,16 @@ export default function HomePage() {
     <div className="mx-auto max-w-[1600px] px-4 pt-4 pb-20 sm:px-8 md:pt-10 lg:px-[clamp(20px,2.4vw,40px)]">
       <section className="grid gap-x-[clamp(40px,5vw,88px)] gap-y-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,860px)_340px] xl:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg">
-            想做什么，
+          {/* Two phrases that never break inside: the line can only wrap
+              after "，" (phones always do). At 76px the full line is 11em =
+              836px, inside the 860px column, so wide screens no longer push
+              "手" onto a line of its own. */}
+          <h1 className="font-display text-[clamp(44px,5vw,76px)] leading-[1.02] font-normal text-fg">
+            <span className="whitespace-nowrap">想做什么，</span>
             <br className="sm:hidden" />
-            交给<em className="text-acc not-italic">设计助手</em>
+            <span className="whitespace-nowrap">
+              交给<em className="text-acc not-italic">设计助手</em>
+            </span>
           </h1>
           <p className="mt-4 max-w-[56ch] text-[16px] leading-relaxed text-fg-soft">
             它会新开一张画布，拆解需求、生成图片、排好版。只要一张图？
