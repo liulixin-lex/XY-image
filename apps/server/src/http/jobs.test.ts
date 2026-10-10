@@ -122,6 +122,55 @@ describe("studio batch routes", () => {
     expect(payloads[0]).not.toHaveProperty("count");
   });
 
+  it("stores each picture's canvas slot and generator node (node canvas)", async () => {
+    const { app, jobService } = await route();
+    const canvas = "00000000-0000-4000-8000-0000000000cc";
+    const slots = [
+      { x: 400, y: 0, width: 240, height: 320 },
+      { x: 660, y: 0, width: 240, height: 320 },
+    ];
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: {
+        prompt: "雨夜霓虹街口",
+        count: 2,
+        canvas_id: canvas,
+        canvas_source_id: "gen-1",
+        canvas_slots: slots,
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const payloads = jobService.createJob.mock.calls.map(
+      ([, input]) => input.payload,
+    );
+    expect(payloads.map((p) => p.canvas_slot)).toEqual(slots);
+    expect(payloads.every((p) => p.canvas_source_id === "gen-1")).toBe(true);
+    expect(payloads[0]).not.toHaveProperty("canvas_slots");
+    // Without a canvas the placement means nothing and is not stored.
+    jobService.createJob.mockClear();
+    await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: { prompt: "x", count: 1, canvas_slots: [slots[0]] },
+    });
+    expect(jobService.createJob.mock.calls[0]?.[1].payload).not.toHaveProperty(
+      "canvas_slot",
+    );
+    // Absurd geometry is refused before anything is queued.
+    const bad = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: {
+        prompt: "x",
+        count: 1,
+        canvas_id: canvas,
+        canvas_slots: [{ x: 0, y: 0, width: 1e9, height: 10 }],
+      },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it("returns the pictures that were queued when a later one fails", async () => {
     const { app, jobService } = await route();
     jobService.createJob

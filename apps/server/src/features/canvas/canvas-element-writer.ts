@@ -17,6 +17,11 @@ type ImageInsertOpts = {
   title?: string;
   /** The image job this comes from: one element per job, however often asked. */
   jobId?: string;
+  /**
+   * Node canvas: the generator node the image comes from. When it is still
+   * on the canvas, an edge (a bound arrow) links it to the image.
+   */
+  sourceElementId?: string;
 };
 
 type VideoInsertOpts = {
@@ -143,6 +148,59 @@ function buildImageElement(
   };
 }
 
+/**
+ * An edge of the node canvas: an arrow bound at both ends, from the right
+ * middle of `source` to the left middle of the placed image. It carries the
+ * job id like the image, so a save that has not seen it yet keeps it.
+ */
+function buildEdgeElement(
+  source: CanvasElement,
+  target: { id: string } & Placement,
+  jobId: string | undefined,
+): CanvasElement {
+  const startX = (Number(source.x) || 0) + (Number(source.width) || 0);
+  const startY = (Number(source.y) || 0) + (Number(source.height) || 0) / 2;
+  const dx = target.x - startX;
+  const dy = target.y + target.height / 2 - startY;
+  return {
+    type: "arrow",
+    id: generateId(),
+    x: startX,
+    y: startY,
+    width: Math.abs(dx),
+    height: Math.abs(dy),
+    angle: 0,
+    points: [
+      [0, 0],
+      [dx, dy],
+    ],
+    startBinding: { elementId: source.id, focus: 0, gap: 4 },
+    endBinding: { elementId: target.id, focus: 0, gap: 4 },
+    startArrowhead: null,
+    endArrowhead: "arrow",
+    strokeColor: "#1e1e1e",
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    roughness: 0,
+    opacity: 100,
+    groupIds: [],
+    roundness: { type: 2 },
+    boundElements: null,
+    frameId: null,
+    index: null,
+    seed: Math.floor(Math.random() * 2_000_000_000),
+    version: 1,
+    versionNonce: Math.floor(Math.random() * 2_000_000_000),
+    isDeleted: false,
+    updated: Date.now(),
+    link: null,
+    locked: false,
+    customData: { edge: "output", ...(jobId ? { jobId } : {}) },
+  };
+}
+
 function buildVideoElement(
   placement: Placement,
   opts: VideoInsertOpts,
@@ -233,8 +291,12 @@ export async function insertImageElement(
     const files = ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
 
     if (opts.jobId) {
+      // The image, not its edge (which carries the same job id).
       const existing = elements.find(
-        (el) => !el.isDeleted && (el.customData as { jobId?: unknown } | undefined)?.jobId === opts.jobId,
+        (el) =>
+          el.type === "image" &&
+          !el.isDeleted &&
+          (el.customData as { jobId?: unknown } | undefined)?.jobId === opts.jobId,
       );
       if (existing) {
         console.log(`[canvas-element-writer] job ${opts.jobId} already on canvas ${opts.canvasId}`);
@@ -261,10 +323,23 @@ export async function insertImageElement(
       },
     };
 
+    // 3b. Node canvas: an edge from the generator node, if it is still there
+    const source = opts.sourceElementId
+      ? elements.find((el) => el.id === opts.sourceElementId && !el.isDeleted)
+      : undefined;
+    if (opts.sourceElementId && !source) {
+      console.info(
+        `[canvas-element-writer] source ${opts.sourceElementId} gone from canvas ${opts.canvasId}, image placed without an edge`,
+      );
+    }
+    const added = source
+      ? [element, buildEdgeElement(source, { id: element.id as string, ...placement }, opts.jobId)]
+      : [element];
+
     // 4. Write, unless the canvas changed since step 1
     const updatedContent = {
       ...content,
-      elements: [...elements, element],
+      elements: [...elements, ...added],
       files: updatedFiles,
     };
 

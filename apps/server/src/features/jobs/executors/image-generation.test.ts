@@ -63,8 +63,35 @@ describe("image_generation executor", () => {
       mimeType: "image/png",
       jobId: "job-1",
       title: "Fox",
-    });
+    }, undefined);
     expect(close).toHaveBeenCalled();
+  });
+
+  it("puts a generator node's picture in its slot, linked to the node", async () => {
+    insertImageElement.mockResolvedValue({ elementId: "el-1", inserted: true });
+    const slot = { x: 300, y: 100, width: 256, height: 256 };
+    await run({
+      canvas_id: "canvas-1",
+      payload: { prompt: "a red fox", canvas_slot: slot, canvas_source_id: "gen-1" },
+    });
+    expect(insertImageElement).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ canvasId: "canvas-1", sourceElementId: "gen-1" }),
+      slot,
+    );
+  });
+
+  it("ignores a malformed placement and still places the picture", async () => {
+    insertImageElement.mockResolvedValue({ elementId: "el-1", inserted: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await run({
+      canvas_id: "canvas-1",
+      payload: { prompt: "a red fox", canvas_slot: { x: 0 }, canvas_source_id: "../x" },
+    });
+    const [, opts, slot] = insertImageElement.mock.calls[0] ?? [];
+    expect(opts).not.toHaveProperty("sourceElementId");
+    expect(slot).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("canvas placement ignored"));
   });
 
   it("titles it with the start of the prompt for jobs without a title", async () => {

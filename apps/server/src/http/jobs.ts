@@ -6,6 +6,8 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
+  CanvasPlacementPayload,
+  CreateImageJobRequest,
 } from "@loomic/shared";
 import {
   applicationErrorResponseSchema,
@@ -64,7 +66,7 @@ export async function registerJobRoutes(
           ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
           ...(payload.session_id ? { sessionId: payload.session_id } : {}),
           ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-          payload: input,
+          payload: { ...input, ...canvasPlacement(payload, 0) },
         });
       });
       return reply.code(201).send(jobResponseSchema.parse({ job }));
@@ -118,6 +120,7 @@ export async function registerJobRoutes(
                 ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
                 payload: {
                   ...input,
+                  ...canvasPlacement(payload, index),
                   ...imageBatchPayloadSchema.parse({
                     batch_id: batchId,
                     batch_index: index,
@@ -272,4 +275,23 @@ function sendJobError(
       },
     }),
   );
+}
+
+/**
+ * Node canvas: where picture `index` goes and the generator node it comes
+ * from, stored in its job payload for the worker's canvas writer. Only kept
+ * with a canvas; a missing slot lets the writer place the picture itself.
+ */
+function canvasPlacement(
+  payload: CreateImageJobRequest,
+  index: number,
+): CanvasPlacementPayload {
+  if (!payload.canvas_id) return {};
+  const slot = payload.canvas_slots?.[index];
+  return {
+    ...(slot ? { canvas_slot: slot } : {}),
+    ...(payload.canvas_source_id
+      ? { canvas_source_id: payload.canvas_source_id }
+      : {}),
+  };
 }

@@ -1,3 +1,5 @@
+import { canvasPlacementPayloadSchema } from "@loomic/shared";
+
 import { describeErrorForLog } from "../../../utils/error-sanitizer.js";
 import { insertImageElement } from "../../canvas/canvas-element-writer.js";
 import {
@@ -25,6 +27,10 @@ registerExecutor("image_generation", async (jobId, _rawPayload, ctx) => {
  * canvas; the page picks it up when it polls the job. Placement is once per
  * job (`jobId` on the element), so a redelivered message adds nothing.
  *
+ * A node-canvas job carries its slot and generator node (`canvas_slot`,
+ * `canvas_source_id`): the picture goes in that slot with an edge from the
+ * generator. A malformed placement is ignored, never fatal.
+ *
  * A failure only logs: the image is in the user's history either way, and the
  * agent runtime places it itself when the result has no `element_id`.
  */
@@ -38,6 +44,13 @@ async function placeOnCanvas(
     const job = await ctx.jobService.getJobAdmin(jobId);
     canvasId = job.canvas_id;
     if (!canvasId) return {};
+    const placement = canvasPlacementPayloadSchema.safeParse(job.payload ?? {});
+    if (!placement.success)
+      console.warn(
+        `[image-generation] job ${jobId}: canvas placement ignored (invalid)`,
+      );
+    const { canvas_slot: slot, canvas_source_id: sourceElementId } =
+      placement.success ? placement.data : {};
     const { elementId, inserted } = await insertImageElement(
       ctx.getAdminClient(),
       {
@@ -48,7 +61,9 @@ async function placeOnCanvas(
         mimeType: result.mime_type,
         jobId,
         ...titleOf(job.payload),
+        ...(sourceElementId ? { sourceElementId } : {}),
       },
+      slot,
     );
     console.log(
       `[image-generation] job ${jobId} ${inserted ? "placed on" : "already on"} canvas ${canvasId}`,
