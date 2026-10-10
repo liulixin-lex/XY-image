@@ -175,7 +175,7 @@ export function ToolRail({
       {onToggleFiles ? (
         <RailButton
           icon={FilesIcon}
-          label="画布里的图片"
+          label="生成的图片"
           active={filesOpen}
           onClick={onToggleFiles}
         />
