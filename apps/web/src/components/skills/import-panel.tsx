@@ -118,18 +118,18 @@ export function ImportPanel({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="rounded-lg border border-border bg-card p-6"
+        className="glass rounded-[18px] p-5 sm:p-6"
       >
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-            <Link2 className="size-4 text-muted-foreground" />
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-acc-soft text-acc-text">
+            <Link2 aria-hidden className="size-[18px]" />
           </div>
           <div>
-            <h3 className="text-sm font-medium text-foreground">
-              从 URL 导入技能
+            <h3 className="font-display text-[19px] leading-tight text-fg">
+              从网址导入技能
             </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-1 text-[13px] text-fg-soft">
               支持 GitHub 仓库 URL 和 npm tarball URL
             </p>
           </div>
@@ -138,7 +138,7 @@ export function ImportPanel({
         {/* Input row */}
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <ExternalLink className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <ExternalLink aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-muted" />
             <input
               type="url"
               placeholder="https://github.com/user/repo/tree/main/skills/my-skill"
@@ -154,22 +154,23 @@ export function ImportPanel({
               disabled={isLoading}
               aria-label="技能 URL"
               className={cn(
-                "h-8 w-full rounded-lg border bg-transparent pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                "h-10 w-full rounded-[10px] bg-tint/[0.06] pr-3 pl-8.5 text-sm text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted disabled:opacity-50",
                 isError
-                  ? "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20"
-                  : "border-input",
+                  ? "shadow-[inset_0_0_0_1px_var(--alert)]"
+                  : "focus:shadow-[inset_0_0_0_1px_var(--acc)]",
               )}
             />
           </div>
           <Button
-            size="default"
+            variant="accent"
+            className="h-10"
             disabled={!url.trim() || isLoading}
             onClick={handleImport}
           >
             {isLoading ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" />
-                导入中...
+                正在导入
               </>
             ) : (
               <>
@@ -185,7 +186,7 @@ export function ImportPanel({
           <motion.p
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-2 text-xs text-destructive"
+            className="mt-2 text-xs text-alert"
           >
             {importState.message}
           </motion.p>
@@ -197,19 +198,19 @@ export function ImportPanel({
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            className="mt-4 flex items-center justify-between rounded-lg border border-border bg-muted/50 px-4 py-3"
+            className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-ok-wash px-4 py-3"
           >
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-emerald-500" />
-              <span className="text-sm font-medium text-foreground">
+              <CheckCircle2 aria-hidden className="size-4 text-ok" />
+              <span className="text-sm font-medium text-fg">
                 {importState.skillName}
               </span>
-              <span className="text-xs text-muted-foreground">已导入</span>
+              <span className="text-xs text-fg-soft">已导入</span>
             </div>
             <div className="flex items-center gap-2">
               {onSwitchToInstalled && (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="xs"
                   onClick={onSwitchToInstalled}
                 >
@@ -225,14 +226,14 @@ export function ImportPanel({
 
         {/* Hint examples */}
         <div className="mt-4 space-y-1.5">
-          <p className="text-[11px] font-medium text-muted-foreground">
+          <p className="text-[11px] font-medium text-fg-muted">
             支持的格式
           </p>
           <div className="space-y-1">
-            <p className="font-mono text-[11px] text-muted-foreground/70">
+            <p className="font-mono text-[11px] text-fg-muted">
               https://github.com/user/repo/tree/main/skills/my-skill
             </p>
-            <p className="font-mono text-[11px] text-muted-foreground/70">
+            <p className="font-mono text-[11px] text-fg-muted">
               https://registry.npmjs.org/package/-/package-1.0.0.tgz
             </p>
           </div>

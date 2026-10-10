@@ -93,7 +93,7 @@ export function ColorPickerPopover({
     <div
       ref={containerRef}
       className={cn(
-        "absolute z-50 w-[260px] rounded-lg border bg-popover p-3 shadow-lg",
+        "glass-strong absolute z-50 w-[260px] rounded-[16px] p-3",
         "flex flex-col gap-2.5",
       )}
     >
@@ -103,28 +103,29 @@ export function ColorPickerPopover({
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="颜色名称"
-        className="w-full rounded-lg border bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-muted-foreground/60"
+        className="h-9 w-full px-2.5 text-[13px] rounded-[10px] bg-tint/[0.06] text-fg caret-acc placeholder:text-fg-muted outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)]"
       />
 
       {/* Color picker */}
-      <div className="[&_.react-colorful]:!w-full [&_.react-colorful]:!h-[160px] [&_.react-colorful]:rounded-lg">
+      <div className="[&_.react-colorful]:!w-full [&_.react-colorful]:!h-[160px] [&_.react-colorful]:rounded-[12px]">
         <HexColorPicker color={hex} onChange={handlePickerChange} />
       </div>
 
       {/* Preview + hex input */}
       <div className="flex items-center gap-2">
         <div
-          className="h-8 w-8 shrink-0 rounded-lg border"
+          className="size-9 shrink-0 rounded-[10px] ring-1 ring-tint/15 ring-inset"
           style={{ backgroundColor: hex }}
         />
-        <div className="flex items-center gap-0.5 rounded-lg border px-2 py-1 text-sm flex-1">
-          <span className="text-muted-foreground">#</span>
+        <div className="flex h-9 flex-1 items-center gap-0.5 rounded-[10px] bg-tint/[0.06] px-2.5 text-[13px] transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--acc)]">
+          <span className="text-fg-muted">#</span>
           <input
             type="text"
             value={hexInput}
             onChange={handleHexInputChange}
             maxLength={6}
-            className="w-full bg-transparent outline-none uppercase font-mono text-sm"
+            aria-label="颜色值"
+            className="numeral w-full bg-transparent text-[13px] text-fg uppercase caret-acc outline-none"
           />
         </div>
       </div>
@@ -134,14 +135,14 @@ export function ColorPickerPopover({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+          className="h-8 cursor-pointer rounded-[9px] px-3 text-[13px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
         >
-          Cancel
+          取消
         </button>
         <button
           type="button"
           onClick={handleSave}
-          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+          className="h-8 cursor-pointer rounded-[9px] bg-acc px-3.5 text-[13px] font-semibold text-acc-ink transition-colors hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
         >
           {mode === "create" ? "添加" : "保存"}
         </button>

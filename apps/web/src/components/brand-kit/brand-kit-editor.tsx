@@ -140,12 +140,12 @@ export function BrandKitEditor({
           value={kit.name}
           onCommit={handleNameCommit}
           placeholder="套件名称"
-          inputClassName="font-display text-[30px] font-normal text-foreground"
+          inputClassName="font-display text-[30px] font-normal text-fg"
         />
 
-        <div className="flex items-center gap-3 shrink-0 ml-4">
+        <div className="flex shrink-0 items-center gap-3 md:ml-4">
           {/* Apply to new projects toggle */}
-          <span id="brand-kit-default-label" className="text-sm text-muted-foreground whitespace-nowrap">
+          <span id="brand-kit-default-label" className="text-[13px] whitespace-nowrap text-fg-soft">
             应用到新项目
           </span>
           <button
@@ -155,20 +155,20 @@ export function BrandKitEditor({
             aria-labelledby="brand-kit-default-label"
             onClick={handleToggleDefault}
             className={cn(
-              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer",
-              kit.is_default ? "bg-primary" : "bg-muted",
+              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
+              kit.is_default ? "bg-acc" : "bg-tint/[0.12]",
             )}
           >
             <span
               className={cn(
-                "inline-block h-4 w-4 rounded-full bg-panel shadow-sm transition-transform",
+                "inline-block size-4 rounded-full bg-white shadow-subtle transition-transform",
                 kit.is_default ? "translate-x-6" : "translate-x-1",
               )}
             />
           </button>
 
           {/* Divider */}
-          <div className="h-5 w-px bg-border" />
+          <div className="h-5 w-px bg-line" />
 
           {/* More menu */}
           <MoreMenu
@@ -180,7 +180,7 @@ export function BrandKitEditor({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-[80px] xl:px-[160px]">
-        <div className="flex flex-col gap-8 max-w-[960px] mx-auto">
+        <div className="mx-auto flex max-w-[960px] flex-col gap-9">
           {/* TODO(brand-kit): "从网址提取品牌" was a disabled placeholder upstream;
               add it back only once the server can fetch and parse a site. */}
           <GuidanceSection
@@ -250,24 +250,24 @@ function MoreMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="cursor-pointer rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted"
+        className="flex size-8 cursor-pointer items-center justify-center rounded-[10px] text-fg-soft transition-colors outline-none hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
         aria-label="更多操作"
         aria-expanded={open}
       >
-        <Ellipsis className="h-5 w-5" />
+        <Ellipsis className="size-[18px]" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[140px] rounded-lg border border-line bg-popover p-1.5 shadow-float">
+        <div className="glass-strong absolute top-full right-0 z-50 mt-1.5 w-[148px] rounded-[14px] p-1.5">
           <button
             type="button"
             onClick={() => {
               onDuplicate();
               setOpen(false);
             }}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-[9px] px-3 py-2 text-[13px] text-fg transition-colors hover:bg-tint/[0.07]"
           >
-            <Copy className="h-4 w-4 text-muted-foreground" />
+            <Copy className="size-4 text-fg-muted" />
             复制
           </button>
           <button
@@ -276,7 +276,7 @@ function MoreMenu({
               onDelete();
               setOpen(false);
             }}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm text-destructive transition-colors hover:bg-alert-wash"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-[9px] px-3 py-2 text-[13px] text-alert transition-colors hover:bg-alert-wash"
           >
             <Trash2 className="h-4 w-4" />
             删除套件

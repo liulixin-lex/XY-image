@@ -5,8 +5,10 @@ import type {
   BrandKitDetail,
   BrandKitAssetType,
 } from "@loomic/shared";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { PageHeader } from "../page-header";
 import { BrandKitSkeleton } from "../skeletons/brand-kit-skeleton";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
@@ -298,47 +300,53 @@ export function BrandKitPage() {
   // --- Render ---
 
   if (loading) {
-    return <BrandKitSkeleton />;
+    return (
+      <BrandKitFrame>
+        <BrandKitSkeleton />
+      </BrandKitFrame>
+    );
   }
 
   if (loadFailed) {
     return (
-      <div className="flex h-[70dvh] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-sm text-fg">品牌套件没有加载出来。</p>
-        <Button variant="outline" onClick={() => void loadAll()}>
-          重试
-        </Button>
-      </div>
+      <BrandKitFrame>
+        <div className="glass flex min-h-[40dvh] flex-1 flex-col items-center justify-center gap-3 rounded-[20px] px-6 text-center">
+          <p className="text-sm text-fg">品牌套件没有加载出来。</p>
+          <Button variant="secondary" onClick={() => void loadAll()}>
+            重试
+          </Button>
+        </div>
+      </BrandKitFrame>
     );
   }
 
   return (
-    // Two glass panels that fill the viewport under the 84px workspace nav
-    // (desktop); the editor scrolls inside its own panel.
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 pt-2 sm:px-8 md:-mb-8 md:h-[calc(100dvh-132px)] md:flex-row md:pt-4 lg:px-12">
-      {/* Sidebar: full width horizontal on mobile, vertical panel on md+ */}
-      <BrandKitSidebar
-        kits={kits}
-        selectedKitId={selectedKit?.id ?? null}
-        onSelectKit={handleSelectKit}
-        onCreateKit={handleCreateKit}
-        onDeleteKit={requestDeleteKit}
-      />
-
-      {selectedKit ? (
-        <BrandKitEditor
-          kit={selectedKit}
-          onUpdateKit={handleUpdateKit}
-          onDeleteKit={handleDeleteSelectedKit}
-          onDuplicateKit={handleDuplicateKit}
-          onAddAsset={handleAddAsset}
-          onUpdateAsset={handleUpdateAsset}
-          onDeleteAsset={handleDeleteAsset}
-          onUploadAsset={handleUploadAsset}
+    <>
+      <BrandKitFrame>
+        {/* Sidebar: full width horizontal on mobile, vertical panel on md+ */}
+        <BrandKitSidebar
+          kits={kits}
+          selectedKitId={selectedKit?.id ?? null}
+          onSelectKit={handleSelectKit}
+          onCreateKit={handleCreateKit}
+          onDeleteKit={requestDeleteKit}
         />
-      ) : (
-        <EmptyState onCreateKit={handleCreateKit} />
-      )}
+
+        {selectedKit ? (
+          <BrandKitEditor
+            kit={selectedKit}
+            onUpdateKit={handleUpdateKit}
+            onDeleteKit={handleDeleteSelectedKit}
+            onDuplicateKit={handleDuplicateKit}
+            onAddAsset={handleAddAsset}
+            onUpdateAsset={handleUpdateAsset}
+            onDeleteAsset={handleDeleteAsset}
+            onUploadAsset={handleUploadAsset}
+          />
+        ) : (
+          <EmptyState onCreateKit={handleCreateKit} />
+        )}
+      </BrandKitFrame>
 
       <Dialog
         open={pendingDelete !== null}
@@ -363,6 +371,26 @@ export function BrandKitPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+/**
+ * The page header, then the panels filling the rest of the viewport under
+ * the 84px workspace nav (desktop) so the editor scrolls inside its own
+ * panel. Loading and failure states keep the header so nothing jumps.
+ */
+function BrandKitFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-col md:-mb-8 md:h-[calc(100dvh-132px)]">
+      <PageHeader
+        title="品牌套件"
+        description="标志、颜色、字体和品牌说明，助手出图时会参考。"
+        className="w-full shrink-0 pb-5"
+      />
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 sm:px-8 md:min-h-0 md:flex-1 md:flex-row lg:px-12">
+        {children}
+      </div>
     </div>
   );
 }

@@ -22,22 +22,15 @@ export function BrandKitSidebar({
 }: BrandKitSidebarProps) {
   return (
     <aside className="glass flex w-full shrink-0 flex-col overflow-hidden rounded-[20px] md:w-[260px]">
-      {/* Header */}
-      <div className="px-4 pt-5 pb-3">
-        <h1 className="text-sm font-semibold text-fg">品牌套件</h1>
-        <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-          标志、颜色、字体和品牌说明，助手出图时会参考。
-        </p>
-      </div>
-
-      {/* Create button */}
-      <div className="px-3 pb-3">
+      {/* List title + create (the page header names the feature) */}
+      <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
+        <h2 className="poster-label text-[16px] leading-none text-fg">我的套件</h2>
         <button
           type="button"
           onClick={onCreateKit}
-          className="flex min-h-[44px] w-full cursor-pointer items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm text-fg-soft transition-colors hover:border-tint/30 hover:text-fg sm:min-h-0"
+          className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-[10px] bg-tint/[0.06] px-3 text-[13px] font-semibold text-fg-soft transition-colors outline-none hover:bg-tint/[0.1] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc active:translate-y-px sm:min-h-0 sm:h-8"
         >
-          <Plus className="h-4 w-4" />
+          <Plus aria-hidden className="size-3.5" strokeWidth={2.2} />
           新建套件
         </button>
       </div>
@@ -51,22 +44,27 @@ export function BrandKitSidebar({
             <div
               key={kit.id}
               className={cn(
-                "group flex min-h-[44px] w-auto shrink-0 items-center gap-1 rounded-md pr-1 transition-colors md:min-h-0 md:w-full md:shrink",
-                isSelected ? "bg-panel shadow-subtle" : "hover:bg-tint/[0.06]",
+                "group flex min-h-[44px] w-auto shrink-0 items-center gap-1 rounded-[12px] pr-1 transition-colors md:min-h-0 md:w-full md:shrink",
+                isSelected ? "bg-panel shadow-card" : "hover:bg-tint/[0.06]",
               )}
             >
               <button
                 type="button"
                 onClick={() => onSelectKit(kit.id)}
                 aria-current={isSelected ? "true" : undefined}
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-frame border border-line bg-ground text-xs font-medium text-fg-soft">
+                <span
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-[9px] font-display text-[15px] leading-none",
+                    isSelected ? "bg-acc text-acc-ink" : "bg-tint/[0.07] text-fg-soft",
+                  )}
+                >
                   {Array.from(kit.name)[0]?.toUpperCase() ?? "·"}
                 </span>
                 <span className="truncate text-sm font-medium text-fg">{kit.name}</span>
                 {kit.is_default && (
-                  <span className="shrink-0 rounded-frame border border-line px-1.5 py-0.5 text-[11px] font-medium text-fg-soft">
+                  <span className="shrink-0 rounded-[6px] bg-acc-soft px-1.5 py-0.5 text-[11px] font-semibold text-acc-text">
                     默认
                   </span>
                 )}
@@ -76,7 +74,7 @@ export function BrandKitSidebar({
               <button
                 type="button"
                 onClick={() => onDeleteKit(kit.id)}
-                className="hidden shrink-0 cursor-pointer rounded-md p-1.5 text-fg-muted opacity-0 transition-all outline-none hover:bg-alert-wash hover:text-alert focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 md:block"
+                className="hidden shrink-0 cursor-pointer rounded-[8px] p-1.5 text-fg-muted opacity-0 transition-all outline-none hover:bg-alert-wash hover:text-alert focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-acc group-hover:opacity-100 md:block"
                 aria-label={`删除套件 ${kit.name}`}
               >
                 <Trash2 className="h-3.5 w-3.5" />

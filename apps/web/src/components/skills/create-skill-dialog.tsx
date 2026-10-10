@@ -188,7 +188,7 @@ export function CreateSkillDialog({
               id="skill-category"
               value={category}
               onChange={(e) => setCategory(e.target.value as SkillCategory)}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="h-8 w-full rounded-[10px] bg-tint/[0.06] text-fg caret-acc px-2.5 text-sm outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)]"
             >
               {CATEGORY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -208,7 +208,7 @@ export function CreateSkillDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={2000}
-              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none resize-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 placeholder:text-muted-foreground"
+              className="w-full rounded-[10px] bg-tint/[0.06] text-fg caret-acc px-2.5 py-1.5 text-sm outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)] resize-none placeholder:text-fg-muted"
             />
           </div>
 
@@ -232,7 +232,7 @@ export function CreateSkillDialog({
               placeholder="# Skill Name&#10;&#10;## Instructions&#10;..."
               value={skillContent}
               onChange={(e) => setSkillContent(e.target.value)}
-              className="w-full rounded-lg border border-input bg-secondary px-3 py-2 font-mono text-xs leading-relaxed outline-none resize-y focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 placeholder:text-muted-foreground"
+              className="w-full rounded-[10px] bg-tint/[0.06] text-fg caret-acc px-3 py-2 font-mono text-xs leading-relaxed outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)] resize-y placeholder:text-fg-muted"
             />
           </div>
 
@@ -261,13 +261,13 @@ export function CreateSkillDialog({
                   return (
                     <div
                       key={index}
-                      className="relative rounded-lg border border-border bg-secondary/40 p-3 space-y-2"
+                      className="relative rounded-[12px] border border-line bg-tint/[0.04] p-3 space-y-2"
                     >
                       {/* Remove button */}
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="absolute top-2 right-2 p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        className="absolute top-2 right-2 p-0.5 rounded-[7px] text-fg-muted hover:text-fg hover:bg-tint/[0.07] transition-colors"
                         aria-label="删除文件"
                       >
                         <X className="size-3.5" />
@@ -299,13 +299,13 @@ export function CreateSkillDialog({
                         onChange={(e) =>
                           updateFile(index, "content", e.target.value)
                         }
-                        className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs leading-relaxed outline-none resize-y focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 placeholder:text-muted-foreground"
+                        className="w-full rounded-[10px] bg-tint/[0.06] text-fg caret-acc px-2.5 py-1.5 font-mono text-xs leading-relaxed outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)] resize-y placeholder:text-fg-muted"
                       />
                     </div>
                   );
                 })}
 
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-fg-muted">
                   支持的路径前缀：scripts/、references/、assets/
                 </p>
               </div>

@@ -18,7 +18,7 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative group">
-        <div className="w-[150px] h-[113px] rounded-frame border bg-muted/30 flex items-center justify-center overflow-hidden">
+        <div className="flex h-[113px] w-[150px] items-center justify-center overflow-hidden rounded-[14px] bg-panel shadow-card">
           {asset.file_url ? (
             <img
               src={asset.file_url}
@@ -26,27 +26,26 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
               className="h-full w-full object-cover"
             />
           ) : (
-            <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+            <ImageIcon aria-hidden className="size-8 text-fg-muted" strokeWidth={1.5} />
           )}
         </div>
         <button
           type="button"
           onClick={() => onDelete(asset.id)}
           className={cn(
-            "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-background border shadow-sm",
-            "flex items-center justify-center",
-            "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
+            "absolute -top-2 -right-2 flex size-6 cursor-pointer items-center justify-center rounded-full bg-panel text-fg-soft shadow-card transition-[opacity,color] hover:text-alert",
+            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-acc [@media(hover:none)]:opacity-100",
           )}
-          aria-label={`Delete ${asset.display_name}`}
+          aria-label={`删除「${asset.display_name}」`}
         >
-          <X className="h-3 w-3 text-muted-foreground" />
+          <X aria-hidden className="size-3.5" strokeWidth={2.2} />
         </button>
       </div>
       <InlineInput
         value={asset.display_name}
         onCommit={(name) => onUpdateLabel(asset.id, name)}
         className="w-[150px]"
-        inputClassName="text-xs text-center text-muted-foreground truncate"
+        inputClassName="truncate text-center text-[12px] text-fg-soft"
       />
     </div>
   );
@@ -72,17 +71,16 @@ export function AddAssetCard({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          "w-[150px] h-[113px] rounded-frame border-2 border-dashed border-muted-foreground/30",
-          "flex items-center justify-center transition-colors",
+          "flex h-[113px] w-[150px] items-center justify-center rounded-[14px] border border-dashed border-line-strong bg-tint/[0.03] text-fg-muted transition-colors outline-none focus-visible:outline-2 focus-visible:outline-acc",
           disabled
-            ? "opacity-40 cursor-not-allowed"
-            : "hover:border-muted-foreground/50 cursor-pointer",
+            ? "cursor-not-allowed opacity-40"
+            : "cursor-pointer hover:border-acc hover:bg-acc-soft hover:text-acc-text",
         )}
         aria-label={label}
       >
-        <Plus className="h-5 w-5 text-muted-foreground/60" />
+        <Plus aria-hidden className="size-5" strokeWidth={2} />
       </button>
-      <span className="text-xs text-muted-foreground/60">{label}</span>
+      <span className="text-[12px] text-fg-muted">{label}</span>
     </div>
   );
 }
