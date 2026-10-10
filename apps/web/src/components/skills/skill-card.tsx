@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import {
   MoreHorizontal,
   ShieldCheck,
@@ -9,6 +8,7 @@ import {
   UserPen,
 } from "lucide-react";
 import { useCallback } from "react";
+import type { CSSProperties } from "react";
 
 import type { SkillCategory, SkillListItem, SkillSource } from "@loomic/shared";
 
@@ -76,10 +76,12 @@ function ToggleSwitch({
         checked ? "bg-acc" : "bg-tint/[0.12]",
       )}
     >
-      <motion.span
-        className="pointer-events-none block size-4 rounded-full bg-white shadow-subtle sm:size-3.5"
-        animate={{ x: checked ? 22 : 4 }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      {/* The knob slides with a slight overshoot (CSS), like a spring. */}
+      <span
+        className={cn(
+          "pointer-events-none block size-4 rounded-full bg-white shadow-subtle transition-[translate] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)] motion-reduce:transition-none sm:size-3.5",
+          checked ? "translate-x-[22px]" : "translate-x-1",
+        )}
       />
     </button>
   );
@@ -89,16 +91,13 @@ function ToggleSwitch({
 // SkillCard
 // ---------------------------------------------------------------------------
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0 },
-};
-
 interface SkillCardProps {
   skill: SkillListItem;
   onToggle: (skillId: string, enabled: boolean) => void;
   onClick: (skill: SkillListItem) => void;
   onUninstall?: (skillId: string) => void;
+  /** Position in the grid, for the staggered entrance. */
+  index?: number;
 }
 
 export function SkillCard({
@@ -106,6 +105,7 @@ export function SkillCard({
   onToggle,
   onClick,
   onUninstall,
+  index = 0,
 }: SkillCardProps) {
   // SOURCE_CONFIG exhaustively covers all SkillSource values ("system" | "community" | "user")
   // Non-null assertion is safe: every possible SkillSource key is present in SOURCE_CONFIG.
@@ -131,11 +131,9 @@ export function SkillCard({
     // The name is the card's one link-like control; its ::after covers the
     // card so a click anywhere opens the detail. The switch and the menu sit
     // above it (z-10) as their own controls.
-    <motion.div
-      variants={cardVariants}
-      layout
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-      className="group relative rounded-[16px] bg-panel p-4 shadow-card transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-card-hover has-[[data-popup-open]]:shadow-card-hover"
+    <div
+      style={{ "--stagger": Math.min(index, 12) } as CSSProperties}
+      className="animate-enter group relative rounded-[16px] bg-panel p-4 shadow-card transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-card-hover has-[[data-popup-open]]:shadow-card-hover"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -227,6 +225,6 @@ export function SkillCard({
           </DropdownMenu>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

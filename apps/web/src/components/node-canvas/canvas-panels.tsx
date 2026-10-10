@@ -155,7 +155,7 @@ function PanelShell({
   return (
     <section
       aria-label={title}
-      className="glass absolute top-16 left-[72px] z-10 flex w-[min(272px,calc(100%-88px))] flex-col overflow-hidden rounded-xl max-md:bottom-20 md:bottom-[148px]"
+      className="glass-float absolute top-16 left-[72px] z-10 flex w-[min(272px,calc(100%-88px))] flex-col overflow-hidden rounded-xl max-md:bottom-20 md:bottom-[148px]"
       onKeyDown={(event) => event.stopPropagation()}
     >
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-line pr-1.5 pl-3.5">

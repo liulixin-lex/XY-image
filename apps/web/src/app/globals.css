@@ -27,10 +27,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-sans: var(--font-geist), var(--font-noto-sc), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    --font-heading: var(--font-geist), var(--font-noto-sc), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --font-sans: var(--font-geist), var(--font-cjk), system-ui, sans-serif;
+    --font-heading: var(--font-geist), var(--font-cjk), system-ui, sans-serif;
     /* Display: GGUU Display = 优设标题黑, self-hosted in unicode-range chunks (display-font.css). */
-    --font-display: "GGUU Display", var(--font-noto-sc), "PingFang SC", system-ui, sans-serif;
+    --font-display: "GGUU Display", var(--font-cjk), system-ui, sans-serif;
     /* Numerals: counts, balances, timers, indices. Latin digits only. */
     --font-numeral: var(--font-big-shoulders), var(--font-geist), system-ui, sans-serif;
     --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -126,6 +126,8 @@
 
 /* ── Light: a pale rose-grey wall over a slightly deeper floor ────── */
 :root {
+    /* Chinese text: the system's own CJK face, no webfont (see layout.tsx). */
+    --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC";
     --wall: #f5f2f3;
     --wall-2: #ede9eb;
     --floor: #e6e1e4;
@@ -367,9 +369,21 @@
 
 /* ── Materials ──────────────────────────────────────────────────── */
 
-/* Frosted glass: controls and panels floating over the room or imagery. */
-/* Elevation is declared once: a lit top edge plus an offset shadow, no ring. */
+/* Glass: panels standing in the room. Elevation is declared once: a lit
+   top edge plus an offset shadow, no ring. No backdrop blur: behind an
+   in-flow panel there is only the room's smooth gradient, which a blur
+   leaves unchanged, while every visible blurred panel had to be re-filtered
+   on each scroll frame (measured: compositing work about halved without it). */
 @utility glass {
+  background: var(--glass);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px var(--shadow),
+    0 24px 48px -28px var(--shadow-2);
+}
+/* Frosted glass for controls floating over pictures or the canvas, where
+   the blur keeps them legible. Keep it to small, fixed or overlaid pieces. */
+@utility glass-float {
   background: var(--glass);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
@@ -389,15 +403,42 @@
   -webkit-backdrop-filter: blur(24px) saturate(140%);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass,
+  .glass-float,
   .glass-strong {
     background: var(--panel);
   }
 }
 @media (prefers-reduced-transparency: reduce) {
   .glass,
+  .glass-float,
   .glass-strong {
     background: var(--panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Lite render tier (lib/render-tier.ts): no real GPU, so no backdrop blur
+   anywhere. Frosted surfaces turn opaque; layout and colours stay. The same
+   applies when the visitor asks for reduced transparency. */
+:root[data-render="lite"] {
+  & *,
+  & *::before,
+  & *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  & .glass-float,
+  & .glass-strong {
+    background: var(--panel);
+  }
+  & header[data-scrolled] {
+    background-color: var(--ground);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  header[data-scrolled] {
+    background-color: var(--ground);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -449,13 +490,76 @@
 
 /* ── Status motion ───────────────────────────────────────────────── */
 
-/* Live dot: the only looping light, shown only while something runs. */
+/* Live dot: the only looping light, shown only while something runs.
+   The ring is a pseudo-element animated with transform and opacity, so it
+   runs on the compositor (an animated box-shadow repaints every frame). */
 @keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--acc-glow); }
-  50% { box-shadow: 0 0 0 5px transparent; }
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(2.25); opacity: 0; }
+}
+/* Anchor for the ring, in the base layer so a positioning utility on the
+   same element (e.g. `absolute` on a corner badge) still wins. */
+@layer base {
+  .animate-live {
+    position: relative;
+  }
 }
 .animate-live {
-  animation: live-pulse 1.8s ease-in-out infinite;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--acc-glow);
+    animation: live-pulse 1.8s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+
+/* Something arriving (a message, a card, a panel): rises 8px and fades in.
+   One shared CSS entrance instead of a JS animation runtime per component. */
+@keyframes enter-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-enter {
+  animation: enter-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Grids stagger their items with style="--stagger: <index>". */
+  animation-delay: calc(var(--stagger, 0) * 50ms);
+}
+
+/* The 已放到画布 sticker stamped on: a springy drop onto its -6deg tilt.
+   Animates the individual scale / rotate properties, which compose with the
+   element's own `-rotate-6`. */
+@keyframes stamp-in {
+  0% { opacity: 0; scale: 1.7; rotate: -14deg; }
+  55% { opacity: 1; scale: 0.94; rotate: -5deg; }
+  78% { scale: 1.03; rotate: -6.5deg; }
+  100% { opacity: 1; scale: 1; rotate: -6deg; }
+}
+.animate-stamp {
+  animation: stamp-in 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 0.3s both;
+}
+
+/* The room changing light: the incoming layer fades in (opacity only). */
+@keyframes ambient-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-ambient-in {
+  animation: ambient-in 0.9s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+
+/* A result lighting up: bright and soft, then true colour and focus.
+   CSS keyframes, so filter, transform and opacity animate off the main
+   thread (the old per-frame JS tween re-styled the image 60 times a second). */
+@keyframes reveal-light {
+  0% { filter: brightness(1.7) saturate(1.3) blur(12px); transform: scale(1.05); opacity: 0; }
+  30% { opacity: 1; }
+  100% { filter: brightness(1) saturate(1) blur(0); transform: scale(1); opacity: 1; }
+}
+.animate-reveal {
+  animation: reveal-light 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes shimmer {
@@ -507,7 +611,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-live,
+  .animate-live::after,
+  .animate-enter,
+  .animate-stamp,
+  .animate-ambient-in,
+  .animate-reveal,
   .animate-loading-dot,
   .animate-breathe,
   .animate-sweep,

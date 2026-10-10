@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { ListFilter, Plus, Puzzle, Search, ShieldCheck } from "lucide-react";
 
 import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
@@ -56,20 +55,6 @@ const TABS: SkillsTab[] = ["installed", "marketplace", "import"];
 // ---------------------------------------------------------------------------
 
 const CATEGORIES = SKILL_CATEGORY_OPTIONS;
-
-// ---------------------------------------------------------------------------
-// Animation variants
-// ---------------------------------------------------------------------------
-
-const containerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.05 } },
-};
-
-const emptyVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-};
 
 // ---------------------------------------------------------------------------
 // SkillsPage
@@ -441,11 +426,8 @@ export default function SkillsPage() {
           </div>
 
           {/* Add Custom Skill Banner */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="glass mb-5 flex items-center gap-3.5 rounded-[18px] p-3.5 sm:mb-6 sm:gap-5 sm:p-5"
+          <div
+            className="animate-enter glass mb-5 flex items-center gap-3.5 rounded-[18px] p-3.5 sm:mb-6 sm:gap-5 sm:p-5"
           >
             <div className="hidden size-12 shrink-0 -rotate-6 items-center justify-center rounded-[13px] bg-acc text-acc-ink shadow-acc sm:flex">
               <Puzzle aria-hidden className="size-6" strokeWidth={1.75} />
@@ -464,16 +446,11 @@ export default function SkillsPage() {
               <Plus className="size-3.5" strokeWidth={2.4} />
               添加
             </Button>
-          </motion.div>
+          </div>
 
           {/* Skills Grid */}
           {filteredSkills.length === 0 ? (
-            <motion.div
-              variants={emptyVariants}
-              initial="hidden"
-              animate="visible"
-              className="flex flex-col items-center justify-center py-20 text-center"
-            >
+            <div className="animate-enter flex flex-col items-center justify-center py-20 text-center">
               <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
                 <Search aria-hidden className="size-5 text-fg-muted" />
               </div>
@@ -485,26 +462,20 @@ export default function SkillsPage() {
                   ? "换个关键词，或清掉筛选条件"
                   : "创建一个自定义技能，或去「市场」装一个"}
               </p>
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2"
-            >
-              <AnimatePresence mode="popLayout">
-                {filteredSkills.map((skill) => (
-                  <SkillCard
-                    key={skill.id}
-                    skill={skill}
-                    onToggle={handleToggle}
-                    onClick={handleCardClick}
-                    onUninstall={handleUninstall}
-                  />
-                ))}
-              </AnimatePresence>
-            </motion.div>
+            <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
+              {filteredSkills.map((skill, index) => (
+                <SkillCard
+                  key={skill.id}
+                  index={index}
+                  skill={skill}
+                  onToggle={handleToggle}
+                  onClick={handleCardClick}
+                  onUninstall={handleUninstall}
+                />
+              ))}
+            </div>
           )}
         </>
       )}

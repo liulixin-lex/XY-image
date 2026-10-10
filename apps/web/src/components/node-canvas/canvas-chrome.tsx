@@ -101,7 +101,7 @@ export function ToolRail({
       role="toolbar"
       aria-label="画布工具"
       aria-orientation="vertical"
-      className="glass flex w-12 flex-col gap-0.5 rounded-xl p-1.5"
+      className="glass-float flex w-12 flex-col gap-0.5 rounded-xl p-1.5"
     >
       <RailButton
         icon={MousePointer2Icon}
@@ -195,7 +195,7 @@ export function ZoomBar() {
   return (
     <fieldset
       aria-label="缩放"
-      className="glass flex h-10 items-center gap-0.5 rounded-xl px-1"
+      className="glass-float flex h-10 items-center gap-0.5 rounded-xl px-1"
     >
       <button
         type="button"

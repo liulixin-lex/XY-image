@@ -38,7 +38,7 @@ export function SiteNav({ registerUrl }: { registerUrl: string | null }) {
   return (
     <header
       data-scrolled={scrolled || undefined}
-      className="fixed inset-x-0 top-0 z-30 transition-[background-color,box-shadow,backdrop-filter] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
+      className="fixed inset-x-0 top-0 z-30 transition-[background-color,box-shadow] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
     >
       <nav
         aria-label="主导航"

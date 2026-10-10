@@ -65,7 +65,7 @@ export function AppSidebar() {
     <>
       <header
         data-scrolled={scrolled || undefined}
-        className="sticky top-0 z-40 transition-[background-color,box-shadow,backdrop-filter] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
+        className="sticky top-0 z-40 transition-[background-color,box-shadow] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
       >
         <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:px-8 md:h-[72px] lg:gap-8 lg:px-[clamp(20px,2.4vw,40px)]">
           <Link href="/home" aria-label={`${BRAND.name} 首页`} className="shrink-0 rounded-md">
