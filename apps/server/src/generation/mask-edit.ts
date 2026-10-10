@@ -171,9 +171,15 @@ export async function highlightedCopy(
     })
     .png()
     .toBuffer();
-  const bytes = await sharp(source.bytes)
+  // Two pipelines on purpose: sharp resizes before it composites, whatever
+  // the call order, so a source over GEMINI_MAX_EDGE would be shrunk first and
+  // the full-size layer would no longer fit (real 2K / 4K pictures are).
+  const tinted = await sharp(source.bytes)
     .composite([{ input: layer }])
     .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .png({ compressionLevel: 1 })
+    .toBuffer();
+  const bytes = await sharp(tinted)
     .resize(GEMINI_MAX_EDGE, GEMINI_MAX_EDGE, {
       fit: "inside",
       withoutEnlargement: true,
@@ -181,6 +187,29 @@ export async function highlightedCopy(
     .jpeg({ quality: 92 })
     .toBuffer();
   return { bytes, mimeType: "image/jpeg" };
+}
+
+/** Shown when the pictures could not be prepared; nothing was sent. */
+export const EDIT_PREPARE_FAILED = "原图或涂抹区域处理失败，这次没有发出，可以重试";
+
+/**
+ * Runs the local half of an edit: reading the source and the mask, building
+ * masks, frames and copies. Nothing has been sent yet, so a failure here is
+ * "not sent" (not charged), never 待核对: refusals and cancellations pass
+ * through, anything else becomes invalid_input with the cause logged.
+ */
+export async function beforeSending<T>(
+  module: string,
+  build: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await build();
+  } catch (error) {
+    if (error instanceof BillingGuardError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    console.error(`[${module}] preparing the edit failed, nothing was sent`, error);
+    throw new BillingGuardError("invalid_input", 400, EDIT_PREPARE_FAILED);
+  }
 }
 
 /**

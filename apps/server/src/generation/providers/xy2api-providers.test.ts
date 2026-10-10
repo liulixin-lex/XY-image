@@ -14,6 +14,7 @@ import {
   Xy2apiOpenAIImageProvider,
   openaiImageSize,
 } from "./xy2api-openai-image.js";
+import { EDIT_PREPARE_FAILED } from "../mask-edit.js";
 import { Xy2apiXaiImageProvider } from "./xy2api-xai-image.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -307,6 +308,26 @@ describe("per-call gateway image transports", () => {
     ).rejects.toMatchObject({ name: "BillingGuardError", code: "invalid_input" });
     expect(server.requests).toHaveLength(0);
   });
+  it("calls a picture that cannot be prepared not sent, not 待核对", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    const broken = Buffer.from("not a picture").toString("base64");
+    await expect(
+      openai.generate(
+        {
+          model: "gpt-image-2",
+          prompt: "x",
+          inputImages: [`data:image/png;base64,${broken}`],
+          edit: { mode: "outpaint", scale: 1.5, anchor: "center" },
+        },
+        { apiKey: "synthetic-edit-key", baseUrl: server.baseUrl },
+      ),
+    ).rejects.toMatchObject({
+      name: "BillingGuardError",
+      code: "invalid_input",
+      message: EDIT_PREPARE_FAILED,
+    });
+    expect(server.requests).toHaveLength(0);
+  });
   it.each([429, 503])("never retries an OpenAI %i response", async (status) => {
     const server = await gateway(status, {
       error: { type: "server_error", message: "synthetic-sensitive-message" },
@@ -422,6 +443,56 @@ describe("per-call gateway image transports", () => {
     expect(parts[0].text).toContain("换成晴天");
     expect(parts[1].inlineData.mimeType).toBe("image/png");
     expect(parts[2].inlineData.mimeType).toBe("image/jpeg");
+  });
+  it("sends Gemini 局部重绘 of a picture over 2048 px, both copies shrunk to fit", async () => {
+    const server = await gateway(200, {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { inlineData: { mimeType: "image/png", data: await png() } },
+            ],
+          },
+        },
+      ],
+    });
+    await gemini.generate(
+      {
+        model: "nano-banana-pro",
+        prompt: "换成晴天",
+        resolution: "2K",
+        aspectRatio: "3:4",
+        inputImages: [`data:image/png;base64,${await sourcePng(1792, 2400)}`],
+        edit: {
+          mode: "inpaint",
+          mask: `data:image/png;base64,${await maskPng(448, 600, { left: 0, top: 0, width: 448, height: 200 })}`,
+        },
+      },
+      { apiKey: "synthetic-google-key", baseUrl: server.baseUrl },
+    );
+    const parts = JSON.parse(server.requests[0]?.body ?? "{}").contents[0].parts;
+    expect(parts).toHaveLength(3);
+    for (const part of parts.slice(1)) {
+      const meta = await sharp(Buffer.from(part.inlineData.data, "base64")).metadata();
+      expect([meta.width, meta.height]).toEqual([1529, 2048]);
+    }
+  });
+  it("refuses a Gemini edit whose picture cannot be prepared, sending nothing", async () => {
+    const server = await gateway(200, { candidates: [] });
+    await expect(
+      gemini.generate(
+        {
+          model: "nano-banana-pro",
+          prompt: "x",
+          inputImages: [
+            `data:image/png;base64,${Buffer.from("not a picture").toString("base64")}`,
+          ],
+          edit: { mode: "outpaint", scale: 1.5, anchor: "center" },
+        },
+        { apiKey: "synthetic-google-key", baseUrl: server.baseUrl },
+      ),
+    ).rejects.toMatchObject({ name: "BillingGuardError", code: "invalid_input" });
+    expect(server.requests).toHaveLength(0);
   });
   it("sends Gemini 扩图 as the picture on a gray frame", async () => {
     const server = await gateway(200, {

@@ -154,6 +154,27 @@ describe("inpaint masks", () => {
   });
 });
 
+describe("pictures larger than Gemini's limit", () => {
+  it("highlights a 2K-and-up source and still fits it under 2048 px", async () => {
+    // Real Gemini 2K / 4K results are over 2048 px on the long edge; sharp
+    // resizes before compositing, so this used to throw.
+    const picture = await source(2400, 1200);
+    const mask = await readPaintedMask(
+      await paintedPng(240, 120, { left: 0, top: 0, width: 120, height: 120 }),
+      2400,
+      1200,
+    );
+    const copy = await highlightedCopy(picture, mask);
+    const meta = await sharp(copy.bytes).metadata();
+    expect([meta.width, meta.height, meta.format]).toEqual([2048, 1024, "jpeg"]);
+    const [r1] = await pixel(copy.bytes, 100, 512);
+    const [r2, , b2] = await pixel(copy.bytes, 1900, 512);
+    expect(r1).toBeGreaterThan(100);
+    expect(r2).toBeLessThan(40);
+    expect(b2).toBeGreaterThan(200);
+  });
+});
+
 describe("outpaint frames", () => {
   it("widens a square picture to 16:9 around its centre", async () => {
     const frame = frameFor({ width: 1024, height: 1024 }, "16:9", {

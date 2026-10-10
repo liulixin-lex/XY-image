@@ -22,6 +22,7 @@ import type {
   ImageProvider,
 } from "../types.js";
 import {
+  beforeSending,
   editPrompt,
   frameFor,
   geminiSource,
@@ -92,7 +93,9 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
       },
     });
     const parts: Part[] = params.edit
-      ? await maskEditParts(params, resolved.aspectRatio, ctx)
+      ? await beforeSending("xy2api-gemini", () =>
+          maskEditParts(params, resolved.aspectRatio, ctx),
+        )
       : [{ text: params.prompt }];
     if (!params.edit)
       for (const source of params.inputImages ?? []) {
