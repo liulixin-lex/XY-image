@@ -221,6 +221,35 @@ export async function* adaptDeepAgentStream(
         continue;
       }
 
+      // A tool threw. The run goes on (tool-errors.ts hands the error to the
+      // model), so close the tool's block here or it would spin until the
+      // run ends. Skipped once the run is stopped: the stop closes it.
+      if (evt.event === "on_tool_error") {
+        const toolName = evt.name ?? "unknown_tool";
+        const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
+        if (options.signal?.aborted || isAbortError(evt.data?.error)) continue;
+        if (!seenStartedToolCalls.has(toolCallId)) continue;
+        if (seenCompletedToolCalls.has(toolCallId)) continue;
+        seenCompletedToolCalls.add(toolCallId);
+        if (SUB_AGENT_PARENT_TOOLS.has(toolName)) {
+          activeSubAgentRuns.delete(toolCallId);
+        }
+        const error = toolFailureText(toolName);
+        console.warn(
+          `[stream-adapter] tool ${toolName} failed: ${describeErrorForLog(evt.data?.error)}`,
+        );
+        yield {
+          output: { error },
+          outputSummary: error,
+          runId: options.runId,
+          timestamp: now(),
+          toolCallId,
+          toolName,
+          type: "tool.completed",
+        };
+        continue;
+      }
+
       // Tool execution completed
       if (evt.event === "on_tool_end") {
         const toolName = evt.name ?? "unknown_tool";
@@ -557,6 +586,18 @@ function tryParseJson(value: unknown) {
   } catch {
     return null;
   }
+}
+
+/**
+ * What the chat shows for a tool that threw. Paid tools may have sent their
+ * request before failing, so their result is unknown, not failed.
+ */
+export function toolFailureText(toolName: string): string {
+  if (toolName === "generate_image")
+    return "出图过程出错了，图片可能已经生成。可以在设置的「生成记录」里看一下，不会自动重发。";
+  if (toolName === "generate_video")
+    return "生成视频时出错了，视频可能已经生成。可以在设置的「生成记录」里看一下，不会自动重发。";
+  return "这一步出错了，没有完成。";
 }
 
 function isAbortError(error: unknown) {
