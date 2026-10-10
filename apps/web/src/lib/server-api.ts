@@ -603,6 +603,10 @@ export type CreateImageJobInput = {
   input_images?: string[];
   project_id?: string;
   canvas_id?: string;
+  /** Node canvas: the generator node the pictures come from (with canvas_id). */
+  canvas_source_id?: string;
+  /** Node canvas: where each picture goes, in batch order (with canvas_id). */
+  canvas_slots?: { x: number; y: number; width: number; height: number }[];
   session_id?: string;
   thread_id?: string;
 };

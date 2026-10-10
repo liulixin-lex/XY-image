@@ -175,3 +175,19 @@ describe("node canvas renderer", () => {
     ]);
   });
 });
+
+describe("labelInk", () => {
+  it("keeps default ink readable on a filled shape in either theme", async () => {
+    const { labelInk } = await import(
+      "../src/components/node-canvas/node-parts"
+    );
+    // Pale fill: dark ink, whatever the theme's text colour.
+    expect(labelInk("#1e1e1e", "#ffec99")).toBe("#1e1e1e");
+    // Dark fill: light ink.
+    expect(labelInk("#1e1e1e", "#1e1e1e")).toBe("#f4f4f5");
+    // No solid fill: the theme's text colour.
+    expect(labelInk("#1e1e1e", "transparent")).toBe("var(--fg)");
+    // A chosen colour stays.
+    expect(labelInk("#e03131", "#ffec99")).toBe("#e03131");
+  });
+});

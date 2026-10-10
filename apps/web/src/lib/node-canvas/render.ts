@@ -7,6 +7,7 @@
  * the result can be read back; a picture that fails to load is drawn as a
  * blank tile rather than failing the whole image.
  */
+import { fetchAsDataURL } from "../canvas-elements";
 import { lineBox } from "./adapter";
 import { readNumber } from "./element";
 import { readGenerator } from "./generator";
@@ -100,20 +101,40 @@ export function imageSourceOf(
 
 const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
 
+function loadImg(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/**
+ * Loads a picture so the canvas stays readable. Storage serves CORS; when a
+ * response comes without it (a cached copy, another host), the server's
+ * image proxy is the fallback.
+ */
 export const loadImageAnonymous: ImageLoader = (src) => {
   let pending = imageCache.get(src);
   if (!pending) {
-    pending = new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.decoding = "async";
-      img.onload = () => resolve(img);
-      img.onerror = () => {
-        console.warn("[node-canvas/render] picture not loaded for drawing");
-        imageCache.delete(src);
-        resolve(null);
-      };
-      img.src = src;
+    pending = (async () => {
+      const direct = await loadImg(src);
+      if (direct || src.startsWith("data:")) return direct;
+      try {
+        return await loadImg(await fetchAsDataURL(src));
+      } catch (error) {
+        console.warn(
+          "[node-canvas/render] picture not loaded for drawing",
+          error,
+        );
+        return null;
+      }
+    })();
+    pending.then((img) => {
+      if (!img) imageCache.delete(src);
     });
     imageCache.set(src, pending);
   }
