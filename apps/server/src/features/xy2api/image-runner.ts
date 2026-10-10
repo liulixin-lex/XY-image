@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import type { ServerEnv } from "../../config/env.js";
 import { generateImage } from "../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../generation/providers/registry.js";
@@ -221,7 +222,22 @@ export type ImageJobResult = {
   width: number;
   height: number;
   mime_type: string;
+  /**
+   * A small WebP of the picture for feeds and lists (long edge THUMB_EDGE).
+   * Absent for pictures already that small, for jobs from before thumbnails,
+   * and when making one failed: readers fall back to signed_url.
+   */
+  thumb_url?: string;
+  thumb_path?: string;
 };
+
+/** Long edge of the list thumbnail: a 4-up feed card at 2x is about 600 px. */
+export const THUMB_EDGE = 768;
+
+/** `ws/generated/job.png` -> `ws/generated/job.thumb.webp` */
+export function thumbnailPath(objectPath: string) {
+  return `${objectPath.replace(/\.[a-z0-9]+$/i, "")}.thumb.webp`;
+}
 
 type DeliveryImage = {
   workspaceId: string;
@@ -281,6 +297,7 @@ async function deliver(
     });
     if (assetError) throw new StorageWriteError("asset row", assetError);
   }
+  const thumb = await writeThumbnail(admin, image);
   return {
     asset_id: assetId,
     signed_url: admin.storage
@@ -290,7 +307,48 @@ async function deliver(
     width: image.width,
     height: image.height,
     mime_type: image.mimeType,
+    ...(thumb ? { thumb_url: thumb.url, thumb_path: thumb.path } : {}),
   };
+}
+
+/**
+ * Best effort: a list-sized WebP next to the picture, so feeds and records
+ * decode about 1/25 of the pixels of a 4K original. The picture is already
+ * stored and charged, so a failure here only logs and returns null; it never
+ * fails or retries the delivery.
+ */
+async function writeThumbnail(
+  admin: AdminSupabaseClient,
+  image: DeliveryImage,
+): Promise<{ path: string; url: string } | null> {
+  const longEdge = Math.max(image.width, image.height);
+  if (longEdge > 0 && longEdge <= THUMB_EDGE) return null;
+  const path = thumbnailPath(image.objectPath);
+  try {
+    const bytes = await sharp(image.bytes)
+      .rotate()
+      .resize(THUMB_EDGE, THUMB_EDGE, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 78 })
+      .toBuffer();
+    const { error } = await admin.storage
+      .from("project-assets")
+      .upload(path, bytes, {
+        contentType: "image/webp",
+        upsert: true,
+        // Named after the job: the bytes never change.
+        cacheControl: "31536000",
+      });
+    if (error) throw error;
+    return {
+      path,
+      url: admin.storage.from("project-assets").getPublicUrl(path).data.publicUrl,
+    };
+  } catch (error) {
+    console.warn(
+      `[image-runner] thumbnail ${path} skipped, lists use the original: ${describeErrorForLog(error)}`,
+    );
+    return null;
+  }
 }
 
 class StorageWriteError extends Error {

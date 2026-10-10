@@ -25,6 +25,7 @@ import {
   isFailedJob,
   isUnsentJob,
   jobAspect,
+  listImage,
 } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
@@ -231,7 +232,7 @@ function PictureCard({
               aria-label={`第 ${index + 1} 张${selected ? "（已选中）" : ""}：${job.prompt}`}
               className="absolute inset-0 block focus-visible:outline-none"
             >
-              <RevealImage src={job.url} alt="" reveal={reveal} className="h-full w-full" />
+              <RevealImage src={listImage(job) ?? job.url} alt="" reveal={reveal} className="h-full w-full" />
             </button>
             <Toolbar job={job} selected={selected} actions={actions} />
           </>
