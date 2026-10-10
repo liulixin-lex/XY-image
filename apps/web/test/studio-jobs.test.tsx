@@ -2,9 +2,9 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createImageJobMock, fetchJobsMock, reportMock, reportCodeMock, notifyMock } = vi.hoisted(
+const { createImageBatchMock, fetchJobsMock, reportMock, reportCodeMock, notifyMock } = vi.hoisted(
   () => ({
-    createImageJobMock: vi.fn(),
+    createImageBatchMock: vi.fn(),
     fetchJobsMock: vi.fn(),
     reportMock: vi.fn(() => ({ title: "x" })),
     reportCodeMock: vi.fn(),
@@ -14,7 +14,7 @@ const { createImageJobMock, fetchJobsMock, reportMock, reportCodeMock, notifyMoc
 
 vi.mock("../src/lib/server-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/server-api")>()),
-  createImageJob: createImageJobMock,
+  createImageBatch: createImageBatchMock,
   fetchJobs: fetchJobsMock,
   cancelJob: vi.fn(),
 }));
@@ -34,7 +34,9 @@ vi.mock("../src/components/issues/issue-provider", () => ({
 import { useStudioJobs } from "../src/hooks/use-studio-jobs";
 import { ApiApplicationError } from "../src/lib/server-api";
 
-const INPUT = { prompt: "灯塔", model: "gpt-image-2", quality: "standard" as const };
+const INPUT = { prompt: "灯塔", model: "gpt-image-2", quality: "standard" as const, count: 1 };
+const BATCH = "8f14e45f-ceea-4e7a-9f6c-1d2b3c4d5e6f";
+const batchOf = (...jobs: unknown[]) => ({ batch_id: BATCH, requested: jobs.length, jobs });
 
 function job(status: string, extra: Record<string, unknown> = {}) {
   return {
@@ -60,41 +62,41 @@ describe("useStudioJobs", () => {
   afterEach(() => cleanup());
 
   it("sends a failed submit exactly once and reports it instead of retrying", async () => {
-    createImageJobMock.mockRejectedValue(
+    createImageBatchMock.mockRejectedValue(
       new ApiApplicationError("upstream_unknown", "状态未知", 502),
     );
     const { result } = renderHook(() => useStudioJobs());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let ok = true;
+    let outcome: unknown = "unset";
     await act(async () => {
-      ok = await result.current.submit(INPUT);
+      outcome = await result.current.submit(INPUT);
     });
 
-    expect(ok).toBe(false);
-    expect(createImageJobMock).toHaveBeenCalledTimes(1);
+    expect(outcome).toBeNull();
+    expect(createImageBatchMock).toHaveBeenCalledTimes(1);
     expect(reportMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignores a second click while the first submit is in flight", async () => {
     let resolve!: (value: unknown) => void;
-    createImageJobMock.mockImplementation(() => new Promise((r) => (resolve = r)));
+    createImageBatchMock.mockImplementation(() => new Promise((r) => (resolve = r)));
     const { result } = renderHook(() => useStudioJobs());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let first!: Promise<boolean>;
-    let second!: Promise<boolean>;
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
     act(() => {
       first = result.current.submit(INPUT);
       second = result.current.submit(INPUT);
     });
     await act(async () => {
-      resolve({ job: job("queued") });
+      resolve(batchOf(job("queued")));
       await first;
     });
 
-    expect(await second).toBe(false);
-    expect(createImageJobMock).toHaveBeenCalledTimes(1);
+    expect(await second).toBeNull();
+    expect(createImageBatchMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-send anything when remounted", async () => {
@@ -104,11 +106,11 @@ describe("useStudioJobs", () => {
     const second = renderHook(() => useStudioJobs());
     await waitFor(() => expect(second.result.current.loading).toBe(false));
 
-    expect(createImageJobMock).not.toHaveBeenCalled();
+    expect(createImageBatchMock).not.toHaveBeenCalled();
   });
 
   it("refreshes the balance and reports once when a session job fails", async () => {
-    createImageJobMock.mockResolvedValue({ job: job("queued") });
+    createImageBatchMock.mockResolvedValue(batchOf(job("queued")));
     const { result } = renderHook(() => useStudioJobs());
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
@@ -128,11 +130,11 @@ describe("useStudioJobs", () => {
     expect(reportCodeMock).toHaveBeenCalledTimes(1);
     expect(reportCodeMock).toHaveBeenCalledWith("insufficient_balance", null);
     expect(notifyMock).toHaveBeenCalledTimes(1);
-    expect(createImageJobMock).toHaveBeenCalledTimes(1);
+    expect(createImageBatchMock).toHaveBeenCalledTimes(1);
   });
 
   it("frees the slot of a saving job and tells the user once", async () => {
-    createImageJobMock.mockResolvedValue({ job: job("queued") });
+    createImageBatchMock.mockResolvedValue(batchOf(job("queued")));
     const { result } = renderHook(() => useStudioJobs());
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {

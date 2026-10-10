@@ -157,7 +157,7 @@ export type OptimizePromptRequest = z.infer<typeof optimizePromptRequestSchema>;
 
 export const optimizePromptResponseSchema = z.object({
   prompt: z.string().min(1).max(4000),
-  /** Chat model reference that wrote it, e.g. "openai:gpt-5.4-mini". */
+  /** Name of the chat model that wrote it, e.g. "gpt-5.4-mini". */
   model: z.string(),
 });
 export type OptimizePromptResponse = z.infer<

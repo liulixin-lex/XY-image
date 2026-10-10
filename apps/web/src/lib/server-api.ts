@@ -1,6 +1,9 @@
 import type {
   AssetSignedUrlResponse,
   BackgroundJob,
+  CancelImageBatchResponse,
+  ImageBatchResponse,
+  OptimizePromptResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
   JobListResponse,
@@ -633,6 +636,58 @@ export async function fetchJobs(
 }
 
 /** Only queued jobs can be canceled; running ones already reached the main site. */
+/**
+ * Queue 1 to IMAGE_BATCH_MAX pictures from one description (studio). Each
+ * picture is its own job and its own charge; they share `batch_id`. Sent
+ * once: a failed call is reported, never repeated. `jobs` may be shorter
+ * than `requested` if the server stopped part way (nothing was sent then).
+ */
+export async function createImageBatch(
+  accessToken: string,
+  input: CreateImageJobInput & { count: number },
+): Promise<ImageBatchResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/image-generation/batch`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ImageBatchResponse;
+}
+
+/** Cancel the pictures of a batch that have not been sent to the main site yet. */
+export async function cancelImageBatch(
+  accessToken: string,
+  batchId: string,
+): Promise<CancelImageBatchResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/image-batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: "POST", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CancelImageBatchResponse;
+}
+
+/**
+ * 优化提示词: one request to the user's own chat model (a little balance).
+ * The caller keeps the original text so the user can undo.
+ */
+export async function optimizePrompt(
+  accessToken: string,
+  input: { prompt: string; aspect_ratio?: string },
+): Promise<OptimizePromptResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/prompts/optimize`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as OptimizePromptResponse;
+}
+
 export async function cancelJob(
   accessToken: string,
   jobId: string,

@@ -488,6 +488,16 @@
   animation: light-sweep 2.6s cubic-bezier(0.45, 0, 0.25, 1) infinite;
 }
 
+/* Indeterminate bar for a request that is out: we never know its progress,
+   so the bar travels instead of filling (no fake percentages). */
+@keyframes progress-travel {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(260%); }
+}
+.animate-progress {
+  animation: progress-travel 1.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
 @keyframes shimmer-scan {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
@@ -501,6 +511,7 @@
   .animate-loading-dot,
   .animate-breathe,
   .animate-sweep,
+  .animate-progress,
   .animate-shimmer-scan {
     animation: none;
   }

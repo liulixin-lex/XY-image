@@ -57,7 +57,7 @@ export function BillingBadge({
     return (
       <span
         className={cn(
-          "inline-flex h-[22px] items-center rounded-full border border-line-strong px-2 text-[11.5px] font-medium leading-none text-fg-soft",
+          "inline-flex h-[22px] shrink-0 items-center rounded-[7px] bg-tint/[0.07] px-2 text-[11.5px] font-semibold leading-none whitespace-nowrap text-fg-soft",
           className,
         )}
       >
@@ -68,11 +68,11 @@ export function BillingBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-[22px] items-center rounded-full px-2 text-[11.5px] font-medium leading-none",
-        value === "charged" && "bg-tint/[0.12] text-fg",
-        value === "not_charged" && "border border-line-strong text-fg-muted",
+        "inline-flex h-[22px] shrink-0 items-center rounded-[7px] px-2 text-[11.5px] font-semibold leading-none whitespace-nowrap",
+        value === "charged" && "bg-ok-wash text-ok",
+        value === "not_charged" && "bg-tint/[0.07] text-fg-muted",
         value === "none" && "border border-dashed border-line-strong text-fg-muted",
-        needsReconcile(value) && "border border-alert/50 bg-alert-wash text-alert",
+        needsReconcile(value) && "bg-warn-wash text-warn",
         className,
       )}
     >
