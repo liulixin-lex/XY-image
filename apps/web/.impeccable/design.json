@@ -1,208 +1,755 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-08T08:13:19+00:00",
+  "generatedAt": "2026-10-10T10:32:41.235Z",
   "title": "Design System: GGUU AI IMAGE",
   "extensions": {
     "colorMeta": {
-      "ground": {
+      "wall": {
         "role": "neutral",
-        "displayName": "夜底 Ground",
-        "canonical": "#0a0f1e",
+        "displayName": "粉灰墙 Wall",
+        "canonical": "oklch(96.4% 0.003 354.7)",
         "tonalRamp": [
-          "#03050b",
-          "#060912",
-          "#0a0f1e",
-          "#111a2f",
-          "#1b2642",
-          "#2b3858",
-          "#56627d",
-          "#a3acc0"
+          "oklch(15.0% 0.003 354.7)",
+          "oklch(26.4% 0.003 354.7)",
+          "oklch(37.9% 0.003 354.7)",
+          "oklch(49.3% 0.003 354.7)",
+          "oklch(60.7% 0.003 354.7)",
+          "oklch(72.1% 0.003 354.7)",
+          "oklch(83.6% 0.003 354.7)",
+          "oklch(95.0% 0.003 354.7)"
         ]
       },
-      "ground-deep": {
+      "wall-2": {
         "role": "neutral",
-        "displayName": "深夜 Ground Deep",
-        "canonical": "#060912"
+        "displayName": "wall-2",
+        "canonical": "oklch(93.8% 0.005 345.3)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 345.3)",
+          "oklch(26.4% 0.005 345.3)",
+          "oklch(37.9% 0.005 345.3)",
+          "oklch(49.3% 0.005 345.3)",
+          "oklch(60.7% 0.005 345.3)",
+          "oklch(72.1% 0.005 345.3)",
+          "oklch(83.6% 0.005 345.3)",
+          "oklch(95.0% 0.005 345.3)"
+        ]
+      },
+      "floor": {
+        "role": "neutral",
+        "displayName": "地面 Floor",
+        "canonical": "oklch(91.5% 0.007 340.4)",
+        "tonalRamp": [
+          "oklch(15.0% 0.007 340.4)",
+          "oklch(26.4% 0.007 340.4)",
+          "oklch(37.9% 0.007 340.4)",
+          "oklch(49.3% 0.007 340.4)",
+          "oklch(60.7% 0.007 340.4)",
+          "oklch(72.1% 0.007 340.4)",
+          "oklch(83.6% 0.007 340.4)",
+          "oklch(95.0% 0.007 340.4)"
+        ]
+      },
+      "floor-2": {
+        "role": "neutral",
+        "displayName": "floor-2",
+        "canonical": "oklch(87.9% 0.008 337.5)",
+        "tonalRamp": [
+          "oklch(15.0% 0.008 337.5)",
+          "oklch(26.4% 0.008 337.5)",
+          "oklch(37.9% 0.008 337.5)",
+          "oklch(49.3% 0.008 337.5)",
+          "oklch(60.7% 0.008 337.5)",
+          "oklch(72.1% 0.008 337.5)",
+          "oklch(83.6% 0.008 337.5)",
+          "oklch(95.0% 0.008 337.5)"
+        ]
       },
       "panel": {
         "role": "neutral",
         "displayName": "面板 Panel",
-        "canonical": "#131b31"
+        "canonical": "oklch(98.6% 0.002 325.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 325.6)",
+          "oklch(26.4% 0.002 325.6)",
+          "oklch(37.9% 0.002 325.6)",
+          "oklch(49.3% 0.002 325.6)",
+          "oklch(60.7% 0.002 325.6)",
+          "oklch(72.1% 0.002 325.6)",
+          "oklch(83.6% 0.002 325.6)",
+          "oklch(95.0% 0.002 325.6)"
+        ]
       },
       "well": {
         "role": "neutral",
-        "displayName": "井 Well",
-        "canonical": "#0e1528"
+        "displayName": "凹槽 Well",
+        "canonical": "oklch(94.7% 0.005 345.3)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 345.3)",
+          "oklch(26.4% 0.005 345.3)",
+          "oklch(37.9% 0.005 345.3)",
+          "oklch(49.3% 0.005 345.3)",
+          "oklch(60.7% 0.005 345.3)",
+          "oklch(72.1% 0.005 345.3)",
+          "oklch(83.6% 0.005 345.3)",
+          "oklch(95.0% 0.005 345.3)"
+        ]
       },
       "fg": {
         "role": "neutral",
-        "displayName": "月光白 Fg",
-        "canonical": "#eef2fa"
+        "displayName": "石墨紫墨 Ink",
+        "canonical": "oklch(25.5% 0.019 298.8)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
       },
       "fg-soft": {
         "role": "neutral",
-        "displayName": "雾 Fg Soft",
-        "canonical": "#b0b9ce"
+        "displayName": "次级字",
+        "canonical": "oklch(46.7% 0.025 300.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.025 300.6)",
+          "oklch(26.4% 0.025 300.6)",
+          "oklch(37.9% 0.025 300.6)",
+          "oklch(49.3% 0.025 300.6)",
+          "oklch(60.7% 0.025 300.6)",
+          "oklch(72.1% 0.025 300.6)",
+          "oklch(83.6% 0.025 300.6)",
+          "oklch(95.0% 0.025 300.6)"
+        ]
       },
       "fg-muted": {
         "role": "neutral",
-        "displayName": "远雾 Fg Muted",
-        "canonical": "#8590a8"
+        "displayName": "弱字",
+        "canonical": "oklch(53.4% 0.022 301.9)",
+        "tonalRamp": [
+          "oklch(15.0% 0.022 301.9)",
+          "oklch(26.4% 0.022 301.9)",
+          "oklch(37.9% 0.022 301.9)",
+          "oklch(49.3% 0.022 301.9)",
+          "oklch(60.7% 0.022 301.9)",
+          "oklch(72.1% 0.022 301.9)",
+          "oklch(83.6% 0.022 301.9)",
+          "oklch(95.0% 0.022 301.9)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "line",
+        "canonical": "oklch(25.5% 0.019 298.8 / 0.1)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "line-strong",
+        "canonical": "oklch(25.5% 0.019 298.8 / 0.18)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
+      },
+      "tint-wash": {
+        "role": "neutral",
+        "displayName": "tint-wash",
+        "canonical": "oklch(25.5% 0.019 298.8 / 0.06)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
+      },
+      "coral": {
+        "role": "primary",
+        "displayName": "珊瑚 Coral",
+        "canonical": "oklch(63.5% 0.185 31.2)",
+        "tonalRamp": [
+          "oklch(15.0% 0.185 31.2)",
+          "oklch(26.4% 0.185 31.2)",
+          "oklch(37.9% 0.185 31.2)",
+          "oklch(49.3% 0.185 31.2)",
+          "oklch(60.7% 0.185 31.2)",
+          "oklch(72.1% 0.185 31.2)",
+          "oklch(83.6% 0.185 31.2)",
+          "oklch(95.0% 0.185 31.2)"
+        ]
+      },
+      "coral-hover": {
+        "role": "primary",
+        "displayName": "coral-hover",
+        "canonical": "oklch(59.4% 0.185 31.5)",
+        "tonalRamp": [
+          "oklch(15.0% 0.185 31.5)",
+          "oklch(26.4% 0.185 31.5)",
+          "oklch(37.9% 0.185 31.5)",
+          "oklch(49.3% 0.185 31.5)",
+          "oklch(60.7% 0.185 31.5)",
+          "oklch(72.1% 0.185 31.5)",
+          "oklch(83.6% 0.185 31.5)",
+          "oklch(95.0% 0.185 31.5)"
+        ]
+      },
+      "coral-ink": {
+        "role": "primary",
+        "displayName": "coral-ink",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
+      },
+      "coral-text": {
+        "role": "primary",
+        "displayName": "珊瑚文字",
+        "canonical": "oklch(54.4% 0.171 30.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.171 30.6)",
+          "oklch(26.4% 0.171 30.6)",
+          "oklch(37.9% 0.171 30.6)",
+          "oklch(49.3% 0.171 30.6)",
+          "oklch(60.7% 0.171 30.6)",
+          "oklch(72.1% 0.171 30.6)",
+          "oklch(83.6% 0.171 30.6)",
+          "oklch(95.0% 0.171 30.6)"
+        ]
+      },
+      "coral-soft": {
+        "role": "primary",
+        "displayName": "coral-soft",
+        "canonical": "oklch(63.5% 0.185 31.2 / 0.11)",
+        "tonalRamp": [
+          "oklch(15.0% 0.185 31.2)",
+          "oklch(26.4% 0.185 31.2)",
+          "oklch(37.9% 0.185 31.2)",
+          "oklch(49.3% 0.185 31.2)",
+          "oklch(60.7% 0.185 31.2)",
+          "oklch(72.1% 0.185 31.2)",
+          "oklch(83.6% 0.185 31.2)",
+          "oklch(95.0% 0.185 31.2)"
+        ]
+      },
+      "coral-on-ink": {
+        "role": "primary",
+        "displayName": "coral-on-ink",
+        "canonical": "oklch(74.0% 0.160 32.1)",
+        "tonalRamp": [
+          "oklch(15.0% 0.160 32.1)",
+          "oklch(26.4% 0.160 32.1)",
+          "oklch(37.9% 0.160 32.1)",
+          "oklch(49.3% 0.160 32.1)",
+          "oklch(60.7% 0.160 32.1)",
+          "oklch(72.1% 0.160 32.1)",
+          "oklch(83.6% 0.160 32.1)",
+          "oklch(95.0% 0.160 32.1)"
+        ]
+      },
+      "alert": {
+        "role": "status",
+        "displayName": "失败 Alert",
+        "canonical": "oklch(50.6% 0.179 16.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.179 16.6)",
+          "oklch(26.4% 0.179 16.6)",
+          "oklch(37.9% 0.179 16.6)",
+          "oklch(49.3% 0.179 16.6)",
+          "oklch(60.7% 0.179 16.6)",
+          "oklch(72.1% 0.179 16.6)",
+          "oklch(83.6% 0.179 16.6)",
+          "oklch(95.0% 0.179 16.6)"
+        ]
+      },
+      "alert-wash": {
+        "role": "status",
+        "displayName": "alert-wash",
+        "canonical": "oklch(50.6% 0.179 16.6 / 0.09)",
+        "tonalRamp": [
+          "oklch(15.0% 0.179 16.6)",
+          "oklch(26.4% 0.179 16.6)",
+          "oklch(37.9% 0.179 16.6)",
+          "oklch(49.3% 0.179 16.6)",
+          "oklch(60.7% 0.179 16.6)",
+          "oklch(72.1% 0.179 16.6)",
+          "oklch(83.6% 0.179 16.6)",
+          "oklch(95.0% 0.179 16.6)"
+        ]
+      },
+      "warn": {
+        "role": "status",
+        "displayName": "待核对 Warn",
+        "canonical": "oklch(56.8% 0.147 48.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.147 48.6)",
+          "oklch(26.4% 0.147 48.6)",
+          "oklch(37.9% 0.147 48.6)",
+          "oklch(49.3% 0.147 48.6)",
+          "oklch(60.7% 0.147 48.6)",
+          "oklch(72.1% 0.147 48.6)",
+          "oklch(83.6% 0.147 48.6)",
+          "oklch(95.0% 0.147 48.6)"
+        ]
+      },
+      "warn-wash": {
+        "role": "status",
+        "displayName": "warn-wash",
+        "canonical": "oklch(56.8% 0.147 48.6 / 0.1)",
+        "tonalRamp": [
+          "oklch(15.0% 0.147 48.6)",
+          "oklch(26.4% 0.147 48.6)",
+          "oklch(37.9% 0.147 48.6)",
+          "oklch(49.3% 0.147 48.6)",
+          "oklch(60.7% 0.147 48.6)",
+          "oklch(72.1% 0.147 48.6)",
+          "oklch(83.6% 0.147 48.6)",
+          "oklch(95.0% 0.147 48.6)"
+        ]
+      },
+      "ok": {
+        "role": "status",
+        "displayName": "成功 Ok",
+        "canonical": "oklch(56.3% 0.119 158.9)",
+        "tonalRamp": [
+          "oklch(15.0% 0.119 158.9)",
+          "oklch(26.4% 0.119 158.9)",
+          "oklch(37.9% 0.119 158.9)",
+          "oklch(49.3% 0.119 158.9)",
+          "oklch(60.7% 0.119 158.9)",
+          "oklch(72.1% 0.119 158.9)",
+          "oklch(83.6% 0.119 158.9)",
+          "oklch(95.0% 0.119 158.9)"
+        ]
       },
       "amb-default": {
-        "role": "primary",
-        "displayName": "环境光 Ambient（运行时取自当前图片）",
-        "canonical": "rgb(var(--amb))",
+        "role": "secondary",
+        "displayName": "环境色 · 默认",
+        "canonical": "oklch(68.9% 0.131 32.2)",
         "tonalRamp": [
-          "#0b3a37",
-          "#11594f",
-          "#1c7d72",
-          "#2aa196",
-          "#48d6cc",
-          "#7fe3dc",
-          "#b3eee9",
-          "#e2f8f6"
+          "oklch(15.0% 0.131 32.2)",
+          "oklch(26.4% 0.131 32.2)",
+          "oklch(37.9% 0.131 32.2)",
+          "oklch(49.3% 0.131 32.2)",
+          "oklch(60.7% 0.131 32.2)",
+          "oklch(72.1% 0.131 32.2)",
+          "oklch(83.6% 0.131 32.2)",
+          "oklch(95.0% 0.131 32.2)"
         ]
       },
       "amb-2-default": {
         "role": "secondary",
-        "displayName": "环境光副色 Ambient 2",
-        "canonical": "rgb(var(--amb-2))",
+        "displayName": "环境色 · 默认第二色",
+        "canonical": "oklch(58.4% 0.170 355.2)",
         "tonalRamp": [
-          "#0d1a47",
-          "#132a72",
-          "#1d3d9e",
-          "#2c55cc",
-          "#4678ff",
-          "#7d9fff",
-          "#b1c5ff",
-          "#e1e9ff"
+          "oklch(15.0% 0.170 355.2)",
+          "oklch(26.4% 0.170 355.2)",
+          "oklch(37.9% 0.170 355.2)",
+          "oklch(49.3% 0.170 355.2)",
+          "oklch(60.7% 0.170 355.2)",
+          "oklch(72.1% 0.170 355.2)",
+          "oklch(83.6% 0.170 355.2)",
+          "oklch(95.0% 0.170 355.2)"
         ]
-      },
-      "alert": {
-        "role": "tertiary",
-        "displayName": "珊瑚 Alert",
-        "canonical": "#ff8a80",
-        "tonalRamp": [
-          "#4a1410",
-          "#7a221b",
-          "#a8352c",
-          "#d65448",
-          "#ff8a80",
-          "#ffa9a1",
-          "#ffcbc6",
-          "#ffecea"
-        ]
-      },
-      "ok": {
-        "role": "tertiary",
-        "displayName": "青绿 Ok",
-        "canonical": "#5ee0b4"
       },
       "glass": {
         "role": "neutral",
-        "displayName": "玻璃 Glass",
-        "canonical": "rgb(18 25 44 / 0.55)"
+        "displayName": "glass",
+        "canonical": "oklch(100.0% 0.000 89.9 / 0.62)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
       },
       "glass-strong": {
         "role": "neutral",
-        "displayName": "厚玻璃 Glass Strong",
-        "canonical": "rgb(15 21 38 / 0.86)"
+        "displayName": "glass-strong",
+        "canonical": "oklch(100.0% 0.000 89.9 / 0.86)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 89.9)",
+          "oklch(26.4% 0.000 89.9)",
+          "oklch(37.9% 0.000 89.9)",
+          "oklch(49.3% 0.000 89.9)",
+          "oklch(60.7% 0.000 89.9)",
+          "oklch(72.1% 0.000 89.9)",
+          "oklch(83.6% 0.000 89.9)",
+          "oklch(95.0% 0.000 89.9)"
+        ]
+      },
+      "scrim": {
+        "role": "neutral",
+        "displayName": "scrim",
+        "canonical": "oklch(22.1% 0.018 300.2 / 0.72)",
+        "tonalRamp": [
+          "oklch(15.0% 0.018 300.2)",
+          "oklch(26.4% 0.018 300.2)",
+          "oklch(37.9% 0.018 300.2)",
+          "oklch(49.3% 0.018 300.2)",
+          "oklch(60.7% 0.018 300.2)",
+          "oklch(72.1% 0.018 300.2)",
+          "oklch(83.6% 0.018 300.2)",
+          "oklch(95.0% 0.018 300.2)"
+        ]
+      },
+      "wall-dark": {
+        "role": "neutral",
+        "displayName": "深紫黑墙（暗色）",
+        "canonical": "oklch(22.4% 0.016 296.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.016 296.6)",
+          "oklch(26.4% 0.016 296.6)",
+          "oklch(37.9% 0.016 296.6)",
+          "oklch(49.3% 0.016 296.6)",
+          "oklch(60.7% 0.016 296.6)",
+          "oklch(72.1% 0.016 296.6)",
+          "oklch(83.6% 0.016 296.6)",
+          "oklch(95.0% 0.016 296.6)"
+        ]
+      },
+      "wall-2-dark": {
+        "role": "neutral",
+        "displayName": "wall-2-dark",
+        "canonical": "oklch(20.1% 0.014 298.2)",
+        "tonalRamp": [
+          "oklch(15.0% 0.014 298.2)",
+          "oklch(26.4% 0.014 298.2)",
+          "oklch(37.9% 0.014 298.2)",
+          "oklch(49.3% 0.014 298.2)",
+          "oklch(60.7% 0.014 298.2)",
+          "oklch(72.1% 0.014 298.2)",
+          "oklch(83.6% 0.014 298.2)",
+          "oklch(95.0% 0.014 298.2)"
+        ]
+      },
+      "floor-dark": {
+        "role": "neutral",
+        "displayName": "地面（暗色）",
+        "canonical": "oklch(18.3% 0.014 298.0)",
+        "tonalRamp": [
+          "oklch(15.0% 0.014 298.0)",
+          "oklch(26.4% 0.014 298.0)",
+          "oklch(37.9% 0.014 298.0)",
+          "oklch(49.3% 0.014 298.0)",
+          "oklch(60.7% 0.014 298.0)",
+          "oklch(72.1% 0.014 298.0)",
+          "oklch(83.6% 0.014 298.0)",
+          "oklch(95.0% 0.014 298.0)"
+        ]
+      },
+      "panel-dark": {
+        "role": "neutral",
+        "displayName": "面板（暗色）",
+        "canonical": "oklch(26.0% 0.019 298.8)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
+      },
+      "fg-dark": {
+        "role": "neutral",
+        "displayName": "近白墨（暗色）",
+        "canonical": "oklch(95.6% 0.007 312.3)",
+        "tonalRamp": [
+          "oklch(15.0% 0.007 312.3)",
+          "oklch(26.4% 0.007 312.3)",
+          "oklch(37.9% 0.007 312.3)",
+          "oklch(49.3% 0.007 312.3)",
+          "oklch(60.7% 0.007 312.3)",
+          "oklch(72.1% 0.007 312.3)",
+          "oklch(83.6% 0.007 312.3)",
+          "oklch(95.0% 0.007 312.3)"
+        ]
+      },
+      "fg-soft-dark": {
+        "role": "neutral",
+        "displayName": "fg-soft-dark",
+        "canonical": "oklch(79.2% 0.021 305.2)",
+        "tonalRamp": [
+          "oklch(15.0% 0.021 305.2)",
+          "oklch(26.4% 0.021 305.2)",
+          "oklch(37.9% 0.021 305.2)",
+          "oklch(49.3% 0.021 305.2)",
+          "oklch(60.7% 0.021 305.2)",
+          "oklch(72.1% 0.021 305.2)",
+          "oklch(83.6% 0.021 305.2)",
+          "oklch(95.0% 0.021 305.2)"
+        ]
+      },
+      "fg-muted-dark": {
+        "role": "neutral",
+        "displayName": "fg-muted-dark",
+        "canonical": "oklch(70.6% 0.024 302.8)",
+        "tonalRamp": [
+          "oklch(15.0% 0.024 302.8)",
+          "oklch(26.4% 0.024 302.8)",
+          "oklch(37.9% 0.024 302.8)",
+          "oklch(49.3% 0.024 302.8)",
+          "oklch(60.7% 0.024 302.8)",
+          "oklch(72.1% 0.024 302.8)",
+          "oklch(83.6% 0.024 302.8)",
+          "oklch(95.0% 0.024 302.8)"
+        ]
+      },
+      "coral-dark": {
+        "role": "primary",
+        "displayName": "珊瑚（暗色）",
+        "canonical": "oklch(74.0% 0.160 32.1)",
+        "tonalRamp": [
+          "oklch(15.0% 0.160 32.1)",
+          "oklch(26.4% 0.160 32.1)",
+          "oklch(37.9% 0.160 32.1)",
+          "oklch(49.3% 0.160 32.1)",
+          "oklch(60.7% 0.160 32.1)",
+          "oklch(72.1% 0.160 32.1)",
+          "oklch(83.6% 0.160 32.1)",
+          "oklch(95.0% 0.160 32.1)"
+        ]
+      },
+      "coral-ink-dark": {
+        "role": "primary",
+        "displayName": "coral-ink-dark",
+        "canonical": "oklch(21.5% 0.028 355.6)",
+        "tonalRamp": [
+          "oklch(15.0% 0.028 355.6)",
+          "oklch(26.4% 0.028 355.6)",
+          "oklch(37.9% 0.028 355.6)",
+          "oklch(49.3% 0.028 355.6)",
+          "oklch(60.7% 0.028 355.6)",
+          "oklch(72.1% 0.028 355.6)",
+          "oklch(83.6% 0.028 355.6)",
+          "oklch(95.0% 0.028 355.6)"
+        ]
+      },
+      "coral-text-dark": {
+        "role": "primary",
+        "displayName": "coral-text-dark",
+        "canonical": "oklch(78.0% 0.130 33.9)",
+        "tonalRamp": [
+          "oklch(15.0% 0.130 33.9)",
+          "oklch(26.4% 0.130 33.9)",
+          "oklch(37.9% 0.130 33.9)",
+          "oklch(49.3% 0.130 33.9)",
+          "oklch(60.7% 0.130 33.9)",
+          "oklch(72.1% 0.130 33.9)",
+          "oklch(83.6% 0.130 33.9)",
+          "oklch(95.0% 0.130 33.9)"
+        ]
+      },
+      "alert-dark": {
+        "role": "status",
+        "displayName": "alert-dark",
+        "canonical": "oklch(74.2% 0.162 10.5)",
+        "tonalRamp": [
+          "oklch(15.0% 0.162 10.5)",
+          "oklch(26.4% 0.162 10.5)",
+          "oklch(37.9% 0.162 10.5)",
+          "oklch(49.3% 0.162 10.5)",
+          "oklch(60.7% 0.162 10.5)",
+          "oklch(72.1% 0.162 10.5)",
+          "oklch(83.6% 0.162 10.5)",
+          "oklch(95.0% 0.162 10.5)"
+        ]
+      },
+      "warn-dark": {
+        "role": "status",
+        "displayName": "warn-dark",
+        "canonical": "oklch(79.1% 0.135 51.1)",
+        "tonalRamp": [
+          "oklch(15.0% 0.135 51.1)",
+          "oklch(26.4% 0.135 51.1)",
+          "oklch(37.9% 0.135 51.1)",
+          "oklch(49.3% 0.135 51.1)",
+          "oklch(60.7% 0.135 51.1)",
+          "oklch(72.1% 0.135 51.1)",
+          "oklch(83.6% 0.135 51.1)",
+          "oklch(95.0% 0.135 51.1)"
+        ]
+      },
+      "ok-dark": {
+        "role": "status",
+        "displayName": "ok-dark",
+        "canonical": "oklch(78.6% 0.129 162.7)",
+        "tonalRamp": [
+          "oklch(15.0% 0.129 162.7)",
+          "oklch(26.4% 0.129 162.7)",
+          "oklch(37.9% 0.129 162.7)",
+          "oklch(49.3% 0.129 162.7)",
+          "oklch(60.7% 0.129 162.7)",
+          "oklch(72.1% 0.129 162.7)",
+          "oklch(83.6% 0.129 162.7)",
+          "oklch(95.0% 0.129 162.7)"
+        ]
+      },
+      "glass-strong-dark": {
+        "role": "neutral",
+        "displayName": "glass-strong-dark",
+        "canonical": "oklch(26.0% 0.019 298.8 / 0.9)",
+        "tonalRamp": [
+          "oklch(15.0% 0.019 298.8)",
+          "oklch(26.4% 0.019 298.8)",
+          "oklch(37.9% 0.019 298.8)",
+          "oklch(49.3% 0.019 298.8)",
+          "oklch(60.7% 0.019 298.8)",
+          "oklch(72.1% 0.019 298.8)",
+          "oklch(83.6% 0.019 298.8)",
+          "oklch(95.0% 0.019 298.8)"
+        ]
       }
     },
     "typographyMeta": {
       "display": {
-        "displayName": "Display（得意黑子集）",
-        "purpose": "落地页首屏大标题，每屏最多一处。"
+        "displayName": "Display · 优设标题黑",
+        "purpose": "落地页首屏「一句话」，只此一处。"
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "工作台各页 H1、错误页标题。"
+        "purpose": "工作台页头和落地页分区标题。"
+      },
+      "section-label": {
+        "displayName": "Section label",
+        "purpose": "「/ 提示词」这类分区名和字段名，主按钮标签。"
+      },
+      "numeral": {
+        "displayName": "Numeral · Big Shoulders",
+        "purpose": "张数、画质档位、余额、序号、计时；只排数字。"
       },
       "title": {
         "displayName": "Title",
-        "purpose": "卡片、区块、侧栏标题。"
+        "purpose": "卡片和弹窗标题。"
       },
       "body": {
         "displayName": "Body",
-        "purpose": "说明文字，首屏副文 18px。"
+        "purpose": "说明文字，最长约 34em。"
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "工作台正文和输入。"
       },
       "label": {
         "displayName": "Label",
-        "purpose": "按钮、芯片、导航、表单标签。"
+        "purpose": "按钮、页签、分段选项。"
       },
       "data": {
-        "displayName": "Data（Geist Mono）",
-        "purpose": "模型、尺寸、请求 ID、计时等真实数据。"
+        "displayName": "Data · Geist Mono",
+        "purpose": "请求 ID、比例、模型名。"
       }
     },
     "shadows": [
       {
         "name": "subtle",
-        "value": "0 1px 2px rgb(2 4 10 / 0.35)",
-        "purpose": "小按钮、标签。"
+        "value": "0 1px 2px var(--shadow)",
+        "purpose": "小控件。"
       },
       {
         "name": "card",
-        "value": "0 1px 2px rgb(2 4 10 / 0.3), 0 12px 28px -14px rgb(2 4 10 / 0.6)",
-        "purpose": "静止的卡片。"
+        "value": "0 1px 2px var(--shadow), 0 22px 40px -26px var(--shadow-2)",
+        "purpose": "结果卡片和面板。"
       },
       {
         "name": "card-hover",
-        "value": "0 2px 4px rgb(2 4 10 / 0.35), 0 24px 48px -18px rgb(2 4 10 / 0.75)",
-        "purpose": "卡片悬停抬起。"
+        "value": "0 2px 4px var(--shadow), 0 30px 50px -24px var(--shadow-2)",
+        "purpose": "卡片悬停。"
       },
       {
         "name": "float",
-        "value": "0 6px 14px rgb(2 4 10 / 0.35), 0 30px 64px -20px rgb(2 4 10 / 0.8)",
-        "purpose": "浮层、工具栏。"
+        "value": "0 6px 14px var(--shadow), 0 30px 64px -20px var(--shadow-2)",
+        "purpose": "漂浮的工具条和菜单。"
       },
       {
-        "name": "glow-amb",
-        "value": "0 10px 30px -10px rgb(var(--amb) / 0.7), inset 0 -2px 0 rgb(10 15 30 / 0.12)",
-        "purpose": "主按钮的环境光晕。"
+        "name": "accent-pool",
+        "value": "0 14px 30px -12px var(--acc-glow)",
+        "purpose": "珊瑚主按钮下的一汪光。"
+      },
+      {
+        "name": "picked",
+        "value": "0 0 0 3px var(--ground), 0 0 0 5px var(--acc), 0 26px 46px -22px var(--acc-glow)",
+        "purpose": "被选中的那张图。"
       },
       {
         "name": "lit",
-        "value": "0 0 0 1px rgb(255 255 255 / 0.14), 0 60px 120px -40px rgb(2 4 10 / 0.9), 0 0 140px -30px rgb(var(--amb) / 0.55)",
-        "purpose": "被照亮的图片。"
+        "value": "0 2px 4px var(--shadow), 0 50px 80px -40px var(--shadow-2)",
+        "purpose": "立在房间里的大图；暗色再加 0 0 140px -30px rgb(var(--amb) / 0.6) 的环境光。"
       },
       {
-        "name": "glass",
-        "value": "inset 0 1px 0 rgb(255 255 255 / 0.07), 0 24px 60px -24px rgb(2 4 10 / 0.7), 0 2px 6px -1px rgb(2 4 10 / 0.35); backdrop-filter: blur(26px) saturate(170%)",
-        "purpose": "漂浮在图片上的控件。"
+        "name": "glass-strong",
+        "value": "inset 0 1px 0 var(--glass-highlight), 0 4px 12px -2px var(--shadow), 0 30px 70px -24px var(--shadow-2)",
+        "purpose": "菜单和弹窗，配 blur(24px) saturate(140%)。"
       }
     ],
     "motion": [
       {
         "name": "ease-out-expo",
         "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "默认出场缓动。"
+        "purpose": "入场和大图换位。"
       },
       {
-        "name": "ambient-tween",
-        "value": "0.9s power2.out (GSAP)",
-        "purpose": "换图时环境色补间。"
+        "name": "ease-out-quart",
+        "value": "cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "面板和浮层。"
       },
       {
-        "name": "screen-reveal",
-        "value": "1.1s expo.out (GSAP)",
-        "purpose": "氛围屏换图先亮后落。"
+        "name": "press",
+        "value": "150ms ease-out; active: translateY(1px) scale(0.98)",
+        "purpose": "按钮按下。"
       },
       {
-        "name": "reveal-image",
-        "value": "1.6s expo.out (GSAP)",
-        "purpose": "新结果到达时的点亮效果。"
+        "name": "ambient",
+        "value": "GSAP 0.9s",
+        "purpose": "换图时墙、地面、光晕、斜块过渡到新的环境色。"
       },
       {
         "name": "live-pulse",
         "value": "1.8s ease-in-out infinite",
-        "purpose": "唯一循环的光：运行中状态点。"
+        "purpose": "生成中的状态点，唯一循环的光。"
       },
       {
-        "name": "light-sweep",
-        "value": "2.6s cubic-bezier(0.45, 0, 0.25, 1) infinite",
-        "purpose": "运行中任务上的扫光。"
+        "name": "progress-travel",
+        "value": "1.8s cubic-bezier(0.45, 0, 0.25, 1) infinite",
+        "purpose": "已发出的请求：进度条往复，不显示假的百分比。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "prefers-reduced-motion 下全部直接显示最终状态。"
       }
     ],
     "breakpoints": [
@@ -221,121 +768,147 @@
       {
         "name": "xl",
         "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1536px"
       }
     ]
   },
   "components": [
     {
-      "name": "Primary Button",
+      "name": "Poster Button",
       "kind": "button",
-      "refersTo": "button-primary",
-      "description": "近白主按钮，带当前图片颜色的光晕；每屏一个主动作。",
-      "html": "<button class=\"ds-btn-primary\">开始生成 <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 20px;border:none;border-radius:10px;background:var(--fg,#eef2fa);color:var(--ground,#0a0f1e);font:600 15px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;box-shadow:0 10px 30px -10px rgb(72 214 204/.7),inset 0 -2px 0 rgb(10 15 30/.12);cursor:pointer;transition:background-color .15s ease-out,transform .15s ease-out}.ds-btn-primary:hover{background:#fff}.ds-btn-primary:active{transform:translateY(1px) scale(.99)}.ds-btn-primary:focus-visible{outline:2px solid rgb(72 214 204);outline-offset:2px}"
+      "refersTo": "button-poster",
+      "description": "珊瑚斜切主按钮：每屏最要紧的那个动作，下面一汪珊瑚光。",
+      "html": "<button class=\"ds-btn-poster\"><span class=\"ds-sk-in\">生成 <b class=\"ds-num\">2</b> 张 <svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></span></button>",
+      "css": ".ds-btn-poster{display:inline-flex;align-items:center;justify-content:center;height:52px;padding:0 28px;border:none;border-radius:14px;background:var(--acc,#e5533d);color:var(--acc-ink,#fff);font:400 21px/1 \"GGUU Display\", \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;letter-spacing:.02em;transform:skewX(-10deg);box-shadow:0 14px 30px -12px var(--acc-glow,rgb(229 83 61/.42));cursor:pointer;transition:background-color .15s ease-out,transform .15s ease-out}.ds-btn-poster:hover{background:var(--acc-hover,#d6452f)}.ds-btn-poster:active{transform:skewX(-10deg) translateY(1px) scale(.98)}.ds-btn-poster:focus-visible{outline:2px solid var(--acc,#e5533d);outline-offset:2px}.ds-sk-in{display:inline-flex;align-items:center;gap:8px;transform:skewX(10deg)}.ds-num{font:800 28px/.9 \"Big Shoulders Display\", Geist, system-ui, sans-serif}"
+    },
+    {
+      "name": "Ink Button",
+      "kind": "button",
+      "refersTo": "button-ink",
+      "description": "墨色按钮：强的次要动作，暗色主题自动反色。",
+      "html": "<button class=\"ds-btn-ink\">去设置</button>",
+      "css": ".ds-btn-ink{height:36px;padding:0 14px;border:none;border-radius:10px;background:var(--fg,#24212b);color:var(--ground,#f5f2f3);font:500 14px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;cursor:pointer;transition:background-color .15s ease-out}.ds-btn-ink:hover{background:color-mix(in oklab,var(--fg,#24212b) 88%,transparent)}.ds-btn-ink:focus-visible{outline:2px solid var(--acc,#e5533d);outline-offset:2px}"
     },
     {
       "name": "Outline Button",
       "kind": "button",
       "refersTo": "button-outline",
-      "description": "次要动作：浅白底加细边框。",
-      "html": "<button class=\"ds-btn-outline\">回到画布项目</button>",
-      "css": ".ds-btn-outline{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid rgb(255 255 255/.18);border-radius:10px;background:rgb(255 255 255/.04);color:#eef2fa;font:500 14px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s}.ds-btn-outline:hover{background:rgb(255 255 255/.08);border-color:rgb(255 255 255/.3)}.ds-btn-outline:focus-visible{outline:2px solid rgb(72 214 204);outline-offset:2px}"
+      "description": "安静的动作：细描边，悬停加一层叠加色。",
+      "html": "<button class=\"ds-btn-outline\">用作参考图</button>",
+      "css": ".ds-btn-outline{height:36px;padding:0 14px;border:1px solid var(--line-strong,rgb(36 33 43/.18));border-radius:10px;background:transparent;color:var(--fg,#24212b);font:500 14px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;cursor:pointer;transition:background-color .15s ease-out}.ds-btn-outline:hover{background:rgb(var(--tint,36 33 43)/.05)}.ds-btn-outline:focus-visible{outline:2px solid var(--acc,#e5533d);outline-offset:2px}"
     },
     {
-      "name": "Glass Nav",
+      "name": "Nav Tabs",
       "kind": "nav",
-      "refersTo": "nav-pill",
-      "description": "居中的玻璃胶囊导航，当前页白 10% 底。",
-      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item is-active\" href=\"#\">首页</a><a class=\"ds-nav-item\" href=\"#\">生图</a><a class=\"ds-nav-item\" href=\"#\">画布项目</a><a class=\"ds-nav-item\" href=\"#\">设置</a></nav>",
-      "css": ".ds-nav{display:inline-flex;gap:4px;padding:5px;border-radius:14px;background:rgb(18 25 44/.55);border:1px solid rgb(255 255 255/.1);box-shadow:inset 0 1px 0 rgb(255 255 255/.07),0 24px 60px -24px rgb(2 4 10/.7);backdrop-filter:blur(26px) saturate(170%)}.ds-nav-item{padding:8px 14px;border-radius:10px;color:#b0b9ce;font:500 14px/1.2 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;text-decoration:none;transition:background-color .15s,color .15s}.ds-nav-item:hover{background:rgb(255 255 255/.06);color:#eef2fa}.ds-nav-item.is-active{background:rgb(255 255 255/.1);color:#eef2fa}.ds-nav-item:focus-visible{outline:2px solid rgb(72 214 204);outline-offset:2px}"
+      "refersTo": "nav-tab-active",
+      "description": "顶部导航：斜切页签，当前页墨色底。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"主导航\"><a class=\"ds-tab\" aria-current=\"page\" href=\"#\"><span>生图</span></a><a class=\"ds-tab\" href=\"#\"><span>画布项目</span></a><a class=\"ds-tab\" href=\"#\"><span>设置</span></a></nav>",
+      "css": ".ds-nav{display:flex;gap:4px}.ds-tab{display:inline-flex;align-items:center;height:34px;padding:0 13px;border-radius:10px;transform:skewX(-10deg);color:var(--fg-soft,#5c5766);font:600 13.5px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;text-decoration:none;transition:background-color .15s,color .15s}.ds-tab>span{transform:skewX(10deg)}.ds-tab:hover{background:rgb(var(--tint,36 33 43)/.06);color:var(--fg,#24212b)}.ds-tab[aria-current=page]{background:var(--fg,#24212b);color:var(--ground,#f5f2f3)}.ds-tab:focus-visible{outline:2px solid var(--acc,#e5533d);outline-offset:2px}"
     },
     {
-      "name": "Chip",
+      "name": "Segmented Choice",
       "kind": "chip",
-      "refersTo": "chip",
-      "description": "胶囊形芯片：起手式、示例标签、筛选。",
-      "html": "<button class=\"ds-chip\">海报</button> <button class=\"ds-chip is-on\">电商主图</button>",
-      "css": ".ds-chip{height:32px;padding:0 14px;border-radius:999px;border:1px solid rgb(255 255 255/.1);background:rgb(255 255 255/.06);color:#b0b9ce;font:500 13px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;cursor:pointer;transition:background-color .15s,color .15s}.ds-chip:hover{background:rgb(255 255 255/.1);color:#eef2fa}.ds-chip.is-on{background:rgb(255 255 255/.14);color:#eef2fa;border-color:rgb(255 255 255/.18)}.ds-chip:focus-visible{outline:2px solid rgb(72 214 204);outline-offset:2px}"
+      "refersTo": "segmented-option-active",
+      "description": "画质 1K / 2K / 4K：斜切分段，选中是墨色，数字用 Big Shoulders。",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\" aria-label=\"画质\"><button role=\"radio\" aria-checked=\"false\">1K</button><button role=\"radio\" aria-checked=\"true\">2K</button><button role=\"radio\" aria-checked=\"false\">4K</button></div>",
+      "css": ".ds-seg{display:flex;gap:6px;width:320px}.ds-seg button{flex:1;height:48px;border:none;border-radius:10px;transform:skewX(-10deg);background:rgb(var(--tint,36 33 43)/.055);color:var(--fg-soft,#5c5766);font:800 26px/.9 \"Big Shoulders Display\", Geist, system-ui, sans-serif;cursor:pointer;transition:background-color .15s,color .15s}.ds-seg button:hover{background:rgb(var(--tint,36 33 43)/.09);color:var(--fg,#24212b)}.ds-seg button[aria-checked=true]{background:var(--fg,#24212b);color:var(--ground,#f5f2f3)}.ds-seg button:focus-visible{outline:2px solid var(--acc,#e5533d);outline-offset:2px}"
     },
     {
-      "name": "Composer",
+      "name": "Prompt Field",
       "kind": "input",
-      "refersTo": "composer",
-      "description": "生图输入框：玻璃面板，聚焦时外圈泛起环境光。",
-      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" rows=\"2\" placeholder=\"描述你想要的画面，比如：雨后的老街，霓虹倒影\"></textarea><div class=\"ds-composer-row\"><span class=\"ds-composer-hint\">按次从主站余额扣费，发出后不会自动重试</span><button class=\"ds-composer-go\">开始生成</button></div></div>",
-      "css": ".ds-composer{width:min(560px,100%);padding:16px;border-radius:22px;background:rgb(18 25 44/.55);border:1px solid rgb(255 255 255/.1);box-shadow:inset 0 1px 0 rgb(255 255 255/.07),0 24px 60px -24px rgb(2 4 10/.7);backdrop-filter:blur(26px) saturate(170%);transition:border-color .2s,box-shadow .2s}.ds-composer:focus-within{border-color:rgb(255 255 255/.25);box-shadow:inset 0 1px 0 rgb(255 255 255/.12),0 0 0 1px rgb(72 214 204/.25),0 30px 80px -40px rgb(72 214 204/.6)}.ds-composer-input{width:100%;resize:none;border:none;background:transparent;color:#eef2fa;caret-color:rgb(72 214 204);font:400 16px/1.65 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;outline:none}.ds-composer-input::placeholder{color:#8590a8}.ds-composer-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.ds-composer-hint{color:#8590a8;font:400 12.5px/1.4 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif}.ds-composer-go{height:40px;padding:0 16px;border:none;border-radius:10px;background:#eef2fa;color:#0a0f1e;font:600 14px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;box-shadow:0 10px 30px -10px rgb(72 214 204/.7);cursor:pointer}.ds-composer-go:hover{background:#fff}.ds-composer-go:focus-visible{outline:2px solid rgb(72 214 204);outline-offset:2px}"
+      "refersTo": "input-field",
+      "description": "字段名带珊瑚斜杠；输入区是凹下去的底，聚焦珊瑚内描边。",
+      "html": "<label class=\"ds-field\"><span class=\"ds-label\">提示词</span><textarea rows=\"3\" placeholder=\"写下你想要的画面\"></textarea></label>",
+      "css": ".ds-field{display:grid;gap:10px;width:340px}.ds-label{font:400 17px/1 \"GGUU Display\", \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;letter-spacing:.02em;color:var(--fg,#24212b)}.ds-label::before{content:\"/\";color:var(--acc,#e5533d);margin-right:.12em}.ds-field textarea{resize:none;padding:12px 14px;border:none;border-radius:14px;background:var(--well,#f0ecee);color:var(--fg,#24212b);font:400 15px/1.7 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;caret-color:var(--acc,#e5533d);box-shadow:inset 0 0 0 1px var(--line,rgb(36 33 43/.1));outline:none;transition:box-shadow .15s}.ds-field textarea::placeholder{color:var(--fg-muted,#6f6a78)}.ds-field textarea:focus{box-shadow:inset 0 0 0 1px var(--acc,#e5533d),0 0 0 3px var(--acc-soft,rgb(229 83 61/.11))}"
     },
     {
-      "name": "Info Card",
+      "name": "Result Card",
       "kind": "card",
-      "refersTo": "info-card",
-      "description": "压在图片上的厚玻璃信息卡：提示词、模型、尺寸、扣费。",
-      "html": "<div class=\"ds-info\"><p class=\"ds-info-prompt\">跑道上的三个女孩，复古运动风，正午硬光</p><dl class=\"ds-info-dl\"><dt>模型</dt><dd>GPT Image 2</dd><dt>尺寸</dt><dd class=\"ds-mono\">1024×1365</dd><dt>扣费</dt><dd><span class=\"ds-badge\">已扣费</span></dd></dl></div>",
-      "css": ".ds-info{width:250px;padding:16px;border-radius:18px;background:rgb(15 21 38/.86);border:1px solid rgb(255 255 255/.1);box-shadow:inset 0 1px 0 rgb(255 255 255/.07),0 30px 70px -20px rgb(2 4 10/.8);backdrop-filter:blur(24px) saturate(160%);color:#eef2fa;font:400 13px/1.5 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif}.ds-info-prompt{margin:0 0 12px;color:#eef2fa}.ds-info-dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0}.ds-info-dl dt{color:#8590a8}.ds-info-dl dd{margin:0;color:#b0b9ce}.ds-mono{font:400 11px/1.3 \"Geist Mono\",ui-monospace,monospace;font-variant-numeric:tabular-nums}.ds-badge{display:inline-flex;padding:2px 8px;border-radius:999px;background:rgb(94 224 180/.12);color:#5ee0b4;font-size:12px}"
+      "refersTo": "card",
+      "description": "结果图卡：14px 圆角，选中时墙色缝加珊瑚外圈。",
+      "html": "<figure class=\"ds-result\" aria-label=\"第 1 张（已选中）\"><div class=\"ds-pic\"></div><figcaption><b class=\"ds-idx\">01</b><span>3:4 · 2K · GPT Image 2</span></figcaption></figure>",
+      "css": ".ds-result{margin:0;width:200px;display:grid;gap:10px}.ds-pic{aspect-ratio:3/4;border-radius:14px;background:linear-gradient(135deg,rgb(var(--amb,224 122 102)),rgb(var(--amb-2,196 70 128)));box-shadow:0 0 0 3px var(--ground,#f5f2f3),0 0 0 5px var(--acc,#e5533d),0 26px 46px -22px var(--acc-glow,rgb(229 83 61/.42))}.ds-result figcaption{display:flex;align-items:baseline;justify-content:space-between;color:var(--fg-muted,#6f6a78);font:400 11px/1.3 \"Geist Mono\",ui-monospace,monospace}.ds-idx{font:800 26px/.9 \"Big Shoulders Display\", Geist, system-ui, sans-serif;color:var(--fg,#24212b)}"
     },
     {
-      "name": "Alert Notice",
+      "name": "Status Sticker",
       "kind": "custom",
-      "description": "失败或待核对：珊瑚红点加一句说明和下一步。",
-      "html": "<div class=\"ds-alert\"><span class=\"ds-alert-dot\"></span>结果未知，可能已扣费。<a href=\"#\">去主站核对</a></div>",
-      "css": ".ds-alert{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid rgb(255 138 128/.3);background:rgb(255 138 128/.12);color:#eef2fa;font:400 13px/1.4 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif}.ds-alert-dot{width:6px;height:6px;border-radius:999px;background:#ff8a80}.ds-alert a{color:#eef2fa;text-underline-offset:.22em}"
+      "refersTo": "sticker",
+      "description": "珊瑚贴纸，微旋转；状态牌永远带文字。",
+      "html": "<div class=\"ds-stickers\"><span class=\"ds-sticker\">示例作品</span><span class=\"ds-flag\">待核对</span></div>",
+      "css": ".ds-stickers{display:flex;gap:14px;align-items:center}.ds-sticker{display:inline-block;padding:8px 14px;border-radius:10px;transform:rotate(-6deg);background:var(--acc,#e5533d);color:var(--acc-ink,#fff);font:400 17px/1 \"GGUU Display\", \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif;box-shadow:0 14px 30px -12px var(--acc-glow,rgb(229 83 61/.42))}.ds-flag{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;background:var(--warn-wash,rgb(185 86 15/.1));color:var(--warn,#b9560f);font:600 12px/1 Geist, \"Noto Sans SC\", \"PingFang SC\", system-ui, sans-serif}"
     }
   ],
   "narrative": {
-    "northStar": "夜色光场：页面的光来自正在看的那张图",
-    "overview": "GGUU AI IMAGE 是一间深墨蓝的夜色房间，房间里唯一的光源是正在看的那张图。图本身被放大、高斯模糊后铺成整页环境光；从图里取出的两种主色写进 `--amb` / `--amb-2`，主按钮的光晕、焦点环、品牌图标、状态点都跟着它变色。换一张图，房间的颜色就跟着换。生成的结果也挂到同一块倾斜的「氛围屏」上，地面有一条淡光带和屏幕倒影，空间感来自光和倒影，不靠装饰。\n\n密度上，落地页（Persuade）让作品占满首屏；工作台（Operate：生图、画布、设置）把同一种光收敛成安静的底色，控件只在图片上方漂浮时才用磨砂玻璃。文案直白亲切：说「生成」「图片」「余额」，不用暗房、冲印、显影一类行话。\n\n用户明确否决过的方向：Loomic 品牌、琥珀 / 黄色铺色、纯黑白的「暗房接触印样」（太素、太黑话）。",
+    "northStar": "一张会换颜色的海报",
+    "overview": "GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅灰的墙往下过渡成稍深的地面，中间有一条地平线；正在看的那张图把整个房间淡淡地染成它的颜色（墙、地面、光晕、背后的色块），换一张图，房间跟着换色。海报的语法负责说话：超大的优设标题黑写主张，斜切的按钮和页签做选择，微微歪着的珊瑚贴纸做标记，Big Shoulders 大号数字报张数、余额和计时。\n\n亮暗两套主题是同一张海报在不同光线下：亮色是午后的粉灰房间，石墨紫墨字；暗色是低光下的深紫黑房间，近白的字，珊瑚提亮一档。落地页（Persuade）让作品和标题占满首屏；工作台（Operate：生图、画布、设置、品牌套件、技能）把同一套语法收紧：斜切只给选项和主动作，面板是安静的 16px 圆角卡片，磨砂玻璃只给漂浮在房间或图片上的控件和弹窗。\n\n用户明确否决过的方向：Loomic 品牌；琥珀 / 黄色铺色；纯黑白、硬黑边、零模糊投影的刺眼海报；暗房、冲印、显影一类行话。",
     "keyCharacteristics": [
-      "光来自图片：环境色在运行时从当前图片取样，GSAP 0.9s 补间到 `<html>` 上。",
-      "深墨蓝底（色相约 225–230），不用中性黑。",
-      "磨砂玻璃只给漂浮在图片上的控件：导航、输入框、信息卡、浮层。",
-      "近白主按钮带环境色光晕；危险和异常用珊瑚红，从不只靠颜色表达。",
-      "标题用得意黑（GGUU Display）的斜体气质，正文 Geist + 思源黑体，数据 Geist Mono。"
+      "房间而不是平面：墙到地面的过渡、地平线、接触阴影和倒影给出空间感。",
+      "环境色来自图片：`--amb` / `--amb-2` 在运行时从当前图片取样，GSAP 补间写到 `<html>`。",
+      "一种强调色：珊瑚，只给每屏最要紧的那个动作和被选中的那张图。",
+      "斜切加小圆角（-10°）是选择和行动的形状；卡片和面板保持正放。",
+      "状态永远配文字，颜色只是辅助。"
     ],
     "rules": [
       {
-        "name": "The Picture Is The Light Rule",
-        "body": "页面上任何「发光」的东西都读 `--amb` / `--amb-2`，不写死颜色；没有图片时用默认青蓝光。",
+        "name": "The One Coral Rule",
+        "body": "每屏只有一个珊瑚动作。第二个按钮用墨色、描边或幽灵样式；珊瑚铺成大面积底色就错了。",
+        "section": "colors"
+      },
+      {
+        "name": "The Words First Rule",
+        "body": "状态颜色永远和文字一起出现（「待核对」「未发出」「没生成出来」）。去掉颜色后意思不变，才算合格。",
         "section": "colors"
       },
       {
         "name": "The No Amber Rule",
-        "body": "不用琥珀、黄色或米黄铺底（用户明确否决）；警示用珊瑚红。",
+        "body": "不用琥珀或黄色铺色。橙色只出现在「待核对」的文字和浅底上。",
         "section": "colors"
       },
       {
-        "name": "The Night Is Blue Rule",
-        "body": "页面底色永远是墨蓝，不是中性黑。（第三版起画布跟随亮暗主题，这条例外已取消；本文件整体待按 F2 重写。）",
-        "section": "colors"
-      },
-      {
-        "name": "The Display Is Rare Rule",
-        "body": "GGUU Display 只用于页面级标题（每屏最多一处），从不用于按钮、标签和正文。",
+        "name": "The Display Is A Voice Rule",
+        "body": "优设标题黑只用于标题、分区名、主按钮和贴纸，不用于段落、表单输入和长句。",
         "section": "typography"
       },
       {
-        "name": "The Mono Is Data Rule",
-        "body": "等宽字只用于真实数据，不当成「科技感」装饰。",
+        "name": "The Latin Digits Rule",
+        "body": "Big Shoulders 只排数字和 K、× 这类符号；中文单位（张、倍）用正文字体跟在后面。",
         "section": "typography"
       },
       {
-        "name": "The Glass Floats Rule",
-        "body": "`glass`（55% 不透明的墨蓝 rgb(18 25 44)，模糊 26px、饱和 170%）只给漂浮在图片或画布上的控件；压在复杂图片上的信息卡、输入框和浮层用 `glass-strong`（86% 不透明）。不支持 backdrop-filter 或用户偏好减少透明度时，两者都退回实色 Panel。",
+        "name": "The Lit Not Lined Rule",
+        "body": "用光和阴影分层，不用硬描边。描边只在输入框、分段选项这类需要「边界可点」的地方出现，并且是墨色 10–18% 的细线。",
         "section": "elevation"
+      },
+      {
+        "name": "The Opaque Workbench Rule",
+        "body": "要在上面精细操作的弹窗（局部重绘 / 扩图编辑器）用实色面板，不能让背后的结果列表透出来。",
+        "section": "elevation"
+      },
+      {
+        "name": "The Slant Means Choose Rule",
+        "body": "斜切只给「可以选、可以按」的东西。面板、卡片、输入框、整块区域不斜。",
+        "section": "shapes"
       }
     ],
     "dos": [
-      "**Do** 让发光的元素读 `rgb(var(--amb))`：主按钮光晕、焦点环、运行中状态点、选区。",
-      "**Do** 只在控件漂浮于图片或画布之上时用 `glass`；信息卡、输入框、浮层压在复杂图片上用 `glass-strong`。",
-      "**Do** 用珊瑚红（#ff8a80）表达失败、待核对和断线，并配一句说清问题和下一步的话。",
-      "**Do** 每个动效都在 prefers-reduced-motion 下退化为直接切换（GSAP 用 `gsap.matchMedia`，CSS 动画在 globals.css 里统一关闭）。",
-      "**Do** 文案直白：「开始生成」「做同款」「去主站核对」。"
+      "**Do** 每屏只放一个珊瑚动作，其他按钮用墨色、描边或幽灵样式。",
+      "**Do** 只用语义 token（`fg`、`panel`、`tint`、`acc`……），不写死白色或黑色，两套主题才能同时成立；压在照片上的文字例外，两种主题都用白字加 `scrim` 遮罩。",
+      "**Do** 把斜切留给按钮、页签、分段选项、贴纸和落地页的大图，文字放在 `sk-in` 里摆正。",
+      "**Do** 状态写成文字再配颜色：「待核对」（橙）、「未发出」（灰）、「没生成出来」（深红）。",
+      "**Do** 每个动效在 `prefers-reduced-motion` 下直接显示最终状态；磨砂玻璃在 `prefers-reduced-transparency` 下退回实色。",
+      "**Do** 文案直白：「生成」「图片」「余额」「改成什么」。"
     ],
     "donts": [
-      "**Don't** 用琥珀、黄色或米黄铺底，也不要回到纯黑白的暗房风格。",
-      "**Don't** 用暗房、冲印、曝光、显影这类比喻当界面文案。",
-      "**Don't** 用渐变文字、标题上方的小标签（eyebrow / kicker）、区块编号或 unicode 字符当图标。",
-      "**Don't** 给画布叠加改变图片颜色的混合层：图片必须按原色显示。",
-      "**Don't** 把 Loomic 品牌放回界面；包名 `@loomic/*` 不变只是为了构建。"
+      "**Don't** 用琥珀或黄色铺色，也不做纯黑白、硬黑边、零模糊投影的刺眼海报。",
+      "**Don't** 出现 Loomic 品牌，或暗房、冲印、显影这类行话。",
+      "**Don't** 把斜切用在整块面板、卡片或输入框上。",
+      "**Don't** 用纯黑投影或硬描边分层；阴影压向房间的石墨色。",
+      "**Don't** 只靠颜色表达状态，也不给成功的图贴「已扣费」一类标签。",
+      "**Don't** 在工作界面放付费说明；计费说明只在落地页一节。",
+      "**Don't** 把环境色用在按钮、文字或边框上。"
     ]
   }
 }
