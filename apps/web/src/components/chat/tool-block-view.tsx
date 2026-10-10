@@ -556,13 +556,14 @@ function ToolDetailPanel({
   }, []);
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: clicking the backdrop closes; the keyboard closes with Escape (window keydown above)
     <div
       // Centred mode covers the chat on phones; dim it so the panel reads as on top.
       className={`fixed inset-0 z-[1000] animate-in fade-in-0 duration-150 motion-reduce:animate-none ${rightOffset === null ? "bg-ground/50" : ""}`}
       onClick={onClose}
     >
+      {/* biome-ignore lint/a11y/useSemanticElements lint/a11y/useKeyWithClickEvents: panel in a portal overlay positioned beside the chat (a native <dialog> top layer would ignore that placement); its onClick only stops the backdrop's close-on-click */}
       <div
-        // biome-ignore lint/a11y/useSemanticElements: panel in a portal overlay positioned beside the chat; a native <dialog> top layer would ignore that placement
         role="dialog"
         aria-modal="true"
         aria-label={config.label}

@@ -164,6 +164,7 @@ export function ImageLightbox({
   }, []);
 
   return createPortal(
+    // biome-ignore lint/a11y/useKeyWithClickEvents: clicking the backdrop closes; the keyboard closes with Escape (window keydown above)
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[2000] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in-0 duration-150 motion-reduce:animate-none"
