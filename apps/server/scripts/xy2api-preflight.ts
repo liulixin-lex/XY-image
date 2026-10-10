@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import { loadServerEnv } from "../src/config/env.js";
 import {
-  findImageModel,
   loadImageCatalog,
   matchImageModels,
 } from "../src/features/xy2api/catalog.js";
@@ -13,6 +12,10 @@ import {
   mapGatewayError,
   sanitizeGatewayError,
 } from "../src/features/xy2api/errors.js";
+import {
+  PreflightPlanError,
+  planPreflight,
+} from "../src/features/xy2api/preflight-plan.js";
 import { generateImage } from "../src/generation/image-generation.js";
 import { registerAllProviders } from "../src/generation/providers/register-all.js";
 import { resolveImageProviderName } from "../src/generation/providers/registry.js";
@@ -42,37 +45,56 @@ async function main() {
     throw new Error(
       "No image models discovered; configure PREFLIGHT_KEY_PLATFORM when the gateway omits image models",
     );
+  // Decide every paid call up front and print it, so the cost is known
+  // before anything is spent. PREFLIGHT_DRY_RUN=1 stops here (the two reads
+  // above are free).
+  const plan = planPreflight(catalog, imageModels, {
+    models: process.env.PREFLIGHT_MODELS,
+    resolutions: process.env.PREFLIGHT_RESOLUTIONS,
+  });
+  const dryRun = process.env.PREFLIGHT_DRY_RUN === "1";
+  console.log(
+    JSON.stringify({
+      stage: "plan",
+      imageCalls: plan.calls.length,
+      chatCalls: 1,
+      calls: plan.calls,
+      skipped: plan.skipped,
+      dryRun,
+    }),
+  );
+  if (dryRun) {
+    console.log("仅列出计划，没有发出付费请求。");
+    return;
+  }
   registerAllProviders(env);
-  for (const model of imageModels) {
-    for (const quality of ["standard", "hd"] as const) {
-      const started = Date.now();
-      const result = await generateImage(
-        resolveImageProviderName(model),
-        {
-          model,
-          quality,
-          prompt: "一颗红苹果，纯白背景，无文字",
-          aspectRatio: "1:1",
-        },
-        { apiKey, baseUrl: env.xy2apiBaseUrl },
-      );
-      console.log(
-        JSON.stringify({
-          stage: "image",
-          model,
-          requestedQuality: quality,
-          effectiveQuality:
-            quality === "hd"
-              ? findImageModel(catalog, model)?.maxQuality
-              : "standard",
-          elapsedMs: Date.now() - started,
-          bytes: Buffer.from(result.url.split(",", 2)[1] ?? "", "base64")
-            .length,
-          mime: result.mimeType,
-          requestId: result.requestId ?? null,
-        }),
-      );
-    }
+  for (const { model, resolution, quality } of plan.calls) {
+    const started = Date.now();
+    const result = await generateImage(
+      resolveImageProviderName(model),
+      {
+        model,
+        resolution,
+        quality,
+        prompt: "一颗红苹果，纯白背景，无文字",
+        aspectRatio: "1:1",
+      },
+      { apiKey, baseUrl: env.xy2apiBaseUrl },
+    );
+    console.log(
+      JSON.stringify({
+        stage: "image",
+        model,
+        resolution,
+        quality,
+        // The main site bills OpenAI images by this size's long edge.
+        size: `${result.width}x${result.height}`,
+        elapsedMs: Date.now() - started,
+        bytes: Buffer.from(result.url.split(",", 2)[1] ?? "", "base64").length,
+        mime: result.mimeType,
+        requestId: result.requestId ?? null,
+      }),
+    );
   }
   const model = env.chatModels.find((id) => models.includes(id));
   if (!model) throw new BillingGuardError("model_not_accessible");
@@ -117,6 +139,7 @@ main().catch((error) => {
         }).code,
       }),
     );
+  else if (error instanceof PreflightPlanError) console.error(error.message);
   else if (error instanceof BillingGuardError || error instanceof GatewayError)
     console.error(JSON.stringify({ code: error.code, message: error.message }));
   else

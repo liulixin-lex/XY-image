@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 
 import type { MessageMention } from "@loomic/shared";
 import { ATTACHMENT_ACCEPT, type ImageAttachmentState } from "../hooks/use-image-attachments";
-import type { CanvasSelectedElement } from "./canvas-editor";
+import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
@@ -201,12 +201,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   return (
     <div className="px-3 pb-3">
       <div
-        className="flex min-h-[120px] flex-col justify-between gap-2 rounded-lg glass p-2 shadow-subtle transition-[border-color,box-shadow] focus-within:border-white/25 focus-within:shadow-card"
+        className="flex min-h-[120px] flex-col justify-between gap-2 rounded-lg glass p-2 shadow-subtle transition-[border-color,box-shadow] focus-within:border-tint/25 focus-within:shadow-card"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
         {hasSelection && (
-          <div className="flex items-center gap-2 rounded-md bg-white/[0.05] px-2.5 py-1.5 text-xs text-fg-soft">
+          <div className="flex items-center gap-2 rounded-md bg-tint/[0.05] px-2.5 py-1.5 text-xs text-fg-soft">
             {selectionImageCount > 0 && (
               <span className="flex items-center gap-1">
                 <ImageIcon className="size-3.5" strokeWidth={1.75} />
@@ -236,7 +236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 key={`${mention.mentionType}:${mention.id}`}
                 type="button"
                 onClick={() => onRemoveMention(mention)}
-                className="inline-flex items-center gap-1 rounded-sm border border-line bg-white/[0.05] px-2 py-1 text-[11.5px] text-fg transition-colors hover:border-line-strong"
+                className="inline-flex items-center gap-1 rounded-sm border border-line bg-tint/[0.05] px-2 py-1 text-[11.5px] text-fg transition-colors hover:border-line-strong"
                 title="移除引用"
               >
                 <span className="text-fg-muted">@</span>
@@ -274,7 +274,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-white/[0.06] hover:text-fg"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg"
                   title="添加图片"
                   aria-label="添加图片"
                 >
@@ -294,7 +294,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   "flex size-8 items-center justify-center rounded-md transition-colors",
                   preference.mode === "manual"
                     ? "bg-fg text-ground"
-                    : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                    : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
                 )}
               >
                 <SlidersHorizontalIcon className="size-4" strokeWidth={1.75} />
@@ -313,7 +313,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               disabled={stopping}
               aria-label={stopping ? "正在停止" : "停止"}
               title={stopping ? "正在停止" : "停止"}
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong text-fg transition-colors hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-60"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong text-fg transition-colors hover:bg-tint/[0.08] disabled:cursor-wait disabled:opacity-60"
             >
               <SquareIcon className="size-3.5" fill="currentColor" strokeWidth={0} />
             </button>
@@ -323,7 +323,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               onClick={handleSubmit}
               disabled={disabled || !hasContent || isUploading}
               aria-label="发送"
-              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-line-strong"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-fg text-ground transition-colors hover:bg-fg/88 disabled:cursor-not-allowed disabled:bg-line-strong"
             >
               <ArrowUpIcon className="size-4" strokeWidth={2} />
             </button>

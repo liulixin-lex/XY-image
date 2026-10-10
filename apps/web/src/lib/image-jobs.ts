@@ -2,9 +2,20 @@
  * Typed views over background_jobs rows of type `image_generation`.
  * The API returns payload/result as loose records; read them defensively.
  */
-import type { BackgroundJob } from "@loomic/shared";
+import {
+  type BackgroundJob,
+  type ImageQuality,
+  type ImageResolution,
+  isLegacyImageQuality,
+  normalizeImageParams,
+} from "@loomic/shared";
 
-import type { BillingStatus } from "@/components/billing/billing-badge";
+import {
+  type BillingStatus,
+  isBillingSettled,
+  needsReconcile,
+} from "@/components/billing/billing-badge";
+import { describeIssue } from "@/lib/generation-errors";
 
 export type ImageJobView = {
   id: string;
@@ -13,7 +24,10 @@ export type ImageJobView = {
   requestId: string | null;
   prompt: string;
   model: string | null;
-  quality: "standard" | "hd";
+  /** 画质 asked for (older jobs: read from their single quality field). */
+  resolution: ImageResolution;
+  /** 质量 asked for; null for jobs from before the setting existed. */
+  quality: ImageQuality | null;
   aspectRatio: string | null;
   inputImages: string[];
   url: string | null;
@@ -26,6 +40,12 @@ export type ImageJobView = {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  /** Studio batch this picture belongs to (null for single jobs and agent images). */
+  batchId: string | null;
+  /** 0-based position in its batch. */
+  batchIndex: number;
+  /** Pictures asked for in its batch (1 for single jobs). */
+  batchSize: number;
 };
 
 function str(value: unknown): string | null {
@@ -39,6 +59,9 @@ function num(value: unknown): number | null {
 export function toImageJobView(job: BackgroundJob): ImageJobView {
   const payload = job.payload ?? {};
   const result = job.result ?? {};
+  const params = normalizeImageParams(payload);
+  // Old jobs only had standard / hd (= 1K / 2K) and chose no 质量 themselves.
+  const legacy = payload.resolution === undefined && isLegacyImageQuality(payload.quality);
   return {
     id: job.id,
     status: job.status,
@@ -46,7 +69,8 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     requestId: job.xy2api_request_id ?? null,
     prompt: str(payload.prompt) ?? "",
     model: str(payload.model),
-    quality: payload.quality === "hd" ? "hd" : "standard",
+    resolution: params.resolution,
+    quality: legacy ? null : params.quality,
     aspectRatio: str(payload.aspect_ratio),
     inputImages: Array.isArray(payload.input_images)
       ? payload.input_images.filter((v): v is string => typeof v === "string")
@@ -61,6 +85,9 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     createdAt: job.created_at,
     startedAt: job.started_at,
     completedAt: job.completed_at,
+    batchId: str(payload.batch_id),
+    batchIndex: num(payload.batch_index) ?? 0,
+    batchSize: num(payload.batch_size) ?? 1,
   };
 }
 
@@ -94,6 +121,79 @@ export const STATUS_LABEL: Record<ImageJobView["status"], string> = {
   dead_letter: "失败",
   canceled: "已取消",
 };
+
+/**
+ * Not sent to the main site yet: queued with nothing charged. The worker's
+ * dispatch gate holds these while two of the user's requests are out, so
+ * they can still be canceled for free.
+ */
+export function isUnsentJob(job: Pick<ImageJobView, "status" | "billing" | "errorCode">) {
+  return job.status === "queued" && job.billing === "none" && job.errorCode !== "storage_retrying";
+}
+
+/**
+ * One studio request: the pictures of a batch in order, or a single job
+ * (agent images, older jobs) on its own. Keeps the newest-first order of
+ * the job list.
+ */
+export type JobGroup = {
+  key: string;
+  batchId: string | null;
+  jobs: ImageJobView[];
+  /** Pictures asked for; can exceed jobs.length if submission stopped part way or older ones fell off the list. */
+  size: number;
+  lead: ImageJobView;
+};
+
+export function groupByBatch(jobs: ImageJobView[]): JobGroup[] {
+  const groups = new Map<string, JobGroup>();
+  for (const job of jobs) {
+    const key = job.batchId ?? job.id;
+    const group = groups.get(key);
+    if (group) group.jobs.push(job);
+    else
+      groups.set(key, {
+        key,
+        batchId: job.batchId,
+        jobs: [job],
+        size: job.batchId ? job.batchSize : 1,
+        lead: job,
+      });
+  }
+  for (const group of groups.values()) {
+    group.jobs.sort((a, b) => a.batchIndex - b.batchIndex);
+    group.lead = group.jobs[0] ?? group.lead;
+  }
+  return [...groups.values()];
+}
+
+/**
+ * What a settled-or-not job means for the user, in words (billing is never
+ * told by colour alone). Shared by the studio cards and their tests.
+ */
+export type JobOutcome = {
+  tone: "running" | "queued" | "saving" | "done" | "unknown" | "not_charged" | "charged_failed" | "failed" | "canceled";
+  title: string;
+};
+
+export function describeOutcome(job: ImageJobView): JobOutcome {
+  if (isSavingJob(job)) return { tone: "saving", title: "图片已生成，正在保存" };
+  if (job.status === "running") return { tone: "running", title: "生成中" };
+  if (job.status === "queued") return { tone: "queued", title: "排队中" };
+  // Canceled before the dispatch: nothing reached the main site.
+  if (job.status === "canceled" && job.billing === "none")
+    return { tone: "canceled", title: "已取消，没有发出" };
+  if (job.status === "succeeded" && !needsReconcile(job.billing))
+    return { tone: "done", title: "已完成" };
+  const issue = isFailedJob(job)
+    ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage)
+    : null;
+  if (needsReconcile(job.billing) || (issue?.maybeCharged && !isBillingSettled(job.billing)))
+    return { tone: "unknown", title: "结果未知，请先核对用量" };
+  if (job.billing === "not_charged") return { tone: "not_charged", title: "没生成出来" };
+  if (job.billing === "charged") return { tone: "charged_failed", title: "已生成，但没拿到图片" };
+  return { tone: "failed", title: issue?.title ?? "生成失败" };
+}
 
 /** One local calendar day of results, newest first. */
 export type DayGroup = { key: string; label: string; jobs: ImageJobView[] };

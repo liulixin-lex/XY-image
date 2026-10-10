@@ -7,13 +7,14 @@ import type { Usage, Xy2apiClient } from "../features/xy2api/client.js";
 import { BillingGuardError, Xy2apiError } from "../features/xy2api/errors.js";
 import type { KeyService } from "../features/xy2api/key-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { isZodError } from "../utils/zod-error.js";
 
 export function sendAccountError(reply: FastifyReply, error: unknown) {
   if (error instanceof BillingGuardError || error instanceof ChatProviderError)
     return reply
       .code(error.statusCode)
       .send({ error: { code: error.code, message: error.message } });
-  if (error instanceof z.ZodError)
+  if (isZodError(error))
     return reply
       .code(400)
       .send({ error: { code: "invalid_input", message: "请求参数无效" } });

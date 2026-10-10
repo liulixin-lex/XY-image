@@ -11,9 +11,12 @@ import { formatUsd } from "@/lib/xy2api-api";
 export function BalanceFigure({
   className,
   emptyLabel = "未读取",
+  numeral = false,
 }: {
   className?: string;
   emptyLabel?: string;
+  /** Set the amount in the poster numeral face (Big Shoulders). */
+  numeral?: boolean;
 }) {
   const { account } = useAccount();
   if (!account.data && account.loading) {
@@ -31,7 +34,7 @@ export function BalanceFigure({
   return (
     <span
       className={cn(
-        "font-sans font-semibold tabular tracking-[-0.01em]",
+        numeral ? "numeral" : "font-sans font-semibold tabular tracking-[-0.01em]",
         balance.amount <= 0 && "text-alert",
         className,
       )}

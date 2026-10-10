@@ -1,6 +1,9 @@
 import type {
   AssetSignedUrlResponse,
   BackgroundJob,
+  CancelImageBatchResponse,
+  ImageBatchResponse,
+  OptimizePromptResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
   JobListResponse,
@@ -26,6 +29,7 @@ import type {
   ViewerResponse,
   WorkspaceSkillListResponse,
 } from "@loomic/shared";
+import type { ImageQuality, ImageResolution } from "@loomic/shared";
 
 import {
   type ChatModelList,
@@ -346,7 +350,7 @@ export async function fetchModels(
   });
 }
 
-export type ImageQuality = "standard" | "hd";
+export type { ImageQuality, ImageResolution };
 
 export type ImageModelInfo = {
   /** Exact id to send back (may be a `*-preview` alias). */
@@ -357,8 +361,19 @@ export type ImageModelInfo = {
   iconUrl?: string;
   /** Always null in P0; cost is decided by the main site. */
   priceUsd?: number | null;
-  /** `standard` = 1K only, `hd` = 1K and 2K. */
-  maxQuality?: ImageQuality;
+  /** Maker (openai, google, xai, …). */
+  vendor?: string;
+  /** 画质 / 质量 / 比例 the model accepts, from the server catalog. */
+  resolutions?: ImageResolution[];
+  /** Empty when the model has no 质量 setting. */
+  qualities?: ImageQuality[];
+  aspectRatios?: string[];
+  /** Widest shape (long side ÷ short side) a size can make; no entry = any. */
+  maxRatio?: Partial<Record<ImageResolution, number>>;
+  supportsEdit?: boolean;
+  maxInputImages?: number;
+  /** Sent by older servers instead: `standard` = 1K only, `hd` = 1K and 2K. */
+  maxQuality?: "standard" | "hd";
   accessible?: boolean;
   /** Compatibility fields from the old credits system. Never display. */
   creditCost?: number;
@@ -529,7 +544,8 @@ export type GenerateImageResponse = {
 export type GenerateImageOptions = {
   model?: string;
   aspectRatio?: string;
-  quality?: string;
+  resolution?: ImageResolution;
+  quality?: ImageQuality;
   /** Supabase Storage URLs or PNG/JPEG/WebP data URLs, max 10 MiB each. */
   inputImages?: string[];
 };
@@ -556,6 +572,7 @@ export async function generateImageDirect(
         prompt,
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
+        ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
@@ -566,7 +583,7 @@ export async function generateImageDirect(
     console.error("[generate-image] request interrupted", error);
     throw new ApiApplicationError(
       "upstream_unknown",
-      "连接中断，图片可能已生成并扣费，请先到主站用量页核对",
+      "连接中断，图片可能已经生成，请先到主站用量页核对",
     );
   }
   if (!response.ok) return handleErrorResponse(response);
@@ -578,11 +595,18 @@ export async function generateImageDirect(
 export type CreateImageJobInput = {
   prompt: string;
   model?: string;
+  /** 画质: 1K / 2K / 4K. */
+  resolution?: ImageResolution;
+  /** 质量: auto / low / medium / high. */
   quality?: ImageQuality;
   aspect_ratio?: string;
   input_images?: string[];
   project_id?: string;
   canvas_id?: string;
+  /** Node canvas: the generator node the pictures come from (with canvas_id). */
+  canvas_source_id?: string;
+  /** Node canvas: where each picture goes, in batch order (with canvas_id). */
+  canvas_slots?: { x: number; y: number; width: number; height: number }[];
   session_id?: string;
   thread_id?: string;
 };
@@ -633,6 +657,58 @@ export async function fetchJobs(
 }
 
 /** Only queued jobs can be canceled; running ones already reached the main site. */
+/**
+ * Queue 1 to IMAGE_BATCH_MAX pictures from one description (studio). Each
+ * picture is its own job and its own charge; they share `batch_id`. Sent
+ * once: a failed call is reported, never repeated. `jobs` may be shorter
+ * than `requested` if the server stopped part way (nothing was sent then).
+ */
+export async function createImageBatch(
+  accessToken: string,
+  input: CreateImageJobInput & { count: number },
+): Promise<ImageBatchResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/image-generation/batch`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ImageBatchResponse;
+}
+
+/** Cancel the pictures of a batch that have not been sent to the main site yet. */
+export async function cancelImageBatch(
+  accessToken: string,
+  batchId: string,
+): Promise<CancelImageBatchResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/jobs/image-batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: "POST", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CancelImageBatchResponse;
+}
+
+/**
+ * 优化提示词: one request to the user's own chat model (a little balance).
+ * The caller keeps the original text so the user can undo.
+ */
+export async function optimizePrompt(
+  accessToken: string,
+  input: { prompt: string; aspect_ratio?: string },
+): Promise<OptimizePromptResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/prompts/optimize`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as OptimizePromptResponse;
+}
+
 export async function cancelJob(
   accessToken: string,
   jobId: string,

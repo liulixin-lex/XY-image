@@ -95,14 +95,13 @@ export default function HomePage() {
   if (creating) return <LoadingScreen label="正在准备画布" />;
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 pt-4 pb-20 sm:px-8 md:pt-8 lg:px-12">
+    <div className="mx-auto max-w-[1600px] px-4 pt-4 pb-20 sm:px-8 md:pt-10 lg:px-[clamp(20px,2.4vw,40px)]">
       <section className="grid gap-x-[clamp(40px,5vw,88px)] gap-y-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,860px)_340px] xl:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display text-[clamp(40px,4.5vw,66px)] leading-[1.05] font-normal text-fg">
-            想做什么，交给
-            <span className="text-[color-mix(in_oklab,rgb(var(--amb))_42%,white)] transition-colors duration-700">
-              设计助手
-            </span>
+          <h1 className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg">
+            想做什么，
+            <br className="sm:hidden" />
+            交给<em className="text-acc not-italic">设计助手</em>
           </h1>
           <p className="mt-4 max-w-[56ch] text-[16px] leading-relaxed text-fg-soft">
             它会新开一张画布，拆解需求、生成图片、排好版。只要一张图？
@@ -133,15 +132,15 @@ export default function HomePage() {
                 key={starter.label}
                 type="button"
                 onClick={() => promptRef.current?.fill(starter.prompt)}
-                className="h-8 rounded-full border border-line bg-white/[0.05] px-3.5 text-[13px] text-fg-soft transition-colors hover:border-line-strong hover:bg-white/[0.09] hover:text-fg"
+                className="sk h-8 rounded-[9px] bg-tint/[0.055] px-3.5 text-[13px] font-semibold text-fg-soft transition-[background-color,color,scale] hover:bg-tint/[0.1] hover:text-fg active:scale-[0.97]"
               >
-                {starter.label}
+                <span className="sk-in">{starter.label}</span>
               </button>
             ))}
           </div>
         </div>
 
-        <ReadinessPanel className="self-start lg:mt-[92px]" />
+        <ReadinessPanel className="self-start lg:mt-[clamp(72px,7vw,108px)]" />
       </section>
 
       <div className="mt-16">
@@ -150,7 +149,7 @@ export default function HomePage() {
 
       <section aria-labelledby="recent-projects" className="mt-16">
         <div className="mb-4 flex items-baseline justify-between gap-4">
-          <h2 id="recent-projects" className="text-[18px] font-semibold text-fg">
+          <h2 id="recent-projects" className="poster-label text-[26px] leading-none text-fg">
             最近的画布
           </h2>
           <Link
@@ -170,8 +169,8 @@ export default function HomePage() {
             ? Array.from({ length: 3 }, (_, i) => (
                 <div key={i} aria-hidden>
                   <div className="aspect-[16/10] animate-breathe rounded-frame" />
-                  <div className="mt-2.5 h-3.5 w-2/3 rounded-full bg-white/[0.05]" />
-                  <div className="mt-1.5 h-3 w-1/3 rounded-full bg-white/[0.05]" />
+                  <div className="mt-2.5 h-3.5 w-2/3 rounded-full bg-tint/[0.05]" />
+                  <div className="mt-1.5 h-3 w-1/3 rounded-full bg-tint/[0.05]" />
                 </div>
               ))
             : projects.map((project) => (

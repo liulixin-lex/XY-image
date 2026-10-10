@@ -15,13 +15,12 @@ import { useMemo, useState } from "react";
 import { useAccount, useChatModels, useImageModels } from "@/lib/account-context";
 import {
   type ChatModel,
-  chatBillingNote,
   chatPreferencePatch,
   groupChatModels,
   preferredChatModelId,
 } from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { describeCapabilities, modelCapabilities } from "@/lib/image-model-meta";
 
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
@@ -97,7 +96,7 @@ export function ModelsTab() {
               value: m.id,
               text: m.displayName,
               label: m.displayName,
-              description: `${m.description} · 最高 ${QUALITY_LABEL[m.maxQuality ?? "hd"]}`,
+              description: `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
             }))}
             ariaLabel="默认生图模型"
             placeholder="未设置（使用列表第一个）"
@@ -113,7 +112,7 @@ export function ModelsTab() {
                   <span className="block truncate text-[12px] text-fg-muted">{m.description}</span>
                 </span>
                 <span className="data-label shrink-0 text-fg-soft">
-                  {m.maxQuality === "standard" ? "仅 1K" : "1K / 2K"}
+                  {describeCapabilities(modelCapabilities(m))}
                 </span>
               </li>
             ))}
@@ -151,9 +150,6 @@ export function ModelsTab() {
             className="h-10 w-full max-w-sm"
             popupClassName="w-[320px]"
           />
-          {chatSelected ? (
-            <p className="mt-2 text-[12px] text-fg-muted">{chatBillingNote(chatSelected)}。</p>
-          ) : null}
         </ModelPickerBlock>
       </SettingsSection>
 
@@ -178,10 +174,7 @@ function chatPickerOptions(models: ChatModel[]): PickerOption[] {
         ? {
             group: {
               key: group.key,
-              label:
-                group.source === "custom"
-                  ? `${group.label} · 由服务商收费`
-                  : "主站 · 从主站余额扣",
+              label: group.source === "custom" ? group.label : "主站",
             },
           }
         : {}),
@@ -205,7 +198,7 @@ function ModelPickerBlock({
   if (error) {
     const spec = describeIssue(error, null);
     return (
-      <p className="max-w-xl rounded-md bg-white/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
+      <p className="max-w-xl rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
         {spec.title}。
         <Link href="/settings?tab=keys" className="ml-0.5 text-fg underline underline-offset-4">
           先选择 Key

@@ -79,7 +79,7 @@ export default function ProjectsPage() {
       />
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
         {projects && projects.length > SEARCH_THRESHOLD ? (
-          <label className="mb-7 flex h-10 max-w-sm items-center gap-2 rounded-md glass px-3 focus-within:border-white/25">
+          <label className="mb-7 flex h-10 max-w-sm items-center gap-2 rounded-md glass px-3 focus-within:border-tint/25">
             <SearchIcon className="size-4 shrink-0 text-fg-muted" strokeWidth={1.75} />
             <span className="sr-only">按名称筛选</span>
             <input
@@ -107,8 +107,8 @@ export default function ProjectsPage() {
               ? Array.from({ length: 4 }, (_, i) => (
                   <div key={i} aria-hidden>
                     <div className="aspect-[16/10] animate-breathe rounded-frame" />
-                    <div className="mt-2.5 h-3.5 w-2/3 rounded-sm bg-white/[0.05]" />
-                    <div className="mt-1.5 h-3 w-1/3 rounded-sm bg-white/[0.05]" />
+                    <div className="mt-2.5 h-3.5 w-2/3 rounded-sm bg-tint/[0.05]" />
+                    <div className="mt-1.5 h-3 w-1/3 rounded-sm bg-tint/[0.05]" />
                   </div>
                 ))
               : visible.map((project) => (

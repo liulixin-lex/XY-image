@@ -45,6 +45,33 @@ function summarizeElement(el: CanvasElement) {
     base.text = el.text.length > 50 ? el.text.slice(0, 47) + "..." : el.text;
     base.fontSize = el.fontSize;
   }
+  // Node canvas: a prompt card feeds the generators it is connected to.
+  if (el.type === "prompt" && typeof el.text === "string") {
+    base.text = el.text.length > 120 ? `${el.text.slice(0, 117)}...` : el.text;
+  }
+  // Node canvas: a generator node, its settings in customData.generator.
+  if (el.type === "generator") {
+    const generator = (el.customData as { generator?: Record<string, unknown> } | undefined)
+      ?.generator;
+    for (const key of ["model", "aspectRatio", "resolution", "quality", "count"] as const) {
+      if (generator?.[key] !== undefined && generator[key] !== "") base[key] = generator[key];
+    }
+    if (typeof generator?.prompt === "string" && generator.prompt) {
+      base.prompt =
+        generator.prompt.length > 120
+          ? `${generator.prompt.slice(0, 117)}...`
+          : generator.prompt;
+    }
+  }
+  // An arrow bound at both ends is an edge of the node canvas: from → to.
+  if (el.type === "arrow") {
+    const from = (el.startBinding as { elementId?: unknown } | null | undefined)?.elementId;
+    const to = (el.endBinding as { elementId?: unknown } | null | undefined)?.elementId;
+    if (typeof from === "string" && typeof to === "string") {
+      base.from = from;
+      base.to = to;
+    }
+  }
 
   if (el.type === "image") {
     const customData = el.customData as Record<string, unknown> | undefined;
@@ -134,6 +161,13 @@ export function buildCanvasSummaryForContext(
     parts.push(`${Math.round(s.width as number)}x${Math.round(s.height as number)}`);
     if (s.text) parts.push(`"${s.text}"`);
     if (s.title) parts.push(`title="${s.title}"`);
+    if (s.from && s.to) parts.push(`${s.from}→${s.to}`);
+    if (s.type === "generator") {
+      for (const key of ["model", "aspectRatio", "resolution", "quality", "count"]) {
+        if (s[key] !== undefined) parts.push(`${key}=${s[key]}`);
+      }
+      if (s.prompt) parts.push(`prompt="${s.prompt}"`);
+    }
     if (s.type === "video") {
       if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
       if (s.prompt) parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);

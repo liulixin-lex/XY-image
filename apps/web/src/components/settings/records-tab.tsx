@@ -12,7 +12,7 @@ import { useAccount, useImageModels } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, isActiveJob, isFailedJob, isSavingJob, toImageJobView } from "@/lib/image-jobs";
-import { QUALITY_LABEL, findModelMeta } from "@/lib/image-model-meta";
+import { describeImageParams, findModelMeta } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
 
@@ -119,12 +119,12 @@ export function RecordsTab() {
         ) : null}
       </div>
       <p className="mt-3 max-w-[70ch] text-[12.5px] leading-relaxed text-fg-muted">
-        显示最近 50 条生图请求。「待核对」表示请求可能已到达主站但结果未知，用请求 ID 在主站用量页查找；金额以主站为准。
+        显示最近 50 条生图请求。「待核对」表示请求可能已到达主站但结果未知，用请求 ID 在主站用量页查找。
       </p>
 
       <div className="mt-6">
         {failed && !jobs ? (
-          <p className="rounded-md bg-white/[0.05] px-4 py-3 text-[13px] text-fg-soft">
+          <p className="rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] text-fg-soft">
             生成记录暂时读不到，点「刷新」再试一次。
           </p>
         ) : jobs === null ? (
@@ -146,7 +146,6 @@ export function RecordsTab() {
                   <th scope="col" className="px-4 py-2.5 font-normal">提示词</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">模型 · 规格</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">状态</th>
-                  <th scope="col" className="px-4 py-2.5 font-normal">计费</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">请求 ID</th>
                 </tr>
               </thead>
@@ -176,11 +175,13 @@ export function RecordsTab() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-fg-soft">
                         {modelName(job.model)}
-                        <span className="text-fg-muted"> · {QUALITY_LABEL[job.quality]}</span>
+                        <span className="text-fg-muted"> · {describeImageParams(job)}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-fg">{isSavingJob(job) ? "保存中" : STATUS[job.status]}</td>
-                      <td className="px-4 py-3">
-                        <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                      <td className="px-4 py-3 whitespace-nowrap text-fg">
+                        <span className="inline-flex items-center gap-2">
+                          {isSavingJob(job) ? "保存中" : STATUS[job.status]}
+                          <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {job.requestId ? (

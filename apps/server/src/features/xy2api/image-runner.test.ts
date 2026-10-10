@@ -323,7 +323,9 @@ describe("image billing lifecycle", () => {
   it.each([
     { prompt: "x".repeat(4001), model: "gpt-image-2" },
     { prompt: "test", model: "unavailable-model" },
-    { prompt: "test", model: "gpt-image-2", quality: "ultra" },
+    { prompt: "test", model: "gpt-image-2", resolution: "8K" },
+    { prompt: "test", model: "gpt-image-2", resolution: "2K", quality: "max" },
+    { prompt: "test", model: "gpt-image-2", aspect_ratio: "wide" },
   ])("revalidates untrusted job data", async (payload) => {
     const fixture = setup();
     const row = fixture.tables.background_jobs?.[0];

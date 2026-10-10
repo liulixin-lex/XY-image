@@ -27,7 +27,9 @@ describe("Register page", () => {
 
     render(<RegisterPage />);
 
-    expect(screen.getByRole("heading", { name: "注册在主站完成" })).toBeInTheDocument();
+    // The heading highlights 主站 in an <em>; jsdom reports no `display` for
+    // inline elements, so its accessible name gains spaces a browser omits.
+    expect(screen.getByRole("heading", { name: /^注册在\s*主站\s*完成$/ })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /去主站注册/ })).toHaveAttribute(
       "href",
       "https://main.example.com/register",

@@ -20,13 +20,24 @@ vi.mock("../src/lib/server-api", async (importOriginal) => ({
 }));
 
 import { CanvasLogoMenu } from "../src/components/canvas-logo-menu";
+import type { NodeCanvasHandle } from "../src/components/node-canvas/node-canvas-editor";
 import { ToastProvider } from "../src/components/toast";
 
-function renderMenu(selected: Record<string, boolean> = {}) {
-  const excalidrawApi = {
-    getAppState: () => ({ selectedElementIds: selected }),
-    setActiveTool: vi.fn(),
-    scrollToContent: vi.fn(),
+function renderMenu({
+  selected = 0,
+  canUndo = false,
+}: { selected?: number; canUndo?: boolean } = {}) {
+  const canvas = {
+    store: {
+      getState: () => ({ canUndo, canRedo: false }),
+      selectedNodes: () =>
+        Array.from({ length: selected }, (_, i) => ({ id: `n${i}` })),
+    },
+    importImages: vi.fn(),
+    fitView: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    duplicateSelection: vi.fn(),
   };
   render(
     <ToastProvider>
@@ -34,11 +45,11 @@ function renderMenu(selected: Record<string, boolean> = {}) {
         accessToken="token_123"
         projectId="p1"
         canvasId="c1"
-        excalidrawApi={excalidrawApi}
+        canvas={canvas as unknown as NodeCanvasHandle}
       />
     </ToastProvider>,
   );
-  return excalidrawApi;
+  return canvas;
 }
 
 describe("CanvasLogoMenu", () => {
@@ -68,28 +79,45 @@ describe("CanvasLogoMenu", () => {
     expect(mockPush).toHaveBeenCalledWith("/projects");
   });
 
-  it("disables duplicate when nothing is selected and fits all content", async () => {
-    const api = renderMenu();
+  it("disables duplicate and undo when there is nothing to act on, and fits all content", async () => {
+    const canvas = renderMenu();
     await userEvent.click(screen.getByRole("button", { name: "菜单" }));
 
     expect(
       await screen.findByRole("menuitem", { name: /复制选中内容/ }),
     ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("menuitem", { name: /撤销/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
 
-    await userEvent.click(screen.getByRole("menuitem", { name: /显示全部内容/ }));
-    expect(api.scrollToContent).toHaveBeenCalledWith(undefined, {
-      fitToContent: true,
-      animate: true,
-    });
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: /显示全部内容/ }),
+    );
+    expect(canvas.fitView).toHaveBeenCalled();
   });
 
-  it("imports images through Excalidraw's own image tool", async () => {
-    const api = renderMenu({ e1: true });
+  it("duplicates the selection and undoes through the canvas", async () => {
+    const canvas = renderMenu({ selected: 2, canUndo: true });
     await userEvent.click(screen.getByRole("button", { name: "菜单" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "导入图片" }));
-    expect(api.setActiveTool).toHaveBeenCalledWith({
-      type: "image",
-      insertOnCanvasDirectly: true,
-    });
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /复制选中内容/ }),
+    );
+    expect(canvas.duplicateSelection).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "菜单" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /撤销/ }),
+    );
+    expect(canvas.undo).toHaveBeenCalled();
+  });
+
+  it("imports images through the canvas's own upload", async () => {
+    const canvas = renderMenu();
+    await userEvent.click(screen.getByRole("button", { name: "菜单" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "导入图片" }),
+    );
+    expect(canvas.importImages).toHaveBeenCalled();
   });
 });

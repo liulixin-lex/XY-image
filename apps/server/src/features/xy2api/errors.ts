@@ -110,12 +110,12 @@ export const gatewayMessages = {
   request_rejected: "主站拒绝了这次请求，请到主站查看账号和 Key 状态",
   upstream_busy: "主站暂时繁忙，请稍后再试",
   upstream_too_large: "图片响应过大，请降低画质后重试",
-  upstream_unknown: "请求中断，可能已扣费，请先到主站用量页核对",
-  xy2api_unavailable: "暂时连不上主站，这次没有发出请求，也没有扣费",
+  upstream_unknown: "请求中断，图片可能已经生成，请先到主站用量页核对",
+  xy2api_unavailable: "暂时连不上主站，这次没有发出请求",
   run_image_limit: "本轮生图次数已达上限，请开启新一轮对话",
   concurrency_limit: "当前生图任务已达上限，请等待完成",
   storage_failed: "图片已生成但保存失败，请联系管理员并到主站核对用量",
-  storage_retrying: "图片已生成并扣费，正在重新保存，稍后会出现在生成记录里",
+  storage_retrying: "图片已生成，正在重新保存，稍后会出现在生成记录里",
 } as const;
 export type GatewayCode = keyof typeof gatewayMessages;
 export type GatewayFailure = {

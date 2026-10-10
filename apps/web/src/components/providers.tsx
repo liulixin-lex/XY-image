@@ -10,12 +10,15 @@ import { IssueProvider } from "./issues/issue-provider";
 import { ToastProvider } from "./toast";
 
 /**
- * Dark-only on purpose: the 夜色光场 world is a night room lit by the image
- * on show. The canvas (Excalidraw) follows the same theme via next-themes.
+ * Theme follows the system until the visitor picks one with <ThemeToggle>;
+ * next-themes keeps that choice in localStorage ("theme", a preference, not
+ * a credential) and sets `.dark` on <html> before paint, so there is no
+ * flash. Transitions are suppressed during the swap so every surface flips
+ * at once instead of fading at different speeds.
  */
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" forcedTheme="dark" enableSystem={false}>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <AuthProvider>
         <AccountProvider>
           <ToastProvider>

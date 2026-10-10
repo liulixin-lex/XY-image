@@ -203,7 +203,7 @@ function IssueDialog({
             </DialogHeader>
 
             {issue.code === "insufficient_balance" && balance ? (
-              <div className="flex items-baseline justify-between rounded-md bg-white/[0.05] px-3.5 py-3">
+              <div className="flex items-baseline justify-between rounded-md bg-tint/[0.05] px-3.5 py-3">
                 <span className="text-xs text-fg-muted">当前余额</span>
                 <span className="text-lg font-semibold tabular">
                   {formatUsd(balance.amount)}
@@ -212,7 +212,7 @@ function IssueDialog({
             ) : null}
 
             {issue.code === "key_ip_restricted" ? (
-              <div className="rounded-md bg-white/[0.05] px-3.5 py-3 text-[13px]">
+              <div className="rounded-md bg-tint/[0.05] px-3.5 py-3 text-[13px]">
                 {egressIp ? (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-fg-muted">生图站出口 IP</span>
@@ -248,7 +248,7 @@ function IssueDialog({
                     target="_blank"
                     rel="noreferrer"
                     onClick={onClose}
-                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-fg px-3.5 text-sm font-medium text-ground transition-colors hover:bg-white"
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-fg px-3.5 text-sm font-medium text-ground transition-colors hover:bg-fg/88"
                   >
                     {primary.label}
                     <ArrowUpRightIcon className="size-4" />

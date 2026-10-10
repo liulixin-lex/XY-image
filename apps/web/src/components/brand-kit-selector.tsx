@@ -103,7 +103,7 @@ export function BrandKitSelector({
       <DropdownMenuTrigger
         disabled={updating}
         aria-label={`品牌套件：${status}`}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line bg-panel/80 text-sm shadow-subtle backdrop-blur-xl transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-amb disabled:opacity-50 sm:w-auto sm:px-2.5"
+        className="flex h-8 w-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line bg-panel/80 text-sm shadow-subtle backdrop-blur-xl transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-acc disabled:opacity-50 sm:w-auto sm:px-2.5"
       >
         <Palette
           aria-hidden

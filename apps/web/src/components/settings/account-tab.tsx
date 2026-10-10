@@ -55,7 +55,7 @@ export function AccountTab() {
 
       <SettingsSection
         title="余额"
-        description="生图和对话都从主站余额扣费，价格由主站决定。用量明细以主站为准。"
+        description="余额和用量明细以主站为准。"
       >
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
           <div>
@@ -78,7 +78,7 @@ export function AccountTab() {
         </div>
         {links ? (
           <div className="mt-6 flex flex-wrap gap-2">
-            <a href={links.recharge} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "glow" })}>
+            <a href={links.recharge} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "accent" })}>
               去主站充值
               <ArrowUpRightIcon strokeWidth={1.75} />
             </a>

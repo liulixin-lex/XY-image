@@ -26,11 +26,19 @@ vi.mock("../src/lib/supabase-browser", () => ({
 }));
 
 import { isBillingSettled, needsReconcile } from "../src/components/billing/billing-badge";
-import { JobQueue } from "../src/components/studio/job-queue";
+import { BatchFeed, type FeedActions } from "../src/components/studio/batch-feed";
 import { resolveImagePreference } from "../src/hooks/use-image-model-preference";
 import { AuthProvider, EXPIRED_LOGIN_PATH } from "../src/lib/auth-context";
 import { describeIssue, issueCodeOf } from "../src/lib/generation-errors";
-import { isActiveJob, isFailedJob, isSavingJob, jobStatusLabel, toImageJobView } from "../src/lib/image-jobs";
+import {
+  groupByBatch,
+  isActiveJob,
+  isFailedJob,
+  isSavingJob,
+  isUnsentJob,
+  jobStatusLabel,
+  toImageJobView,
+} from "../src/lib/image-jobs";
 import { safeNextPath } from "../src/lib/pending-prompt";
 import { ApiApplicationError, ApiAuthError, emitAuthExpired } from "../src/lib/server-api";
 import { fetchAuthConfig, formatUsd, resetAuthConfigCache } from "../src/lib/xy2api-api";
@@ -157,7 +165,9 @@ describe("image job views", () => {
     const view = toImageJobView(base);
     expect(view).toMatchObject({
       prompt: "雨夜的霓虹街",
-      quality: "hd",
+      // An older job: its single quality field meant 2K and it had no 质量.
+      resolution: "2K",
+      quality: null,
       aspectRatio: "16:9",
       billing: "unknown",
       requestId: "req_123",
@@ -198,24 +208,86 @@ describe("image job views", () => {
     expect(isBillingSettled("charged")).toBe(true);
     expect(isBillingSettled("unknown")).toBe(false);
     const view = render(
-      <JobQueue
-        jobs={[failed("j1", "unknown"), failed("j2", "charged"), failed("j3", "not_charged")]}
+      <BatchFeed
+        groups={groupByBatch([failed("j1", "unknown"), failed("j2", "charged"), failed("j3", "not_charged")])}
+        selectedId={null}
+        justFinished={new Set()}
+        modelName={() => "GPT Image 2"}
         usageUrl={null}
-        onCancel={() => {}}
-        onReuse={() => {}}
-        onOpen={() => {}}
+        actions={noActions}
       />,
     );
-    expect(view.getAllByText("结果未知，可能已扣费")).toHaveLength(1);
-    expect(view.getByText("主站已扣费，但没拿到图片")).toBeInTheDocument();
-    expect(view.getByText("没生成出来，这次没有扣费")).toBeInTheDocument();
+    expect(view.getAllByText("结果未知，请先核对用量")).toHaveLength(1);
+    expect(view.getByText("已生成，但没拿到图片")).toBeInTheDocument();
+    expect(view.getByText("没生成出来")).toBeInTheDocument();
   });
 
-  it("treats anything but hd as 1K", () => {
-    const view = toImageJobView({ ...base, payload: { prompt: "x", quality: "ultra" } } as BackgroundJob);
-    expect(view.quality).toBe("standard");
+  it("groups a studio batch in order and offers to cancel only its unsent pictures", () => {
+    const batchId = "8f14e45f-ceea-4e7a-9f6c-1d2b3c4d5e6f";
+    const picture = (id: string, index: number, status: string, billing: string) =>
+      toImageJobView({
+        ...base,
+        id,
+        status,
+        error_code: null,
+        billing_status: billing,
+        xy2api_request_id: null,
+        payload: { ...base.payload, batch_id: batchId, batch_index: index, batch_size: 4 },
+        created_at: new Date().toISOString(),
+      } as unknown as BackgroundJob);
+    // The job list is newest first; the batch reads 01..04.
+    const jobs = [
+      picture("j4", 3, "queued", "none"),
+      picture("j3", 2, "queued", "none"),
+      picture("j2", 1, "running", "pending"),
+      picture("j1", 0, "running", "pending"),
+    ];
+    const groups = groupByBatch(jobs);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.jobs.map((job) => job.id)).toEqual(["j1", "j2", "j3", "j4"]);
+    expect(jobs.filter(isUnsentJob).map((job) => job.id)).toEqual(["j4", "j3"]);
+    const onCancelBatch = vi.fn();
+    const view = render(
+      <BatchFeed
+        groups={groups}
+        selectedId={null}
+        justFinished={new Set()}
+        modelName={() => "GPT Image 2"}
+        usageUrl={null}
+        actions={{ ...noActions, onCancelBatch }}
+      />,
+    );
+    expect(view.getAllByText("已发出，不会自动重发")).toHaveLength(2);
+    expect(view.getByText(/已完成 0\/4/)).toBeInTheDocument();
+    view.getByRole("button", { name: /取消没发出的 2 张/ }).click();
+    expect(onCancelBatch).toHaveBeenCalledWith(batchId);
+  });
+
+  it("reads 画质 and 质量, and falls back for unknown values", () => {
+    const read = (payload: Record<string, unknown>) =>
+      toImageJobView({ ...base, payload: { prompt: "x", ...payload } } as BackgroundJob);
+    expect(read({ resolution: "4K", quality: "high" })).toMatchObject({
+      resolution: "4K",
+      quality: "high",
+    });
+    expect(read({ quality: "standard" })).toMatchObject({ resolution: "1K", quality: null });
+    expect(read({ resolution: "8K", quality: "max" })).toMatchObject({
+      resolution: "2K",
+      quality: "auto",
+    });
   });
 });
+
+const noActions: FeedActions = {
+  onSelect: () => {},
+  onOpen: () => {},
+  onReference: () => {},
+  onVariant: () => {},
+  onDownload: () => {},
+  onReuse: () => {},
+  onCancelJob: () => {},
+  onCancelBatch: () => {},
+};
 
 describe("post-login redirect", () => {
   it("only allows same-site paths", () => {

@@ -30,7 +30,7 @@ import { useAccount, useImageModels } from "../lib/account-context";
 import { BRAND } from "../lib/brand";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import { fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
-import type { CanvasSelectedElement } from "./canvas-editor";
+import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import {
   type BrandKitMentionItem,
   type CanvasImageItem,
@@ -1046,7 +1046,7 @@ export function ChatSidebar({
   }
 
   // Shared event isolation — prevent keyboard/clipboard events from bleeding
-  // into Excalidraw canvas when the sidebar has focus.
+  // into the canvas's shortcuts when the sidebar has focus.
   const eventIsolationProps = {
     onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(),
     onKeyUp: (e: React.KeyboardEvent) => e.stopPropagation(),
@@ -1078,7 +1078,7 @@ export function ChatSidebar({
         <button
           type="button"
           onClick={onToggle}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-white/[0.06] hover:text-fg"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg"
           title="收起对话"
           aria-label="收起对话"
         >
@@ -1088,7 +1088,7 @@ export function ChatSidebar({
 
       {/* Connection banner: a dropped connection, or a slow first connect */}
       {!ws.connected && (hasConnected || slowFirstConnect) && (
-        <div role="status" className="flex items-center gap-2 border-b border-line bg-white/[0.05] px-4 py-2">
+        <div role="status" className="flex items-center gap-2 border-b border-line bg-tint/[0.05] px-4 py-2">
           <LiveDot {...(hasConnected ? { className: "bg-alert" } : {})} />
           <span className="text-[12px] text-fg-soft">
             {hasConnected
@@ -1205,7 +1205,7 @@ export function ChatSidebar({
         aria-valuemin={SIDEBAR_MIN}
         aria-valuemax={SIDEBAR_MAX}
         tabIndex={0}
-        className="group flex w-2 shrink-0 cursor-col-resize justify-center outline-none focus-visible:bg-white/[0.06]"
+        className="group flex w-2 shrink-0 cursor-col-resize justify-center outline-none focus-visible:bg-tint/[0.06]"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}

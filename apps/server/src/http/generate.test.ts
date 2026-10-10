@@ -44,7 +44,9 @@ async function route() {
         prepareImageJob: async () => ({
           keyId: 7,
           model: "gpt-image-2",
-          quality: "standard",
+          resolution: "1K",
+          quality: "auto",
+          aspect_ratio: "1:1",
         }),
       },
     } as unknown as Xy2apiServices,

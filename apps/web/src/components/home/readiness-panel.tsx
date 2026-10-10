@@ -63,11 +63,13 @@ export function ReadinessPanel({ className }: { className?: string }) {
     <section
       aria-label="账户状态"
       className={cn("glass overflow-hidden rounded-[20px]", className)}
+      data-slot="readiness"
     >
       <div className="px-5 pt-4 pb-4">
-        <p className="text-[13px] text-fg-muted">主站余额</p>
+        <p className="poster-label text-[17px] leading-none text-fg">主站余额</p>
         <BalanceFigure
-          className="mt-2 block text-[36px] leading-none"
+          numeral
+          className="mt-3 block text-[56px]"
           emptyLabel={imageId === null ? "未选择 Key" : "暂不可读"}
         />
         <div className="mt-3 flex gap-4 text-[12.5px]">

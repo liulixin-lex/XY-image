@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { findImageModel } from "../features/xy2api/catalog.js";
+import {
+  IMAGE_PROVIDER_BY_PROTOCOL,
+  findImageModel,
+} from "../features/xy2api/catalog.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { KeyService } from "../features/xy2api/key-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
@@ -22,15 +25,20 @@ export function registerImageModelRoutes(
                   id,
                   displayName: model.displayName,
                   description: model.description,
-                  provider:
-                    model.protocol === "gemini"
-                      ? "xy2api-gemini"
-                      : "xy2api-openai",
+                  provider: IMAGE_PROVIDER_BY_PROTOCOL[model.protocol],
+                  vendor: model.vendor,
                   accessible: true,
                   creditCost: 0,
                   minTier: "free",
                   priceUsd: null,
-                  maxQuality: model.maxQuality,
+                  // What the picker may offer for this model; the server
+                  // moves anything else to the closest supported value.
+                  resolutions: model.resolutions,
+                  qualities: model.qualities,
+                  aspectRatios: model.aspectRatios,
+                  maxRatio: model.maxRatio,
+                  supportsEdit: model.supportsEdit,
+                  maxInputImages: model.supportsEdit ? model.maxInputImages : 0,
                 },
               ]
             : [];

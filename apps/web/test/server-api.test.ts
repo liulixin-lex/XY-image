@@ -205,7 +205,8 @@ describe("authenticated server API", () => {
     const error = await createImageJob("token_job", {
       prompt: "a lighthouse",
       model: "gpt-image-2",
-      quality: "hd",
+      resolution: "2K",
+      quality: "high",
       aspect_ratio: "1:1",
     }).catch((e: unknown) => e);
 
@@ -216,7 +217,8 @@ describe("authenticated server API", () => {
         body: JSON.stringify({
           prompt: "a lighthouse",
           model: "gpt-image-2",
-          quality: "hd",
+          resolution: "2K",
+          quality: "high",
           aspect_ratio: "1:1",
         }),
       }),

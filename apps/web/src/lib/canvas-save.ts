@@ -25,9 +25,9 @@ export type SavePayload = {
 type SceneElement = Record<string, unknown>;
 
 /**
- * `elements` is the scene including deleted elements (Excalidraw's onChange
- * and getSceneElementsIncludingDeleted). Deleted ones are left out; deleted
- * placed images go as ids.
+ * `elements` is the scene including deleted elements (the node canvas
+ * store's elements(), tombstones included). Deleted ones are left out;
+ * deleted placed images go as ids.
  */
 export function buildCanvasSavePayload(
   canvasId: string,

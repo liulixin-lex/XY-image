@@ -11,7 +11,7 @@ import {
 import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, isActiveJob, isFailedJob, jobStatusLabel } from "@/lib/image-jobs";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
 
 import { BillingBadge, needsReconcile } from "../billing/billing-badge";
 import { useToast } from "../toast";
@@ -69,18 +69,18 @@ export function LoupeDialog({
 
             <div className="flex min-h-0 flex-col border-t border-line md:border-t-0 md:border-l">
               <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3.5 pr-14 text-[12.5px] text-fg-soft">
-                <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 font-medium text-fg">
+                <span className="rounded-full bg-tint/[0.08] px-2.5 py-0.5 font-medium text-fg">
                   {jobStatusLabel(job)}
                 </span>
                 <span className="truncate">{modelName}</span>
                 <span className="shrink-0 font-mono text-[12px] text-fg-muted">
-                  {QUALITY_LABEL[job.quality]} · {job.aspectRatio ?? "默认"}
+                  {describeImageParams({ ...job, aspectRatio: job.aspectRatio ?? "默认" })}
                 </span>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
                 <div>
                   <DialogTitle className="sr-only">作品详情</DialogTitle>
-                  <DialogDescription className="sr-only">描述、参数与计费信息</DialogDescription>
+                  <DialogDescription className="sr-only">描述、参数与状态</DialogDescription>
                   <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-fg">
                     {job.prompt || "（无描述）"}
                   </p>
@@ -105,14 +105,23 @@ export function LoupeDialog({
 
                 <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-[13px]">
                   <dt className="text-fg-muted">状态</dt>
-                  <dd className="text-fg">{jobStatusLabel(job)}</dd>
+                  <dd className="flex items-center gap-2 text-fg">
+                    {jobStatusLabel(job)}
+                    <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                  </dd>
                   <dt className="text-fg-muted">模型</dt>
                   <dd className="text-fg">{modelName}</dd>
                   <dt className="text-fg-muted">规格</dt>
                   <dd className="text-fg tabular">
-                    {QUALITY_LABEL[job.quality]} · {job.aspectRatio ?? "默认比例"}
+                    {job.resolution} · {job.aspectRatio ?? "默认比例"}
                     {job.width && job.height ? ` · ${job.width}×${job.height}` : ""}
                   </dd>
+                  {job.quality ? (
+                    <>
+                      <dt className="text-fg-muted">质量</dt>
+                      <dd className="text-fg">{QUALITY_LABEL[job.quality]}</dd>
+                    </>
+                  ) : null}
                   {job.inputImages.length ? (
                     <>
                       <dt className="text-fg-muted">参考图</dt>
@@ -122,10 +131,6 @@ export function LoupeDialog({
                   <dt className="text-fg-muted">提交时间</dt>
                   <dd className="text-fg tabular">
                     {new Date(job.createdAt).toLocaleString("zh-CN", { hour12: false })}
-                  </dd>
-                  <dt className="text-fg-muted">计费</dt>
-                  <dd>
-                    <BillingBadge status={job.billing} active={isActiveJob(job)} />
                   </dd>
                   <dt className="text-fg-muted">请求 ID</dt>
                   <dd className="min-w-0">
@@ -151,7 +156,7 @@ export function LoupeDialog({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 self-start text-[13px] text-fg-soft underline decoration-line-strong underline-offset-4 hover:text-fg"
                   >
-                    {needsReconcile(job.billing, isActiveJob(job)) ? "去主站核对这一笔" : "在主站用量页查看"}
+                    {needsReconcile(job.billing, isActiveJob(job)) ? "去主站核对" : "在主站用量页查看"}
                     <ArrowUpRightIcon className="size-3.5" />
                   </a>
                 ) : null}
@@ -169,7 +174,7 @@ export function LoupeDialog({
                   </Button>
                 ) : null}
                 {job.url ? (
-                  <Button variant="glow" className="ml-auto" onClick={() => onDownload(job)}>
+                  <Button variant="accent" className="ml-auto" onClick={() => onDownload(job)}>
                     <DownloadIcon strokeWidth={1.75} />
                     下载
                   </Button>

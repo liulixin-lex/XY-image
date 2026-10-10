@@ -68,6 +68,15 @@ export type JobService = {
    * done: that job runs to the end. Used when an agent run is stopped.
    */
   cancelUnsentJobAdmin(jobId: string): Promise<boolean>;
+  /**
+   * Cancels the pictures of a studio batch that are still waiting at the
+   * dispatch gate (queued, nothing sent). Pictures already sent finish and
+   * are charged as usual. Returns the canceled job ids.
+   */
+  cancelUnsentInBatch(
+    user: AuthenticatedUser,
+    batchId: string,
+  ): Promise<string[]>;
   getJobAdmin(jobId: string): Promise<BackgroundJob>;
 
   // Admin-only methods (use admin client, no user auth)
@@ -314,6 +323,34 @@ export function createJobService(options: {
         );
       }
       return Boolean(data);
+    },
+
+    async cancelUnsentInBatch(user, batchId) {
+      const { data, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .update({ status: "canceled", canceled_at: new Date().toISOString() })
+        .eq("created_by", user.id)
+        .eq("job_type", "image_generation")
+        .eq("payload->>batch_id", batchId)
+        // Same rule as cancelUnsentJobAdmin: the dispatch gate marks a job
+        // running in the same transaction that lets it go, so a queued row
+        // here has not been sent.
+        .eq("status", "queued")
+        .eq("billing_status", "none")
+        .select("id");
+      if (error) {
+        throw new JobServiceError(
+          "job_cancel_failed",
+          "Failed to cancel job.",
+          500,
+        );
+      }
+      const ids = (data ?? []).map((row) => row.id as string);
+      console.log(
+        `[jobs] batch ${batchId} of user ${user.id}: canceled ${ids.length} unsent`,
+      );
+      return ids;
     },
 
     async getJobAdmin(jobId) {

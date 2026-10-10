@@ -194,6 +194,82 @@ describe("placing a job's image on the canvas", () => {
   });
 });
 
+describe("placing a generator node's picture (node canvas)", () => {
+  const generator = {
+    type: "generator",
+    id: "gen-1",
+    x: 0,
+    y: 0,
+    width: 300,
+    height: 200,
+  };
+  const slot = { x: 380, y: -40, width: 240, height: 320 };
+  const placeFromGenerator = (fake: ReturnType<typeof fakeCanvas>) =>
+    insertImageElement(
+      fake.client,
+      {
+        canvasId: "canvas-1",
+        objectPath: "ws-1/generated/job-1.png",
+        width: 1536,
+        height: 2048,
+        mimeType: "image/png",
+        jobId: "job-1",
+        sourceElementId: "gen-1",
+      },
+      slot,
+    );
+
+  it("puts it in its slot with an edge from the generator", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fake = fakeCanvas({ elements: [generator] });
+    const { elementId } = await placeFromGenerator(fake);
+    const [, image, edge] = fake.state.content.elements;
+    expect(image).toMatchObject({ id: elementId, type: "image", ...slot });
+    expect(edge).toMatchObject({
+      type: "arrow",
+      x: 300,
+      y: 100,
+      points: [
+        [0, 0],
+        [80, 20],
+      ],
+      startBinding: { elementId: "gen-1" },
+      endBinding: { elementId },
+      customData: { edge: "output", jobId: "job-1" },
+    });
+    // Asked again: the image is found (not its edge), nothing is added.
+    expect(await placeFromGenerator(fake)).toEqual({
+      elementId,
+      inserted: false,
+    });
+    expect(fake.state.content.elements).toHaveLength(3);
+  });
+
+  it("places it without an edge when the generator was deleted", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const fake = fakeCanvas({ elements: [rect("r1")] });
+    await placeFromGenerator(fake);
+    expect(fake.state.content.elements.map((el) => el.type)).toEqual([
+      "rectangle",
+      "image",
+    ]);
+  });
+
+  it("keeps an unseen edge on save like its image", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const fake = fakeCanvas({ elements: [generator] });
+    await placeFromGenerator(fake);
+    await save(fake, [generator], []);
+    expect(fake.state.content.elements.map((el) => el.type)).toEqual([
+      "generator",
+      "image",
+      "arrow",
+    ]);
+  });
+});
+
 describe("saving a page that has not seen a placed image", () => {
   const stored = () =>
     fakeCanvas({

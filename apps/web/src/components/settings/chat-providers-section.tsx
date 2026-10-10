@@ -206,7 +206,7 @@ export function ChatProvidersSection({ defaultProviderId }: { defaultProviderId:
     <SettingsSection
       id={ANCHOR}
       title="对话模型服务商"
-      description="接入你自己的 OpenAI 兼容服务，给设计助手对话用。用你自己的服务商时，对话费用由该服务商收取，不从主站余额扣。生图仍走主站。"
+      description="接入你自己的 OpenAI 兼容服务，给设计助手对话用。生图仍走主站。"
     >
       {list.status === "loading" ? (
         <div className="space-y-2" aria-label="读取中">
@@ -215,11 +215,11 @@ export function ChatProvidersSection({ defaultProviderId }: { defaultProviderId:
           ))}
         </div>
       ) : list.status === "missing" ? (
-        <p className="max-w-xl rounded-md bg-white/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
+        <p className="max-w-xl rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
           服务器暂时还不支持接入自己的服务商。现在对话都走主站的对话 Key。
         </p>
       ) : list.status === "error" ? (
-        <div className="flex max-w-xl flex-wrap items-center gap-3 rounded-md bg-white/[0.05] px-4 py-3 text-[13px] text-fg-soft">
+        <div className="flex max-w-xl flex-wrap items-center gap-3 rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] text-fg-soft">
           服务商列表暂时读不到。
           <Button variant="outline" size="sm" onClick={() => void load()}>
             重试
@@ -371,7 +371,7 @@ function ProviderRow({
           ) : null}
         </p>
         <details className="group/models mt-1.5">
-          <summary className="w-fit cursor-pointer list-none rounded-sm text-[12.5px] text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:outline-amb [&::-webkit-details-marker]:hidden">
+          <summary className="w-fit cursor-pointer list-none rounded-sm text-[12.5px] text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:outline-acc [&::-webkit-details-marker]:hidden">
             <span className="group-open/models:hidden">查看</span>
             <span className="hidden group-open/models:inline">收起</span>{" "}
             {provider.models.length} 个模型
@@ -381,7 +381,7 @@ function ProviderRow({
             {provider.models.map((model) => (
               <li
                 key={model}
-                className="rounded-sm bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11.5px] text-fg-soft"
+                className="rounded-sm bg-tint/[0.06] px-1.5 py-0.5 font-mono text-[11.5px] text-fg-soft"
               >
                 {model}
               </li>

@@ -105,24 +105,38 @@ GET `/api/image-models`：
   "models": [{
     "id": "gpt-image-2", "displayName": "GPT Image 2",
     "description": "OpenAI 图像生成与多图编辑", "provider": "xy2api-openai",
-    "accessible": true, "creditCost": 0, "minTier": "free",
-    "priceUsd": null, "maxQuality": "hd"
+    "vendor": "openai", "accessible": true, "creditCost": 0, "minTier": "free",
+    "priceUsd": null,
+    "resolutions": ["1K", "2K", "4K"],
+    "qualities": ["auto", "low", "medium", "high"],
+    "aspectRatios": ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "4:5", "5:4", "21:9"],
+    "maxRatio": { "1K": 1.6 },
+    "supportsEdit": true, "maxInputImages": 10
   }]
 }
 ```
 
 两个接口都需要令牌。生图模型只返回当前主站 Key 能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
 
-画质只显示 `standard`「1K 标准」和 `hd`「2K 高清」。`maxQuality=standard` 时禁用 2K。提交 `ultra` 会失败；超出模型能力的 hd 会降为 standard。默认目录：
+生图请求（`/api/jobs/image`、`/api/agent/generate-image`）用两个参数：`resolution` 画质 `1K` / `2K` / `4K`，`quality` 质量 `auto` / `low` / `medium` / `high`，另有 `aspect_ratio`。`qualities` 为空表示模型没有质量设置，只能用 `auto`。`maxRatio` 是某个画质能做的最宽比例（长边 ÷ 短边），没有条目表示不限。超出模型能力的值由后端按 `@loomic/shared` 的 `resolveImageParams` 移到最接近的支持值：比例取最近的形状，画质取不高于所选的最大档（比例放不下时再往上升），质量回到 `auto`。前端用同一个函数显示实际发送值。旧请求只带 `quality: standard / hd / ultra` 时按 1K 低 / 2K 中 / 4K 自动处理。默认目录：
 
-| 模型 | 最大画质 | 参考图上限 |
-| --- | --- | --- |
-| gpt-image-2 | hd | 10 |
-| gpt-image-1.5 | standard | 10 |
-| gemini-3-pro-image / preview 别名 | hd | 14 |
-| gemini-3.1-flash-image / preview 别名 | hd | 14 |
-| gemini-2.5-flash-image / preview 别名 | hd | 14 |
-| grok-imagine-image | standard | 0 |
+| 模型 | 画质 | 质量 | 比例 | 参考图上限 |
+| --- | --- | --- | --- | --- |
+| gpt-image-2 | 1K / 2K / 4K（1K 最宽 1.6:1） | 自动 / 低 / 中 / 高 | 10 种 | 10 |
+| gpt-image-2.5-sunburst | 同上 | 同上 | 10 种 | 10 |
+| gpt-image-2.5-flare | 同上 | 同上 | 10 种 | 10 |
+| nano-banana-2.1 | 1K / 2K / 4K | 自动 / 低 / 中 / 高 | 10 种 | 14 |
+| nano-banana-pro（gemini-3-pro-image 及 preview 别名） | 1K / 2K / 4K | 仅自动 | 10 种 | 14 |
+| grok-imagine-image-2.0 | 1K / 2K | 自动 / 低 / 中 | 8 种（无 4:5、5:4） | 0 |
+| gemini-3.1-flash-image（preview、nano-banana-2 别名） | 1K / 2K / 4K | 自动 / 低 / 高 | 10 种 | 14 |
+
+各协议的传参（与主站 xy2api 0.2.5 的计费规则对齐，改动前先读 `docs/XY2API_OPERATIONS.md` 的计费说明）：
+
+- **OpenAI Images**：`size` 按画质取长边 1024 / 2048 / 3840，短边按比例取 16 的倍数，并满足 OpenAI 的像素上下限；主站按返回图的长边计档（≤1024 为 1K，≤2048 为 2K，更大为 4K）。`quality` 为 `auto` 时不传。
+- **Gemini**：`generationConfig.imageConfig = { aspectRatio, imageSize }`，`imageSize` 每次都传（主站缺省按 2K 计价）；质量经目录的 `vendorQuality` 映射为 `thinkingConfig.thinkingLevel`。
+- **xAI**：JSON 调 `/v1/images/generations`，`aspect_ratio`、`resolution` 与 `size` 都传 `1k` / `2k`（主站读 `size` 计档，缺省按 2K），`response_format: b64_json`。编辑走 `/v1/images/edits`，主站每次最多 3 张；默认目录在实验室验证前不开放编辑。
+
+新增模型只改目录（`LOOMIC_IMAGE_MODELS` 或 `catalog.ts` 的默认值），不改前端：选一个已有协议，填 `resolutions` / `qualities` / `aspectRatios` 等；不填的字段用协议默认值。新协议需要新增一个 provider 并在 `IMAGE_PROVIDER_BY_PROTOCOL` 注册。
 
 目录可以由部署配置覆盖；后端始终重新校验能力。参考图接受 PNG/JPEG/WebP 的 data URL 或当前 Supabase 项目的 Storage URL，单张最多 10 MiB；普通公网图片 URL 需先走已有素材上传流程。HTTP 请求体最多 20 MiB。
 
@@ -172,7 +186,7 @@ GET `/api/image-models`：
 4. 接入后端退出和防重入过期处理。
 5. 用真实美元余额替换积分、套餐徽章、每日领取；接入全部错误入口。
 6. 完成账户与 Key 设置、同步、选择、出口 IP 提示和主站链接。
-7. 授权动态模型列表，仅 1K/2K；切 Key 后重置失效选择。
-8. 下线视频、4K、定价订阅和本地注册入口。旧 credits/payments/video 接口已经不再提供；原有前端仍引用它们，必须完成替换。
+7. 授权动态模型列表，画质和质量按模型能力开放；切 Key 后重置失效选择。
+8. 下线视频、定价订阅和本地注册入口。旧 credits/payments/video 接口已经不再提供；原有前端仍引用它们，必须完成替换。
 
 前端模型接手后执行原规范第 9 节：web 类型检查不新增基线错误，更新登录测试，web build 产出 out，并用真实账号验证两种生图协议和 Agent。真实主站生成次数、余额变化、request ID 必须人工逐条核对。浏览器仅保留 Supabase 会话，不能出现主站 Key/JWT。

@@ -349,7 +349,7 @@ for (const { version, dir } of versionDirs()) {
         imageOutputCompression: 90,
       });
       const image = await provider.generate(
-        { model: "gpt-image-2", prompt: "fixture", quality: "standard" },
+        { model: "gpt-image-2", prompt: "fixture", resolution: "1K" },
         { apiKey: "key", baseUrl },
       );
       expect(image.url).toMatch(/^data:image\//);
@@ -378,7 +378,7 @@ for (const { version, dir } of versionDirs()) {
         )[0] ?? "gemini-3.1-flash-image";
       const call = () =>
         provider.generate(
-          { model, prompt: "fixture", quality: "standard" },
+          { model, prompt: "fixture", resolution: "1K" },
           { apiKey: "key", baseUrl },
         );
       armed = must("gateway.gemini.generate.ok");

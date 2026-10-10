@@ -11,18 +11,22 @@ import { AccountChip } from "../../components/account/account-chip";
 import { BrandLockup } from "../../components/brand/brand-mark";
 import { Button, buttonVariants } from "../../components/ui/button";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
 import { useAuth } from "../../lib/auth-context";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
-import { CanvasEditor } from "../../components/canvas-editor";
+import {
+  type CanvasSelectedElement,
+  type NodeCanvasHandle,
+  NodeCanvasEditor,
+} from "../../components/node-canvas/node-canvas-editor";
+import { SaveStatus } from "../../components/node-canvas/save-status";
 import { ChatSidebar } from "../../components/chat-sidebar";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas } from "../../lib/canvas-elements";
+import { imageSourceOf } from "../../lib/node-canvas/render";
 import { useAccount } from "../../lib/account-context";
 import { BRAND } from "../../lib/brand";
 import { cn } from "../../lib/utils";
@@ -32,15 +36,8 @@ import {
   fetchCanvas,
   fetchProject,
 } from "../../lib/server-api";
-import {
-  loadCanvasFiles,
-  markFilesStored,
-  type ServerCanvasFile,
-} from "../../lib/canvas-files";
+import { markFilesStored } from "../../lib/canvas-files";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
-import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
-import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -69,14 +66,13 @@ function CanvasPageContent() {
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
   });
-  const [layersOpen, setLayersOpen] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("未命名项目");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
 
-  const excalidrawApiRef = useRef<any>(null);
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  // The node canvas editor's handle (null until it mounts).
+  const canvasRef = useRef<NodeCanvasHandle | null>(null);
+  const [canvas, setCanvas] = useState<NodeCanvasHandle | null>(null);
 
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -84,10 +80,6 @@ function CanvasPageContent() {
   // Stable callbacks for panel toggles to prevent re-renders of child components
   const handleOpenChat = useCallback(() => setChatOpen(true), []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  const handleToggleLayers = useCallback(() => { setLayersOpen((v) => !v); setFilesOpen(false); }, []);
-  const handleToggleFiles = useCallback(() => { setFilesOpen((v) => !v); setLayersOpen(false); }, []);
-  const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
-  const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
   const accessToken = session?.access_token;
   const accessTokenRef = useRef(accessToken);
@@ -96,57 +88,54 @@ function CanvasPageContent() {
   const getToken = useCallback(() => accessTokenRef.current ?? null, []);
   const ws = useWebSocket(getToken);
 
-  const handleApiReady = useCallback((api: any) => {
-    excalidrawApiRef.current = api;
-    setExcalidrawApi(api);
+  const handleCanvasReady = useCallback((handle: NodeCanvasHandle) => {
+    canvasRef.current = handle;
+    setCanvas(handle);
   }, []);
 
   const handleImageGenerated = useCallback((artifact: ImageArtifact) => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    insertImageOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert image on canvas:", err);
+    const handle = canvasRef.current;
+    if (!handle) return;
+    handle.insertImageArtifact(artifact).catch((err) => {
+      console.warn("[canvas] failed to insert image on canvas:", err);
     });
   }, []);
 
-  // Must be defined BEFORE useJobFallbackPolling which references it
+  // Must be defined BEFORE useJobFallbackPolling which references it.
+  // One fetch at a time; calls made meanwhile run once more after it.
+  const syncInFlightRef = useRef(false);
+  const syncAgainRef = useRef(false);
   const handleCanvasSync = useCallback(async () => {
-    const api = excalidrawApiRef.current;
+    const handle = canvasRef.current;
     const token = accessTokenRef.current;
-    if (!api || !token || !canvasData) return;
+    if (!handle || !token || !canvasData) return;
+    if (syncInFlightRef.current) {
+      syncAgainRef.current = true;
+      return;
+    }
+    syncInFlightRef.current = true;
     try {
-      const { canvas } = await fetchCanvas(token, canvasData.id);
-      const elements = canvas.content.elements ?? [];
-      const files = (canvas.content as Record<string, unknown>).files as
-        Record<string, ServerCanvasFile> | undefined;
-
-      // Sync files into Excalidraw. Backend-inserted images arrive as storage
-      // URLs (the agent writer stores a marker to the generated image); only
-      // files the editor does not have yet are downloaded.
-      if (files && Object.keys(files).length > 0) {
-        markFilesStored(canvasData.id, Object.keys(files));
-        const present = api.getFiles() as Record<string, unknown>;
-        const absent = Object.fromEntries(
-          Object.entries(files).filter(([fileId]) => !present[fileId]),
-        );
-        const loaded = await loadCanvasFiles(absent);
-        if (loaded.length > 0) api.addFiles(loaded);
-      }
-
+      const { canvas: remote } = await fetchCanvas(token, canvasData.id);
+      const files = ((remote.content as Record<string, unknown>).files ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      // Files the server returned are stored there: saves need not resend them.
+      markFilesStored(canvasData.id, Object.keys(files));
       // Merge, don't replace: the page may hold edits it has not saved yet.
       // Newer local versions (and local deletions) win; elements only the
-      // server has, such as an image the worker placed, are added.
-      const { reconcileElements, restoreElements } = await import(
-        "@excalidraw/excalidraw"
-      );
-      const merged = reconcileElements(
-        api.getSceneElementsIncludingDeleted(),
-        restoreElements(elements as any, null) as any,
-        api.getAppState(),
-      );
-      api.updateScene({ elements: merged, captureUpdate: "IMMEDIATELY" });
+      // server has, such as a picture the worker placed, are added.
+      const { added, updated } = handle.store.mergeRemote(remote.content.elements ?? [], files);
+      if (added.length || updated.length)
+        console.info(`[canvas] synced: ${added.length} added, ${updated.length} updated`);
     } catch (err) {
-      console.warn("Failed to sync canvas:", err);
+      console.warn("[canvas] failed to sync canvas:", err);
+    } finally {
+      syncInFlightRef.current = false;
+    }
+    if (syncAgainRef.current) {
+      syncAgainRef.current = false;
+      void handleCanvasSync();
     }
   }, [canvasData]);
 
@@ -206,32 +195,31 @@ function CanvasPageContent() {
     [canvasId],
   );
 
+  // Pictures on the board for the chat's @ picker (storage URLs preferred).
   const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
-    const api = excalidrawApiRef.current;
-    if (!api) return [];
-    const elements: any[] = api.getSceneElements() ?? [];
-    const files: Record<string, any> = api.getFiles() ?? {};
+    const store = canvasRef.current?.store;
+    if (!store) return [];
+    const { files } = store;
     let idx = 0;
-    return elements
-      .filter((el: any) => el.type === "image" && !el.isDeleted && el.fileId)
-      .map((el: any) => {
-        idx++;
-        const file = files[el.fileId];
-        const dataURL = file?.dataURL ?? "";
-        const title =
-          el.customData?.title ||
-          el.customData?.label ||
-          `Image ${idx}`;
-        return {
+    return store.liveElements().flatMap((el): CanvasImageItem[] => {
+      if (el.type !== "image") return [];
+      const url = imageSourceOf(el, files);
+      if (!url) return [];
+      idx++;
+      const fileId = typeof el.fileId === "string" ? el.fileId : "";
+      const title = el.customData?.title || el.customData?.label;
+      return [
+        {
           kind: "canvas-image",
           id: el.id,
-          name: title,
-          thumbnailUrl: dataURL,
+          name: typeof title === "string" && title ? title : `图片 ${idx}`,
+          thumbnailUrl: url,
           assetId: el.id,
-          url: dataURL,
-          mimeType: file?.mimeType ?? "image/png",
-        };
-      });
+          url,
+          mimeType: files[fileId]?.mimeType ?? "image/png",
+        },
+      ];
+    });
   }, []);
 
   // Only re-fetch when canvasId changes or on initial auth resolution.
@@ -260,7 +248,8 @@ function CanvasPageContent() {
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
-            files: (c.content as any).files ?? {},
+            files:
+              (c.content as { files?: Record<string, Record<string, unknown>> }).files ?? {},
           },
         });
         setPageLoading(false);
@@ -311,13 +300,14 @@ function CanvasPageContent() {
           accessToken={accessToken}
           projectId={canvasData.projectId}
           canvasId={canvasData.id}
-          excalidrawApi={excalidrawApi}
+          canvas={canvas}
         />
         <EditableProjectName
           accessToken={accessToken}
           projectId={canvasData.projectId}
           initialName={projectName}
         />
+        <SaveStatus store={canvas?.store ?? null} className="mr-1 hidden sm:flex" />
         <BrandKitSelector
           accessToken={accessToken}
           projectId={canvasData.projectId}
@@ -333,38 +323,18 @@ function CanvasPageContent() {
           <AccountChip />
         </div>
         <KeyNotice />
-        <CanvasEditor
+        <NodeCanvasEditor
+          key={canvasData.id}
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
           accessToken={accessToken}
           initialContent={canvasData.content}
-          onApiReady={handleApiReady}
+          onReady={handleCanvasReady}
+          onSyncRequest={handleCanvasSync}
           ws={ws}
-          leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
         />
-        <CanvasEmptyHint
-          excalidrawApi={excalidrawApi}
-          onOpenChat={handleOpenChat}
-        />
-        <CanvasBottomBar
-          excalidrawApi={excalidrawApi}
-          layersOpen={layersOpen}
-          onToggleLayers={handleToggleLayers}
-          filesOpen={filesOpen}
-          onToggleFiles={handleToggleFiles}
-          leftPanelOpen={layersOpen || filesOpen}
-        />
-        <CanvasLayersPanel
-          excalidrawApi={excalidrawApi}
-          open={layersOpen}
-          onClose={handleCloseLayers}
-        />
-        <CanvasFilesPanel
-          excalidrawApi={excalidrawApi}
-          open={filesOpen}
-          onClose={handleCloseFiles}
-        />
+        <CanvasEmptyHint store={canvas?.store ?? null} onOpenChat={handleOpenChat} />
       </div>
       <ChatSidebar
         accessToken={accessToken}
@@ -397,8 +367,7 @@ function KeyNotice() {
   ].filter(Boolean);
   if (missing.length === 0) return null;
   return (
-    <div
-      role="status"
+    <output
       className="absolute top-3 left-1/2 z-20 hidden -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-panel/80 backdrop-blur-xl px-3 py-2 text-[12.5px] text-fg-soft shadow-subtle md:flex"
     >
       <span className="size-1.5 shrink-0 rounded-full bg-alert" aria-hidden />
@@ -406,7 +375,7 @@ function KeyNotice() {
       <Link href="/settings?tab=keys" className="font-medium text-fg underline underline-offset-4">
         去选择
       </Link>
-    </div>
+    </output>
   );
 }
 
@@ -450,7 +419,7 @@ function CanvasNotice({ kind }: { kind: keyof typeof NOTICE_COPY }) {
         <div className="mt-3 flex flex-wrap gap-3">
           {canRetry ? (
             <Button
-              variant="glow"
+              variant="accent"
               size="lg"
               onClick={() => {
                 console.info("[canvas] reloading after load failure");
@@ -463,7 +432,7 @@ function CanvasNotice({ kind }: { kind: keyof typeof NOTICE_COPY }) {
           ) : null}
           <Link
             href="/projects"
-            className={buttonVariants({ variant: canRetry ? "outline" : "glow", size: "lg" })}
+            className={buttonVariants({ variant: canRetry ? "outline" : "accent", size: "lg" })}
           >
             回到画布项目
           </Link>

@@ -1,0 +1,92 @@
+/*
+ * React Flow, dressed in the room's tokens (globals.css). Only base.css is
+ * imported from @xyflow/react; everything visual comes from here, so light
+ * and dark follow the app theme without React Flow's own colour mode.
+ */
+.node-canvas .react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--line-strong);
+  --xy-edge-stroke: color-mix(in srgb, var(--acc) 58%, transparent);
+  --xy-edge-stroke-selected: var(--acc);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--acc);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-handle-background-color: var(--panel);
+  --xy-selection-background-color: var(--acc-soft);
+  --xy-selection-border: 1px solid color-mix(in srgb, var(--acc) 70%, transparent);
+  --xy-minimap-background-color: var(--panel);
+  --xy-minimap-mask-background-color: rgb(var(--tint) / 0.07);
+  --xy-minimap-mask-stroke-color: var(--acc);
+  --xy-minimap-mask-stroke-width: 2;
+  --xy-minimap-node-background-color: rgb(var(--tint) / 0.2);
+  --xy-resize-background-color: var(--acc);
+  --xy-attribution-background-color: transparent;
+}
+
+.node-canvas .react-flow__pane {
+  cursor: default;
+}
+.node-canvas[data-tool="hand"] .react-flow__pane {
+  cursor: grab;
+}
+.node-canvas[data-tool="hand"] .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+/* Nodes draw their own selection; React Flow's focus outline is replaced. */
+.node-canvas .react-flow__node:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 4px;
+  border-radius: 14px;
+}
+
+/*
+ * Cards always show their handles. Pictures, text and shapes show them on
+ * hover, when selected, and while a connection is dragged; hidden handles
+ * still take a drag from the node's edge.
+ */
+.node-canvas
+  :is(.react-flow__node-image, .react-flow__node-text, .react-flow__node-shape, .react-flow__node-video)
+  .react-flow__handle {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.node-canvas
+  :is(.react-flow__node-image, .react-flow__node-text, .react-flow__node-shape, .react-flow__node-video):is(
+    :hover,
+    :focus-within,
+    .selected
+  )
+  .react-flow__handle,
+.node-canvas[data-connecting] .react-flow__handle {
+  opacity: 1;
+}
+
+/* The link to a picture still on its way. */
+.node-canvas .react-flow__edge.pending-link .react-flow__edge-path {
+  stroke-dasharray: 4 5;
+  opacity: 0.7;
+}
+
+/* A connection being dragged shows where it can land. */
+.node-canvas .react-flow__handle.connectingto,
+.node-canvas .react-flow__handle.valid {
+  background: var(--acc);
+}
+
+.node-canvas .react-flow__minimap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 14px var(--shadow), 0 30px 64px -20px var(--shadow-2);
+}
+
+/* React Flow's attribution stays (MIT, kept visible), quiet and in theme. */
+.node-canvas .react-flow__attribution {
+  font-size: 10px;
+  padding: 2px 6px;
+  opacity: 0.55;
+}
+.node-canvas .react-flow__attribution a {
+  color: var(--fg-muted);
+}

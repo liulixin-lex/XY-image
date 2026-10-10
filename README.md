@@ -8,8 +8,8 @@
 
 - **登录**：主站邮箱密码、TOTP 和 Turnstile；本站只建影子账号，不保存主站密码和令牌。
 - **账户**：主站余额（美元）、Key 同步与选择、默认模型、生成记录（计费核对）。
-- **生图室**：OpenAI Images 和 Gemini 两种协议，参考图，1K/2K 画质；按次扣费，发出后不自动重试。
-- **画布**：Excalidraw 无限画布；图片存到 Storage，画布里只留标记；画布生图面板。
+- **生图室**：OpenAI Images、Gemini、xAI 三种协议，参考图；画质 1K/2K/4K、质量 自动/低/中/高，按模型能力开放；一次最多 4 张，每张单独请求；提示词优化；按次扣费，发出后不自动重试。
+- **画布**：节点式无限画布（React Flow）：提示词卡片和图片连到生成节点出图，另有文字、形状、画框；图片存到 Storage，画布里只留标记；出的图由 Worker 放到画布上，关掉页面也不丢。
 - **设计助手**：画布里的 Agent 对话，能拆解需求、生图并放到画布上；运行中可以停止；断线、服务重启时不丢消息、不重复扣费。
 - **自定义对话模型服务商**：用户自己的 OpenAI 兼容服务，只用于对话，Key 加密保存，只允许 https 公网地址。
 - **品牌套件、技能**；字体经后端代理加载（国内网络可用）。
@@ -27,7 +27,7 @@
 | 目录 | 内容 |
 | --- | --- |
 | `apps/server` | Fastify API 和 Worker（同一镜像，`SERVICE_MODE` 区分）；PGMQ 任务队列；xy2api 接入层 |
-| `apps/web` | Next.js 15 静态导出，Excalidraw 0.18 |
+| `apps/web` | Next.js 15 静态导出，React Flow 12 节点画布，亮暗两套主题 |
 | `packages/shared` | zod 契约、错误码、对话失败文案 |
 | `supabase/migrations` | 38 份数据库迁移 |
 | `deploy/` | 自建 Supabase 部署生成器、Nginx 模板、备份与告警；`deploy/xy2api-lab` 是 xy2api 契约实验室和模拟上游 |

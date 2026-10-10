@@ -16,6 +16,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { BrandMark } from "@/components/brand/brand-mark";
+import type { NodeCanvasHandle } from "@/components/node-canvas/node-canvas-editor";
+import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,44 +27,15 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deleteProject } from "@/lib/server-api";
-import { useToast } from "@/components/toast";
 import { useCreateProject } from "@/hooks/use-create-project";
+import { deleteProject } from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
   accessToken: string;
   projectId: string;
   canvasId: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any | null;
-}
-
-/**
- * Excalidraw has no public undo/redo/duplicate API, so the menu replays the
- * keyboard shortcut on its container (verified against 0.18: the React
- * onKeyDown on `.excalidraw-container` handles synthetic events). Using the
- * native actions keeps history, groups and bindings correct.
- */
-function dispatchKeyToExcalidraw(
-  key: string,
-  opts: { metaKey?: boolean; shiftKey?: boolean } = {},
-) {
-  const el = document.querySelector(".excalidraw-container");
-  if (!el) {
-    console.warn("[canvas] excalidraw container missing; shortcut not sent", key);
-    return;
-  }
-  el.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key,
-      code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
-      metaKey: opts.metaKey ?? false,
-      ctrlKey: opts.metaKey ?? false,
-      shiftKey: opts.shiftKey ?? false,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
+  /** The node canvas; null while it mounts. */
+  canvas: NodeCanvasHandle | null;
 }
 
 function isApplePlatform(): boolean {
@@ -73,18 +46,28 @@ function isApplePlatform(): boolean {
 export function CanvasLogoMenu({
   accessToken,
   projectId,
-  excalidrawApi,
+  canvas,
 }: CanvasLogoMenuProps) {
   const router = useRouter();
   const { error: toastError } = useToast();
   const { create: createNewProject } = useCreateProject();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [hasSelection, setHasSelection] = useState(false);
+  // Read when the menu opens: what can be undone, redone or duplicated.
+  const [menuState, setMenuState] = useState({
+    canUndo: false,
+    canRedo: false,
+    hasSelection: false,
+  });
   const [apple] = useState(isApplePlatform);
 
   const keys = apple
     ? { undo: "⌘Z", redo: "⇧⌘Z", duplicate: "⌘D", fit: "⇧1" }
-    : { undo: "Ctrl+Z", redo: "Ctrl+Shift+Z", duplicate: "Ctrl+D", fit: "Shift+1" };
+    : {
+        undo: "Ctrl+Z",
+        redo: "Ctrl+Shift+Z",
+        duplicate: "Ctrl+D",
+        fit: "Shift+1",
+      };
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -92,11 +75,14 @@ export function CanvasLogoMenu({
         setConfirmingDelete(false);
         return;
       }
-      const selected: Record<string, boolean> =
-        excalidrawApi?.getAppState().selectedElementIds ?? {};
-      setHasSelection(Object.values(selected).some(Boolean));
+      const store = canvas?.store;
+      setMenuState({
+        canUndo: store?.getState().canUndo ?? false,
+        canRedo: store?.getState().canRedo ?? false,
+        hasSelection: (store?.selectedNodes().length ?? 0) > 0,
+      });
     },
-    [excalidrawApi],
+    [canvas],
   );
 
   const handleDeleteProject = useCallback(async () => {
@@ -119,7 +105,7 @@ export function CanvasLogoMenu({
   return (
     <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
-        className="flex size-9 cursor-pointer items-center justify-center rounded-md border border-line bg-panel/80 backdrop-blur-xl shadow-subtle transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-amb"
+        className="flex size-9 cursor-pointer items-center justify-center rounded-md border border-line bg-panel/80 backdrop-blur-xl shadow-subtle transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-acc"
         aria-label="菜单"
       >
         <BrandMark className="size-6" aria-hidden title="" />
@@ -164,17 +150,12 @@ export function CanvasLogoMenu({
 
         <DropdownMenuSeparator />
 
-        {/* Group 3 — Canvas import: Excalidraw's own image flow (resizing,
-            size limit and error messages), placed at the viewport centre. */}
+        {/* Group 3 — Canvas import: the canvas's own upload (type and size
+            checks, error messages), placed in the middle of the view. */}
         <DropdownMenuGroup>
           <DropdownMenuItem
-            disabled={!excalidrawApi}
-            onClick={() =>
-              excalidrawApi?.setActiveTool({
-                type: "image",
-                insertOnCanvasDirectly: true,
-              })
-            }
+            disabled={!canvas}
+            onClick={() => canvas?.importImages()}
           >
             <ImagePlus className="size-4" />
             导入图片
@@ -186,24 +167,24 @@ export function CanvasLogoMenu({
         {/* Group 4 — Edit operations */}
         <DropdownMenuGroup>
           <DropdownMenuItem
-            onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
+            disabled={!menuState.canUndo}
+            onClick={() => canvas?.undo()}
           >
             <Undo2 className="size-4" />
             撤销
             <DropdownMenuShortcut>{keys.undo}</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={() =>
-              dispatchKeyToExcalidraw("z", { metaKey: true, shiftKey: true })
-            }
+            disabled={!menuState.canRedo}
+            onClick={() => canvas?.redo()}
           >
             <Redo2 className="size-4" />
             重做
             <DropdownMenuShortcut>{keys.redo}</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
-            disabled={!hasSelection}
-            onClick={() => dispatchKeyToExcalidraw("d", { metaKey: true })}
+            disabled={!menuState.hasSelection}
+            onClick={() => canvas?.duplicateSelection()}
           >
             <Copy className="size-4" />
             复制选中内容
@@ -216,13 +197,8 @@ export function CanvasLogoMenu({
         {/* Group 5 — View controls */}
         <DropdownMenuGroup>
           <DropdownMenuItem
-            disabled={!excalidrawApi}
-            onClick={() =>
-              excalidrawApi?.scrollToContent(undefined, {
-                fitToContent: true,
-                animate: true,
-              })
-            }
+            disabled={!canvas}
+            onClick={() => canvas?.fitView()}
           >
             <Maximize2 className="size-4" />
             显示全部内容

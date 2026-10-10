@@ -1,4 +1,5 @@
 import type { BackgroundJobType } from "@loomic/shared";
+import { DISPATCH_RETRY_SECONDS } from "./features/jobs/dispatch-gate.js";
 import {
   type ExecutorContext,
   getExecutor,
@@ -8,6 +9,8 @@ import {
   DeliveryPendingError,
 } from "./features/xy2api/errors.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
+
+const TERMINAL: string[] = ["succeeded", "dead_letter", "canceled"];
 
 const QUEUE_TO_TYPE: Record<string, BackgroundJobType> = {
   image_generation_jobs: "image_generation",
@@ -51,10 +54,45 @@ export async function processMessage(
     return;
   }
 
-  const current = await ctx.jobService.getJobAdmin(jobId);
-  if (["succeeded", "dead_letter", "canceled"].includes(current.status)) {
+  let current = await ctx.jobService.getJobAdmin(jobId);
+  if (TERMINAL.includes(current.status)) {
     await ctx.pgmq.archive(queue, msg.msg_id);
     return;
+  }
+
+  // Per-user dispatch gate: a queued, unsent image job waits here while the
+  // user already has LOOMIC_MAX_CONCURRENT_JOBS at the main site. It stays
+  // queued (still free to cancel) and comes back in a few seconds; nothing
+  // is counted as an attempt. Held images (charged) and redeliveries of a
+  // job already running skip it: they do not send a new request.
+  if (
+    ctx.dispatchGate &&
+    jobType === "image_generation" &&
+    current.status === "queued" &&
+    current.billing_status !== "charged"
+  ) {
+    const decision = await ctx.dispatchGate.claim(
+      jobId,
+      ctx.env.maxConcurrentJobs,
+    );
+    if (decision === "busy") {
+      await ctx.pgmq.setVt(queue, msg.msg_id, DISPATCH_RETRY_SECONDS);
+      // Once on the first wait and then about every minute, not every 3 s.
+      if (msg.read_ct <= 1 || msg.read_ct % 20 === 0)
+        console.log(
+          `${tag} Job ${jobId} waiting: user has ${ctx.env.maxConcurrentJobs} image requests in flight (read ${msg.read_ct})`,
+        );
+      return;
+    }
+    if (decision === "not_queued") {
+      // Canceled (or finished) between the read above and the gate.
+      current = await ctx.jobService.getJobAdmin(jobId);
+      if (TERMINAL.includes(current.status)) {
+        await ctx.pgmq.archive(queue, msg.msg_id);
+        console.log(`${tag} Job ${jobId} ${current.status} before dispatch`);
+        return;
+      }
+    }
   }
   // Increment attempt count
   await ctx.jobService.incrementAttempt(jobId);

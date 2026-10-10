@@ -122,71 +122,64 @@ const REPLICATE_IMAGE_MODELS: readonly ModelInfo[] = [
 type QualityMap = Record<string, Record<string, { param: string; value: string }>>;
 
 /**
- * Maps (model prefix → quality level → { paramName, paramValue }).
+ * Maps (model prefix → resolution → { paramName, paramValue }).
  * Lookup order: exact model ID → prefix before "/" → fallback.
  */
 const QUALITY_MAP: QualityMap = {
   // Google Nano Banana Pro / 2: uses `resolution`
   "google/nano-banana-pro": {
-    standard: { param: "resolution", value: "1K" },
-    hd:       { param: "resolution", value: "2K" },
-    ultra:    { param: "resolution", value: "4K" },
+    "1K": { param: "resolution", value: "1K" },
+    "2K": { param: "resolution", value: "2K" },
+    "4K": { param: "resolution", value: "4K" },
   },
   "google/nano-banana-2": {
-    standard: { param: "resolution", value: "1K" },
-    hd:       { param: "resolution", value: "2K" },
-    ultra:    { param: "resolution", value: "4K" },
+    "1K": { param: "resolution", value: "1K" },
+    "2K": { param: "resolution", value: "2K" },
+    "4K": { param: "resolution", value: "4K" },
   },
   // Google Imagen 4: uses `image_size`
   "google/imagen-4": {
-    standard: { param: "image_size", value: "1K" },
-    hd:       { param: "image_size", value: "2K" },
-    ultra:    { param: "image_size", value: "2K" }, // max 2K, cap silently
+    "1K": { param: "image_size", value: "1K" },
+    "2K": { param: "image_size", value: "2K" },
+    "4K": { param: "image_size", value: "2K" }, // max 2K, cap silently
   },
   // ByteDance Seedream 5 Lite: uses `size`, max 3K
   "bytedance/seedream-5-lite": {
-    standard: { param: "size", value: "2K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "3K" },
+    "1K": { param: "size", value: "2K" },
+    "2K": { param: "size", value: "2K" },
+    "4K": { param: "size", value: "3K" },
   },
   // ByteDance Seedream 4.5: uses `size`, max 4K
   "bytedance/seedream-4.5": {
-    standard: { param: "size", value: "2K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "4K" },
+    "1K": { param: "size", value: "2K" },
+    "2K": { param: "size", value: "2K" },
+    "4K": { param: "size", value: "4K" },
   },
   // ByteDance Seedream 4: uses `size`, max 4K
   "bytedance/seedream-4": {
-    standard: { param: "size", value: "1K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "4K" },
+    "1K": { param: "size", value: "1K" },
+    "2K": { param: "size", value: "2K" },
+    "4K": { param: "size", value: "4K" },
   },
-};
-
-/** GPT Image 1.5 quality mapping (native `quality` param) */
-const GPT_IMAGE_QUALITY: Record<string, string> = {
-  standard: "medium",
-  hd: "high",
-  ultra: "high",
 };
 
 function applyQuality(
   input: Record<string, unknown>,
   model: string,
+  resolution: string | undefined,
   quality: string | undefined,
 ): void {
-  if (!quality) return;
-
   // GPT Image has native `quality` param
   if (INPUT_IMAGES_MODELS.has(model)) {
-    input.quality = GPT_IMAGE_QUALITY[quality] ?? "auto";
+    input.quality = quality ?? "auto";
     return;
   }
+  if (!resolution) return;
 
-  // Lookup quality translation for this model
+  // Lookup resolution translation for this model
   const modelMap = QUALITY_MAP[model];
   if (modelMap) {
-    const entry = modelMap[quality];
+    const entry = modelMap[resolution];
     if (entry) {
       input[entry.param] = entry.value;
     }
@@ -289,7 +282,7 @@ export class ReplicateImageProvider implements ImageProvider {
     }
 
     // Semantic params → model-specific translation
-    applyQuality(input, params.model, params.quality);
+    applyQuality(input, params.model, params.resolution, params.quality);
     applyOutputFormat(input, params.model, params.outputFormat);
 
     const response = await fetch(

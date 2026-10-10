@@ -1,9 +1,21 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { z } from "zod";
 
-import type { BackgroundJobStatus, BackgroundJobType } from "@loomic/shared";
+import type {
+  BackgroundJob,
+  BackgroundJobStatus,
+  BackgroundJobType,
+  CanvasPlacementPayload,
+  CreateImageJobRequest,
+} from "@loomic/shared";
 import {
   applicationErrorResponseSchema,
+  cancelImageBatchResponseSchema,
+  createImageBatchRequestSchema,
   createImageJobRequestSchema,
+  imageBatchPayloadSchema,
+  imageBatchResponseSchema,
   jobListResponseSchema,
   jobResponseSchema,
   unauthenticatedErrorResponseSchema,
@@ -19,6 +31,7 @@ import {
   imagePayloadSchema,
 } from "../features/xy2api/billing-guard.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { isZodError } from "../utils/zod-error.js";
 import { sendAccountError } from "./account.js";
 
 export async function registerJobRoutes(
@@ -41,7 +54,9 @@ export async function registerJobRoutes(
         const input = imagePayloadSchema.parse({
           ...payload,
           model: prepared.model,
+          resolution: prepared.resolution,
           quality: prepared.quality,
+          aspect_ratio: prepared.aspect_ratio,
         });
         return options.jobService.createJob(user, {
           workspaceId: viewer.workspace.id,
@@ -51,7 +66,7 @@ export async function registerJobRoutes(
           ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
           ...(payload.session_id ? { sessionId: payload.session_id } : {}),
           ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-          payload: input,
+          payload: { ...input, ...canvasPlacement(payload, 0) },
         });
       });
       return reply.code(201).send(jobResponseSchema.parse({ job }));
@@ -61,6 +76,113 @@ export async function registerJobRoutes(
       return sendAccountError(reply, error);
     }
   });
+
+  // POST /api/jobs/image-generation/batch — 1 to IMAGE_BATCH_MAX pictures from
+  // one description. Each picture is its own job and its own main-site
+  // request (and charge); they share batch_id in the payload. All of them are
+  // admitted against LOOMIC_MAX_PENDING_IMAGE_JOBS at once; the worker's
+  // dispatch gate then sends at most LOOMIC_MAX_CONCURRENT_JOBS at a time.
+  app.post("/api/jobs/image-generation/batch", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+      const { count, ...payload } = createImageBatchRequestSchema.parse(
+        request.body,
+      );
+      const viewer = await options.viewerService.ensureViewer(user);
+      const batchId = randomUUID();
+      const jobs = await options.billing.withUserLock(user.id, async () => {
+        const prepared = await options.billing.prepareImageJob(user, payload, {
+          count,
+        });
+        const input = imagePayloadSchema.parse({
+          ...payload,
+          model: prepared.model,
+          resolution: prepared.resolution,
+          quality: prepared.quality,
+          aspect_ratio: prepared.aspect_ratio,
+        });
+        const created: BackgroundJob[] = [];
+        for (let index = 0; index < count; index += 1) {
+          try {
+            created.push(
+              await options.jobService.createJob(user, {
+                workspaceId: viewer.workspace.id,
+                jobType: "image_generation",
+                xy2apiKeyId: prepared.keyId,
+                ...(payload.project_id
+                  ? { projectId: payload.project_id }
+                  : {}),
+                ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
+                ...(payload.session_id
+                  ? { sessionId: payload.session_id }
+                  : {}),
+                ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
+                payload: {
+                  ...input,
+                  ...canvasPlacement(payload, index),
+                  ...imageBatchPayloadSchema.parse({
+                    batch_id: batchId,
+                    batch_index: index,
+                    batch_size: count,
+                  }),
+                },
+              }),
+            );
+          } catch (error) {
+            // Nothing is sent at creation, so stopping part way costs
+            // nothing: return what exists and let the page say how many.
+            if (created.length === 0) throw error;
+            console.error(
+              `[jobs] batch ${batchId}: created ${created.length} of ${count}, the rest failed to queue`,
+            );
+            break;
+          }
+        }
+        return created;
+      });
+      console.log(
+        `[jobs] batch ${batchId} of user ${user.id}: ${jobs.length}/${count} queued`,
+      );
+      return reply.code(201).send(
+        imageBatchResponseSchema.parse({
+          batch_id: batchId,
+          requested: count,
+          jobs,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof JobServiceError)
+        return sendJobError(error, reply, "job_create_failed");
+      return sendAccountError(reply, error);
+    }
+  });
+
+  // POST /api/jobs/image-batches/:batchId/cancel — cancel the pictures of a
+  // batch that have not been sent yet; the ones already sent finish.
+  app.post(
+    "/api/jobs/image-batches/:batchId/cancel",
+    async (request, reply) => {
+      try {
+        const user = await options.auth.authenticate(request);
+        if (!user) return sendUnauthenticated(reply);
+        const { batchId } = batchParamsSchema.parse(request.params);
+        const canceled = await options.jobService.cancelUnsentInBatch(
+          user,
+          batchId,
+        );
+        return reply.code(200).send(
+          cancelImageBatchResponseSchema.parse({
+            batch_id: batchId,
+            canceled,
+          }),
+        );
+      } catch (error) {
+        if (isZodError(error)) return sendAccountError(reply, error);
+        return sendJobError(error, reply, "job_cancel_failed");
+      }
+    },
+  );
 
   // GET /api/jobs/:jobId — get job status
   app.get("/api/jobs/:jobId", async (request, reply) => {
@@ -114,6 +236,8 @@ export async function registerJobRoutes(
   });
 }
 
+const batchParamsSchema = z.object({ batchId: z.string().uuid() });
+
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
     unauthenticatedErrorResponseSchema.parse({
@@ -151,4 +275,23 @@ function sendJobError(
       },
     }),
   );
+}
+
+/**
+ * Node canvas: where picture `index` goes and the generator node it comes
+ * from, stored in its job payload for the worker's canvas writer. Only kept
+ * with a canvas; a missing slot lets the writer place the picture itself.
+ */
+function canvasPlacement(
+  payload: CreateImageJobRequest,
+  index: number,
+): CanvasPlacementPayload {
+  if (!payload.canvas_id) return {};
+  const slot = payload.canvas_slots?.[index];
+  return {
+    ...(slot ? { canvas_slot: slot } : {}),
+    ...(payload.canvas_source_id
+      ? { canvas_source_id: payload.canvas_source_id }
+      : {}),
+  };
 }

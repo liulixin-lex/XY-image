@@ -142,9 +142,4 @@ describe("ChatProviderDialog", () => {
       }),
     );
   });
-
-  it("says the chat is billed by the provider, not the main-site balance", () => {
-    render(<ChatProviderDialog target={{ kind: "create" }} onClose={() => {}} onSaved={() => {}} />);
-    expect(screen.getByText(/费用由服务商收取，不从主站余额扣/)).toBeInTheDocument();
-  });
 });

@@ -4,8 +4,11 @@
  * Studio job state: the latest 50 image jobs, polled while any is active.
  *
  * Billing rules this hook enforces:
- * - One click creates at most one job; the submit is locked while in flight.
- * - A job is never re-submitted automatically (no retry on any error).
+ * - One click sends one batch request (1 to IMAGE_BATCH_MAX pictures, each
+ *   its own job and charge); the submit is locked while in flight.
+ * - Nothing is re-submitted automatically (no retry on any error).
+ * - Pictures still waiting at the server's dispatch gate (queued, unsent)
+ *   can be canceled for free; sent ones run to the end.
  * - When a job this session submitted settles, the balance refreshes and a
  *   failure is reported once through the issue center.
  */
@@ -25,12 +28,23 @@ import {
   type CreateImageJobInput,
   ApiApplicationError,
   cancelJob as apiCancelJob,
-  createImageJob,
+  cancelImageBatch,
+  createImageBatch,
   fetchJobs,
 } from "@/lib/server-api";
 
 const POLL_MS = 4000;
-export const MAX_ACTIVE_JOBS = 2;
+/**
+ * Mirrors the server's LOOMIC_MAX_PENDING_IMAGE_JOBS (queued + generating
+ * per user) and LOOMIC_MAX_CONCURRENT_JOBS (sent at once). The server is the
+ * authority; these only shape the button and its explanation.
+ */
+export const MAX_PENDING_JOBS = 8;
+export const MAX_IN_FLIGHT = 2;
+
+export type StudioSubmitInput = CreateImageJobInput & { count: number };
+/** Pictures queued by one click; `queued < requested` when the server stopped part way. */
+export type StudioSubmitResult = { queued: number; requested: number };
 
 export function useStudioJobs() {
   const { session } = useAuth();
@@ -119,24 +133,30 @@ export function useStudioJobs() {
   }, [activeCount, load]);
 
   const submit = useCallback(
-    async (input: CreateImageJobInput): Promise<boolean> => {
+    async (input: StudioSubmitInput): Promise<StudioSubmitResult | null> => {
       const current = tokenRef.current;
-      if (!current || submittingRef.current) return false;
+      if (!current || submittingRef.current) return null;
       submittingRef.current = true;
       setSubmitting(true);
       try {
-        const { job } = await createImageJob(current, input);
-        const view = toImageJobView(job);
-        sessionJobs.current.add(view.id);
-        setJobs((prev) => [view, ...prev.filter((j) => j.id !== view.id)]);
-        console.info("[studio] job queued", view.id);
-        return true;
+        const batch = await createImageBatch(current, input);
+        const views = batch.jobs.map(toImageJobView);
+        for (const view of views) sessionJobs.current.add(view.id);
+        const ids = new Set(views.map((view) => view.id));
+        // Newest first, and the batch in its own order (index 0 first).
+        setJobs((prev) => [...views, ...prev.filter((j) => !ids.has(j.id))]);
+        console.info("[studio] batch queued", {
+          batch: batch.batch_id,
+          queued: views.length,
+          requested: batch.requested,
+        });
+        return { queued: views.length, requested: batch.requested };
       } catch (error) {
         const spec = report(error);
         if (error instanceof ApiApplicationError && error.code === "model_not_accessible")
           void refreshImageModels();
         if (spec) console.warn("[studio] submit rejected", spec.title);
-        return false;
+        return null;
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
@@ -172,6 +192,33 @@ export function useStudioJobs() {
     [load, report],
   );
 
+  /**
+   * Cancels the pictures of a batch the server has not sent yet. Returns how
+   * many were canceled; ones already sent keep running and are charged.
+   */
+  const cancelBatch = useCallback(
+    async (batchId: string): Promise<number> => {
+      const current = tokenRef.current;
+      if (!current) return 0;
+      try {
+        const { canceled } = await cancelImageBatch(current, batchId);
+        const gone = new Set(canceled);
+        for (const id of canceled) settled.current.add(id);
+        setJobs((prev) =>
+          prev.map((j) => (gone.has(j.id) ? { ...j, status: "canceled" as const } : j)),
+        );
+        console.info("[studio] batch canceled", { batch: batchId, canceled: canceled.length });
+        void load();
+        return canceled.length;
+      } catch (error) {
+        report(error);
+        void load();
+        return 0;
+      }
+    },
+    [load, report],
+  );
+
   return {
     jobs,
     loading,
@@ -180,6 +227,7 @@ export function useStudioJobs() {
     submit,
     submitting,
     cancel,
+    cancelBatch,
     activeCount,
     busyCount,
     justDeveloped,

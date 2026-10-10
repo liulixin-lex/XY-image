@@ -11,7 +11,7 @@ import { useEffect, useMemo } from "react";
 
 import { useAgentModel } from "@/hooks/use-agent-model";
 import { useAccount, useChatModels } from "@/lib/account-context";
-import { chatBillingNote, groupChatModels, preferredChatModelId } from "@/lib/chat-models";
+import { groupChatModels, preferredChatModelId } from "@/lib/chat-models";
 import { cn } from "@/lib/utils";
 
 import { type PickerOption, Picker } from "./ui/select";
@@ -56,7 +56,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean | undefined 
             ? {
                 group: {
                   key: group.key,
-                  label: group.source === "custom" ? `${group.label} · 由服务商收费` : "主站",
+                  label: group.source === "custom" ? group.label : "主站",
                 },
               }
             : {}),
@@ -74,9 +74,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean | undefined 
       value={model ?? AUTO}
       onValueChange={(next) => setModel(next === AUTO ? null : next)}
       options={options}
-      // The trigger is too narrow for a sentence; screen readers get the
-      // billing note in the label, everyone gets the plug glyph.
-      ariaLabel={selected ? `对话模型：${model ? selected.name : "默认"}，${chatBillingNote(selected)}` : "对话模型"}
+      ariaLabel={selected ? `对话模型：${model ? selected.name : "默认"}` : "对话模型"}
       disabled={Boolean(error) || (loading && models.length === 0)}
       placeholder={error ? "对话 Key 不可用" : "默认模型"}
       side="top"
@@ -88,7 +86,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean | undefined 
         )
       }
       className={cn(
-        "h-8 border-transparent bg-transparent px-2 hover:bg-white/[0.06]",
+        "h-8 border-transparent bg-transparent px-2 hover:bg-tint/[0.06]",
         compact ? "max-w-[140px] text-[12px]" : "max-w-[180px]",
       )}
       popupClassName="w-[260px]"

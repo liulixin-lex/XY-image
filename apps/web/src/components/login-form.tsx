@@ -208,7 +208,7 @@ export function LoginForm({ initialErrorMessage = null, next = "/home" }: LoginF
     <div className="w-full">
       {step.kind === "credentials" ? (
         <>
-          <h1 className="font-display text-[44px] leading-[1.05] font-normal text-fg">
+          <h1 className="font-display text-[52px] leading-none font-normal text-fg">
             登录
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-fg-soft">
@@ -313,8 +313,9 @@ export function LoginForm({ initialErrorMessage = null, next = "/home" }: LoginF
 
             <Button
               type="submit"
-              size="lg"
-              variant="glow"
+              size="poster"
+              variant="accent"
+              slant
               disabled={busy || locked || blocked || (!config && !configError)}
               className="w-full"
             >
@@ -349,7 +350,7 @@ export function LoginForm({ initialErrorMessage = null, next = "/home" }: LoginF
             <ArrowLeftIcon className="size-4" strokeWidth={1.75} />
             换个账号
           </button>
-          <h1 className="mt-5 font-display text-[44px] leading-[1.05] font-normal text-fg">
+          <h1 className="mt-5 font-display text-[48px] leading-none font-normal text-fg">
             二次验证
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-fg-soft">
@@ -379,8 +380,9 @@ export function LoginForm({ initialErrorMessage = null, next = "/home" }: LoginF
             ) : null}
             <Button
               type="submit"
-              size="lg"
-              variant="glow"
+              size="poster"
+              variant="accent"
+              slant
               disabled={busy || locked || code.length !== 6}
               className="w-full"
             >
@@ -409,10 +411,8 @@ function Notice({
     <div
       role={role}
       className={cn(
-        "rounded-[10px] border px-3.5 py-3 text-[13.5px] leading-relaxed",
-        tone === "error"
-          ? "border-alert/30 bg-alert-wash text-alert"
-          : "border-line bg-white/[0.04] text-fg-soft",
+        "rounded-[12px] px-3.5 py-3 text-[13.5px] leading-relaxed",
+        tone === "error" ? "bg-alert-wash text-alert" : "bg-tint/[0.05] text-fg-soft",
         className,
       )}
     >

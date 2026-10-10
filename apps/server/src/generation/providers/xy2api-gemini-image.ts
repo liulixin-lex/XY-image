@@ -1,8 +1,10 @@
-import { GoogleGenAI, type Part } from "@google/genai";
+import { GoogleGenAI, type Part, ThinkingLevel } from "@google/genai";
 import sharp from "sharp";
 import {
   type ImageModel,
+  type ResolvedImageParams,
   findImageModel,
+  resolveImageParams,
 } from "../../features/xy2api/catalog.js";
 import {
   BillingGuardError,
@@ -21,6 +23,37 @@ import type {
 } from "../types.js";
 import { fetchReferenceImage } from "./xy2api-reference.js";
 
+const THINKING_LEVELS = new Set<string>(Object.values(ThinkingLevel));
+
+/**
+ * Gemini `generationConfig` image fields for one request
+ * (https://ai.google.dev/gemini-api/docs/generate-content/image-generation):
+ * 画质 → imageConfig.imageSize, 比例 → imageConfig.aspectRatio, 质量 →
+ * thinkingConfig.thinkingLevel through the catalog's `vendorQuality`.
+ * imageSize is always sent, 1K included: the main site bills Gemini images
+ * by it and charges 2K when it is missing (xy2api 0.2.5,
+ * gemini_messages_compat_service.go).
+ */
+export function geminiImageConfig(
+  model: Pick<ImageModel, "vendorQuality">,
+  resolved: Pick<ResolvedImageParams, "resolution" | "quality" | "aspectRatio">,
+) {
+  const vendor =
+    resolved.quality === "auto"
+      ? undefined
+      : model.vendorQuality[resolved.quality];
+  const thinkingLevel = vendor?.toUpperCase();
+  return {
+    imageConfig: {
+      aspectRatio: resolved.aspectRatio,
+      imageSize: resolved.resolution,
+    },
+    ...(thinkingLevel && THINKING_LEVELS.has(thinkingLevel)
+      ? { thinkingConfig: { thinkingLevel: thinkingLevel as ThinkingLevel } }
+      : {}),
+  };
+}
+
 export class Xy2apiGeminiImageProvider implements ImageProvider {
   readonly name = "xy2api-gemini";
   readonly models;
@@ -32,13 +65,13 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
     ctx?: ImageCallContext,
   ): Promise<GeneratedImage> {
     const model = findImageModel(this.catalog, params.model);
-    if (
-      !ctx ||
-      !model ||
-      model.protocol !== "gemini" ||
-      params.quality === "ultra"
-    )
+    if (!ctx || !model || model.protocol !== "gemini")
       throw new BillingGuardError("invalid_input");
+    const resolved = resolveImageParams(model, {
+      resolution: params.resolution,
+      quality: params.quality,
+      aspectRatio: params.aspectRatio,
+    });
     const client = new GoogleGenAI({
       apiKey: ctx.apiKey,
       httpOptions: {
@@ -69,13 +102,7 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         config: {
           ...(ctx.signal ? { abortSignal: ctx.signal } : {}),
           responseModalities: ["IMAGE"],
-          imageConfig: {
-            aspectRatio: params.aspectRatio ?? "1:1",
-            imageSize:
-              params.quality === "hd" && model.maxQuality === "hd"
-                ? "2K"
-                : "1K",
-          },
+          ...geminiImageConfig(model, resolved),
         },
       });
       const candidate = response.candidates?.[0];
@@ -91,7 +118,7 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
           // not "not charged": mark it for reconciliation instead.
           billing: "unknown",
           userMessage:
-            "内容未通过审核，主站可能已计费，请修改提示词，并到主站用量页核对",
+            "内容未通过审核，请修改提示词，并到主站用量页核对这次的结果",
         });
       const inline = candidate?.content?.parts?.find(
         (part) => part.inlineData?.data,

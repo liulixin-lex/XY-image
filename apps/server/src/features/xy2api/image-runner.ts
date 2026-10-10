@@ -76,6 +76,8 @@ export async function executeImageJob(
     row.xy2api_key_id,
   );
   const model = findImageModel(options.xy2api.keys.catalog, payload.model);
+  // A model removed from the catalog (LOOMIC_IMAGE_MODELS) since queueing,
+  // or no longer on the key: refuse before anything is sent.
   if (!model || !credential.imageModels.includes(payload.model))
     throw new BillingGuardError("model_not_accessible", 403);
   if (
@@ -112,7 +114,8 @@ export async function executeImageJob(
         {
           prompt: payload.prompt,
           model: payload.model,
-          quality: payload.quality === "hd" ? model.maxQuality : "standard",
+          resolution: payload.resolution,
+          quality: payload.quality,
           ...(payload.aspect_ratio
             ? { aspectRatio: payload.aspect_ratio }
             : {}),

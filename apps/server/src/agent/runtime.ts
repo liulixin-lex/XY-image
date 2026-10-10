@@ -29,7 +29,10 @@ import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-s
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import { insertImageElement } from "../features/canvas/canvas-element-writer.js";
 import type { JobService } from "../features/jobs/job-service.js";
-import { findImageModel } from "../features/xy2api/catalog.js";
+import {
+  IMAGE_PROVIDER_BY_PROTOCOL,
+  findImageModel,
+} from "../features/xy2api/catalog.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { Xy2apiServices } from "../features/xy2api/services.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
@@ -497,10 +500,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? [
                   {
                     ...model,
-                    provider:
-                      model.protocol === "gemini"
-                        ? "xy2api-gemini"
-                        : "xy2api-openai",
+                    provider: IMAGE_PROVIDER_BY_PROTOCOL[model.protocol],
                   },
                 ]
               : [];
@@ -601,7 +601,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   throw new BillingGuardError("run_image_limit", 429);
                 const prepared = await options.xy2api.billing.prepareImageJob(
                   user,
-                  { model: input.model, quality: input.quality },
+                  {
+                    model: input.model,
+                    resolution: input.resolution,
+                    quality: input.quality,
+                    aspect_ratio: input.aspectRatio,
+                    input_images: input.inputImages,
+                  },
                 );
                 return jobSvc.createJob(user, {
                   workspaceId,
@@ -614,8 +620,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     // The worker labels the image it places on the canvas.
                     title: input.title,
                     model: prepared.model,
+                    resolution: prepared.resolution,
                     quality: prepared.quality,
-                    aspect_ratio: input.aspectRatio,
+                    aspect_ratio: prepared.aspect_ratio,
                     ...(input.inputImages
                       ? { input_images: input.inputImages }
                       : {}),

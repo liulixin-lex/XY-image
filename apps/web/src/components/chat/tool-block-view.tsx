@@ -452,7 +452,7 @@ function imagePendingNotice(
   if (output?.pending === "storage") {
     return {
       title: "图片已生成，正在保存",
-      message: "这张已经扣费，不用重新生成。保存好后会自动放到画布上。",
+      message: "这张已经生成，正在保存，好了会自动放到画布上，不用重新生成。",
     };
   }
   if (typeof output?.error === "string" && /timed out/i.test(output.error)) {
@@ -561,7 +561,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
         type="button"
         onClick={onOpenPanel}
         aria-label={`查看「${title}」的详情`}
-        className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+        className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
       >
         <span
           className="relative block max-h-[320px] w-full overflow-hidden bg-muted"
@@ -686,7 +686,7 @@ function ToolDetailPanel({
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-amb"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-acc"
           >
             <svg
               className="h-4 w-4"

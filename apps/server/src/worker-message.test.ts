@@ -164,3 +164,69 @@ describe("worker completion and redelivery", () => {
     },
   );
 });
+
+describe("per-user dispatch gate", () => {
+  function gated(
+    decision: "claimed" | "busy" | "not_queued",
+    status = "queued",
+    billing_status = "none",
+  ) {
+    const f = fixture(status, billing_status);
+    const claim = vi.fn(async () => {
+      if (decision === "claimed") f.job.status = "running";
+      return decision;
+    });
+    Object.assign(f.ctx, {
+      dispatchGate: { claim, close: vi.fn() },
+      env: { maxConcurrentJobs: 2 },
+    });
+    return { ...f, claim };
+  }
+  it("leaves a job queued and unsent while the user has the limit in flight", async () => {
+    const f = gated("busy");
+    await f.run();
+    expect(f.claim).toHaveBeenCalledWith("job-1", 2);
+    expect(f.ctx.pgmq.setVt).toHaveBeenCalledWith(
+      "image_generation_jobs",
+      17,
+      3,
+    );
+    expect(f.ctx.jobService.incrementAttempt).not.toHaveBeenCalled();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.job.status).toBe("queued");
+    expect(f.ctx.pgmq.archive).not.toHaveBeenCalled();
+  });
+  it("sends a claimed job once", async () => {
+    const f = gated("claimed");
+    await f.run();
+    expect(f.ctx.jobService.incrementAttempt).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.job.status).toBe("succeeded");
+  });
+  it("drops a job canceled between the read and the gate without sending it", async () => {
+    const f = gated("not_queued");
+    vi.mocked(f.ctx.jobService.getJobAdmin)
+      .mockResolvedValueOnce({
+        status: "queued",
+        billing_status: "none",
+      } as BackgroundJob)
+      .mockResolvedValueOnce({
+        status: "canceled",
+        billing_status: "none",
+      } as BackgroundJob);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.incrementAttempt).not.toHaveBeenCalled();
+    expect(f.ctx.pgmq.archive).toHaveBeenCalledOnce();
+  });
+  it("lets held images and running redeliveries past the gate", async () => {
+    const held = gated("busy", "queued", "charged");
+    await held.run();
+    expect(held.claim).not.toHaveBeenCalled();
+    expect(held.execute).toHaveBeenCalledOnce();
+    const redelivered = gated("busy", "running", "pending");
+    await redelivered.run();
+    expect(redelivered.claim).not.toHaveBeenCalled();
+    expect(redelivered.execute).toHaveBeenCalledOnce();
+  });
+});

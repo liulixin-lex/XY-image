@@ -118,7 +118,7 @@ export function KeysTab() {
     <div>
       <SettingsSection
         title="使用哪个 Key"
-        description="生图和对话分别从所选 Key 扣费。可选模型由 Key 所在分组决定，换 Key 后模型列表会跟着变。"
+        description="生图和对话分别用所选 Key。可选模型由 Key 所在分组决定，换 Key 后模型列表会跟着变。"
       >
         <div className="grid max-w-xl gap-5 sm:grid-cols-2">
           <KeyPicker
@@ -170,7 +170,7 @@ export function KeysTab() {
         </div>
 
         {keys.error && !keys.data ? (
-          <p className="rounded-md bg-white/[0.05] px-4 py-3 text-[13px] text-fg-soft">
+          <p className="rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] text-fg-soft">
             Key 列表暂时读不到。点「从主站同步」再试一次。
           </p>
         ) : loading ? (
@@ -200,7 +200,7 @@ export function KeysTab() {
         )}
 
         {hasIpRestricted ? (
-          <div className="mt-4 rounded-md bg-white/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
+          <div className="mt-4 rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
             有 Key 设置了 IP 限制。生图请求从本站服务器发出，需要在主站为该 Key 放行
             {egressIp ? (
               <button

@@ -121,96 +121,66 @@ export function useAmbientImage(src: string | null | undefined, preset?: Ambient
   }, [src, amb, amb2, setImage]);
 }
 
-type Layer = { key: number; src: string | null; visible: boolean };
-
 /**
- * The defocused image field behind a page. Cross-fades when the lighting
- * image changes. Fixed to the viewport by default; pass `className` to
- * position it inside a section instead.
+ * The room behind a page: a wall fading into a floor, hazed with the
+ * ambient colour pair. Pure CSS on the --amb / --amb-2 / --haze variables,
+ * so it re-lights in step with the GSAP colour tween in applyColors and
+ * costs no image decode or blur (the old field drew the picture at 110px
+ * blur, which was the most expensive layer on every page).
+ *
+ * `horizon` (0-100, % from the top) adds a floor: the wall meets it at a
+ * soft hairline. Leave it out for app pages, where the room is all wall.
  */
 export function AmbientField({
   className,
-  intensity = 0.62,
-  vignette = "radial-gradient(90% 90% at 70% 35%, transparent, rgb(6 9 18 / 0.55) 60%, var(--ground-deep))",
-  imageClassName,
+  horizon,
 }: {
   className?: string;
-  /** Opacity of the image field (0-1). */
-  intensity?: number;
-  vignette?: string;
-  /** Position/size of the blurred image inside the field. */
-  imageClassName?: string;
+  horizon?: number;
 }) {
-  const { image } = useAmbient();
-  const counter = useRef(0);
-  const [layers, setLayers] = useState<Layer[]>(() => [
-    { key: 0, src: image, visible: true },
-  ]);
-
-  useEffect(() => {
-    setLayers((prev) => {
-      const top = prev[prev.length - 1];
-      if (top && top.src === image) return prev;
-      counter.current += 1;
-      return [
-        ...prev.slice(-1).map((layer) => ({ ...layer, visible: false })),
-        { key: counter.current, src: image, visible: false },
-      ];
-    });
-    // Next frame: fade the new layer in (the old one fades out together).
-    const raf = requestAnimationFrame(() =>
-      setLayers((prev) =>
-        prev.map((layer, index) =>
-          index === prev.length - 1 ? { ...layer, visible: true } : layer,
-        ),
-      ),
-    );
-    const cleanup = setTimeout(
-      () => setLayers((prev) => prev.slice(-1)),
-      1200,
-    );
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(cleanup);
-    };
-  }, [image]);
-
+  const base =
+    horizon === undefined
+      ? "linear-gradient(var(--wall), var(--wall-2))"
+      : `linear-gradient(var(--wall) 0, var(--wall-2) ${horizon}%, var(--floor) ${horizon}%, var(--floor-2) 100%)`;
   return (
     <div
       aria-hidden
       className={cn("pointer-events-none fixed inset-0 z-0 overflow-hidden", className)}
+      style={{ background: base }}
     >
-      <div className="absolute inset-0 bg-ground" />
-      {layers.map((layer) => (
-        <div
-          key={layer.key}
-          className="absolute inset-[-20%] transition-opacity duration-1000 ease-out motion-reduce:transition-none"
-          style={{ opacity: layer.visible ? intensity : 0 }}
-        >
-          {layer.src ? (
-            // biome-ignore lint/performance/noImgElement: decorative blurred field
-            <img
-              src={layer.src}
-              alt=""
-              decoding="async"
-              className={cn(
-                "absolute top-0 left-[40%] h-[90%] w-[80%] object-cover blur-[110px] saturate-[1.7]",
-                imageClassName,
-              )}
-            />
-          ) : (
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(40% 45% at 72% 30%, rgb(var(--amb) / 0.32), transparent 70%), radial-gradient(35% 40% at 25% 75%, rgb(var(--amb-2) / 0.22), transparent 70%)",
-              }}
-            />
-          )}
-        </div>
-      ))}
-      <div className="absolute inset-0" style={{ background: vignette }} />
-      <div className="grain-overlay absolute inset-0" />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: [
+            // Key light: the picture's colour, upper right where work is shown.
+            "radial-gradient(46% 52% at 72% 36%, rgb(var(--amb) / var(--haze)), transparent 70%)",
+            // Fill: the second colour, smaller and higher.
+            "radial-gradient(34% 38% at 96% 6%, rgb(var(--amb-2) / calc(var(--haze) * 0.55)), transparent 70%)",
+            // A pale wash on the left wall keeps text areas calm.
+            "radial-gradient(60% 46% at 18% 10%, var(--wall), transparent 70%)",
+          ].join(", "),
+        }}
+      />
+      {horizon !== undefined && (
+        <>
+          <div
+            className="absolute inset-x-0 h-px"
+            style={{
+              top: `${horizon}%`,
+              background: "linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 80%, transparent)",
+            }}
+          />
+          {/* Spill of the key light onto the floor. */}
+          <div
+            className="absolute inset-x-0 bottom-0"
+            style={{
+              top: `${horizon}%`,
+              background:
+                "radial-gradient(36% 40% at 72% 0%, rgb(var(--amb) / calc(var(--haze) * 0.6)), transparent 70%)",
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

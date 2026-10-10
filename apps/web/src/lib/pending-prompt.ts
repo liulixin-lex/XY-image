@@ -1,18 +1,23 @@
 /**
  * A prompt typed on the landing page before signing in. It survives the
  * login round-trip in sessionStorage and is placed back into the studio
- * input, together with the ratio and quality picked on the landing page.
+ * input, together with the ratio and 画质 picked on the landing page.
  * It is never auto-submitted: generation costs money, so only an explicit
  * click in the studio starts it.
  */
-import { ASPECT_RATIOS, type AspectRatio } from "./image-model-meta";
+import {
+  type AspectRatio,
+  type ImageResolution,
+  RESOLUTIONS,
+  isAspectRatio,
+} from "./image-model-meta";
 
 const KEY = "xy:pending-prompt";
 
 export type PendingDraft = {
   prompt: string;
   aspectRatio?: AspectRatio;
-  quality?: "standard" | "hd";
+  resolution?: ImageResolution;
 };
 
 export function savePendingDraft(draft: PendingDraft) {
@@ -38,16 +43,25 @@ export function takePendingDraft(): PendingDraft | null {
     sessionStorage.removeItem(KEY);
     // Older builds stored the bare prompt string.
     if (!raw.startsWith("{")) return { prompt: raw };
-    const parsed = JSON.parse(raw) as Partial<PendingDraft>;
+    const parsed = JSON.parse(raw) as {
+      prompt?: unknown;
+      aspectRatio?: unknown;
+      resolution?: unknown;
+      /** Older builds: standard / hd = 1K / 2K. */
+      quality?: unknown;
+    };
     if (typeof parsed.prompt !== "string" || !parsed.prompt) return null;
+    const resolution = RESOLUTIONS.includes(parsed.resolution as ImageResolution)
+      ? (parsed.resolution as ImageResolution)
+      : parsed.quality === "hd"
+        ? "2K"
+        : parsed.quality === "standard"
+          ? "1K"
+          : undefined;
     return {
       prompt: parsed.prompt,
-      ...(ASPECT_RATIOS.includes(parsed.aspectRatio as AspectRatio)
-        ? { aspectRatio: parsed.aspectRatio as AspectRatio }
-        : {}),
-      ...(parsed.quality === "standard" || parsed.quality === "hd"
-        ? { quality: parsed.quality }
-        : {}),
+      ...(isAspectRatio(parsed.aspectRatio) ? { aspectRatio: parsed.aspectRatio } : {}),
+      ...(resolution ? { resolution } : {}),
     };
   } catch {
     return null;

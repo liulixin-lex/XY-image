@@ -9,6 +9,7 @@ import {
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
 import { chatRunError } from "../features/chat-providers/run-error.js";
+import { describeErrorForLog } from "../utils/error-sanitizer.js";
 
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
@@ -269,11 +270,13 @@ export async function* adaptDeepAgentStream(
       return;
     }
 
-    // Upstream SDK exceptions may contain credentials or response bodies.
+    // Upstream SDK exceptions may contain credentials or response bodies:
+    // the log gets the masked one-line description, the client only the code.
     const failure = chatRunError(error, options.customChat);
     console.error("[stream-adapter] Stream failed", {
       runId: options.runId,
       code: failure.code,
+      detail: describeErrorForLog(error),
     });
 
     yield {

@@ -19,7 +19,7 @@ export function ImageAttachmentBar({ attachments, onRemove, onRetry }: ImageAtta
       {attachments.map((att) => (
         <div
           key={att.id}
-          className="group relative size-14 shrink-0 overflow-visible rounded-frame bg-white/[0.05]"
+          className="group relative size-14 shrink-0 overflow-visible rounded-frame bg-tint/[0.05]"
         >
           {att.preview ? (
             <img

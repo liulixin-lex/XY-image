@@ -49,13 +49,13 @@ describe("pickAmbient", () => {
     expect(hueOf(mixed.amb)).toBeLessThan(240);
   });
 
-  it("falls back to a neutral cool light for greyscale images", () => {
+  it("falls back to a neutral rose-grey light for greyscale images", () => {
     const { amb } = pickAmbient(solid(128, 128, 128));
-    expect(toTriplet(amb)).toBe("150 172 214");
+    expect(toTriplet(amb)).toBe("190 160 172");
   });
 
   it("ignores transparent pixels", () => {
     const pixels = solid(200, 40, 40).map((v, i) => (i % 4 === 3 ? 0 : v));
-    expect(toTriplet(pickAmbient(pixels).amb)).toBe("150 172 214");
+    expect(toTriplet(pickAmbient(pixels).amb)).toBe("190 160 172");
   });
 });
