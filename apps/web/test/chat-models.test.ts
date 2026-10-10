@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  chatBillingNote,
   chatPreferencePatch,
   formatChatModelRef,
   groupChatModels,
@@ -115,7 +114,6 @@ describe("normalizeChatModelList", () => {
       models: [{ id: "custom:p-9:x", name: "x", provider: "openai_compatible" }],
     }).models;
     expect(model).toMatchObject({ source: "custom", billing: "external", providerId: "p-9" });
-    expect(model && chatBillingNote(model)).toContain("不从主站余额扣");
   });
 });
 

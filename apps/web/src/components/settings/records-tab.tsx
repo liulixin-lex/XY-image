@@ -119,7 +119,7 @@ export function RecordsTab() {
         ) : null}
       </div>
       <p className="mt-3 max-w-[70ch] text-[12.5px] leading-relaxed text-fg-muted">
-        显示最近 50 条生图请求。「待核对」表示请求可能已到达主站但结果未知，用请求 ID 在主站用量页查找；金额以主站为准。
+        显示最近 50 条生图请求。「待核对」表示请求可能已到达主站但结果未知，用请求 ID 在主站用量页查找。
       </p>
 
       <div className="mt-6">

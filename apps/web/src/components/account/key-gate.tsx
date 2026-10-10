@@ -34,7 +34,7 @@ export function KeyGate({
       ? { title: "所选 Key 额度已用完", body: "换一个 Key，或到主站调高这个 Key 的额度。" }
       : reason === "key_ip_restricted"
         ? { title: "所选 Key 限制了 IP", body: "在主站为这个 Key 放行生图站出口 IP，或换一个 Key。" }
-        : { title: "先选一个能生图的 Key", body: "生图会用你在主站的 Key，从主站余额支付。选择一个所在分组开放了生图的 Key 即可开始。" };
+        : { title: "先选一个能生图的 Key", body: "生图会用你在主站的 Key。选择一个所在分组开放了生图的 Key 即可开始。" };
 
   const sync = async () => {
     setSyncing(true);

@@ -148,9 +148,4 @@ export function groupChatModels(models: ChatModel[]): ChatModelGroup[] {
   return [...(main.models.length ? [main] : []), ...groups.values()];
 }
 
-/** One-line billing note for a model, shown where it is picked. */
-export function chatBillingNote(model: ChatModel): string {
-  return model.billing === "external"
-    ? `对话费用由「${model.providerName || "你的服务商"}」收取，不从主站余额扣`
-    : "对话费用从主站余额扣";
-}
+

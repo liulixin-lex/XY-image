@@ -35,7 +35,7 @@ export type IssueSpec = {
 const CATALOG: Record<string, IssueSpec> = {
   insufficient_balance: {
     title: "主站余额不足",
-    message: "这次没有发出生成请求，不收费。充值后回到这里重新提交。",
+    message: "这次没有发出生成请求。充值后回到这里重新提交。",
     action: "recharge",
     weight: "dialog",
     maybeCharged: false,
@@ -143,7 +143,7 @@ const CATALOG: Record<string, IssueSpec> = {
   },
   storage_failed: {
     title: "图片已生成，但保存失败",
-    message: "请联系管理员，并到主站用量页核对这一笔。",
+    message: "请联系管理员，并到主站用量页核对这次请求。",
     action: "usage",
     weight: "dialog",
     maybeCharged: true,

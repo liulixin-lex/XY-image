@@ -318,10 +318,6 @@ function ProviderForm({
         />
       </div>
 
-      <p className="rounded-md bg-tint/[0.05] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-fg-soft">
-        用这个服务商的模型对话时，费用由服务商收取，不从主站余额扣。
-      </p>
-
       {formError ? (
         <p role="alert" className="text-[13px] leading-relaxed text-alert">
           {formError}

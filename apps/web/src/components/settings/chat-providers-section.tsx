@@ -206,7 +206,7 @@ export function ChatProvidersSection({ defaultProviderId }: { defaultProviderId:
     <SettingsSection
       id={ANCHOR}
       title="对话模型服务商"
-      description="接入你自己的 OpenAI 兼容服务，给设计助手对话用。用你自己的服务商时，对话费用由该服务商收取，不从主站余额扣。生图仍走主站。"
+      description="接入你自己的 OpenAI 兼容服务，给设计助手对话用。生图仍走主站。"
     >
       {list.status === "loading" ? (
         <div className="space-y-2" aria-label="读取中">

@@ -118,7 +118,7 @@ export function KeysTab() {
     <div>
       <SettingsSection
         title="使用哪个 Key"
-        description="生图和对话分别用所选 Key 计费。可选模型由 Key 所在分组决定，换 Key 后模型列表会跟着变。"
+        description="生图和对话分别用所选 Key。可选模型由 Key 所在分组决定，换 Key 后模型列表会跟着变。"
       >
         <div className="grid max-w-xl gap-5 sm:grid-cols-2">
           <KeyPicker

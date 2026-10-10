@@ -15,7 +15,6 @@ import { useMemo, useState } from "react";
 import { useAccount, useChatModels, useImageModels } from "@/lib/account-context";
 import {
   type ChatModel,
-  chatBillingNote,
   chatPreferencePatch,
   groupChatModels,
   preferredChatModelId,
@@ -151,9 +150,6 @@ export function ModelsTab() {
             className="h-10 w-full max-w-sm"
             popupClassName="w-[320px]"
           />
-          {chatSelected ? (
-            <p className="mt-2 text-[12px] text-fg-muted">{chatBillingNote(chatSelected)}。</p>
-          ) : null}
         </ModelPickerBlock>
       </SettingsSection>
 
@@ -178,10 +174,7 @@ function chatPickerOptions(models: ChatModel[]): PickerOption[] {
         ? {
             group: {
               key: group.key,
-              label:
-                group.source === "custom"
-                  ? `${group.label} · 由服务商收费`
-                  : "主站 · 从主站余额扣",
+              label: group.source === "custom" ? group.label : "主站",
             },
           }
         : {}),

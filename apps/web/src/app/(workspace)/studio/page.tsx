@@ -156,7 +156,7 @@ export default function StudioPage() {
   const cancelBatch = useCallback(
     async (batchId: string) => {
       const canceled = await studio.cancelBatch(batchId);
-      if (canceled > 0) success(`已取消 ${canceled} 张，都还没发出，不收费`);
+      if (canceled > 0) success(`已取消 ${canceled} 张，都还没发出`);
       else toast("没有可以取消的了：剩下的已经发出，会生成完");
     },
     [studio, success, toast],

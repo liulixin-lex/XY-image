@@ -111,7 +111,7 @@ export const gatewayMessages = {
   upstream_busy: "主站暂时繁忙，请稍后再试",
   upstream_too_large: "图片响应过大，请降低画质后重试",
   upstream_unknown: "请求中断，图片可能已经生成，请先到主站用量页核对",
-  xy2api_unavailable: "暂时连不上主站，这次没有发出请求，不收费",
+  xy2api_unavailable: "暂时连不上主站，这次没有发出请求",
   run_image_limit: "本轮生图次数已达上限，请开启新一轮对话",
   concurrency_limit: "当前生图任务已达上限，请等待完成",
   storage_failed: "图片已生成但保存失败，请联系管理员并到主站核对用量",

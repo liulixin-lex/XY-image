@@ -38,13 +38,13 @@ describe("ToolBlockView", () => {
           toolName: "generate_image",
           status: "completed",
           input: { model: "gemini-3-pro-image", prompt: "面料特写" },
-          output: { error: "主站余额不足，这张没有生成，不收费" },
+          output: { error: "主站余额不足，这张没有生成" },
         }}
       />,
     );
 
     expect(screen.getAllByText("图片生成失败")).toHaveLength(1);
-    expect(screen.getAllByText("主站余额不足，这张没有生成，不收费")).toHaveLength(1);
+    expect(screen.getAllByText("主站余额不足，这张没有生成")).toHaveLength(1);
     // The generic "生成图片 / error: …" card no longer duplicates it.
     expect(screen.queryByText("生成图片")).not.toBeInTheDocument();
     expect(screen.getByText("Gemini 3 Pro Image")).toBeInTheDocument();

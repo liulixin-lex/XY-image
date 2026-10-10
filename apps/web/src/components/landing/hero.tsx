@@ -85,7 +85,7 @@ export const Hero = forwardRef<
             </span>
           </h1>
           <p className="mt-6 max-w-[34em] text-[16px] leading-[1.8] text-fg-soft sm:text-[17px] lg:mt-[clamp(16px,3dvh,28px)]">
-            主站账号直接登录，按次从主站余额支付。每张图都带请求 ID，在主站账单里查得到。
+            主站账号直接登录。每张图都带请求 ID，在主站的用量记录里查得到。
           </p>
           <PromptBox
             ref={ref}
@@ -159,7 +159,7 @@ function Floor() {
 
 const FACTS = [
   { label: "个账号", note: "主站邮箱和密码登录" },
-  { label: "份余额", note: "按次计费，账单可查" },
+  { label: "份余额", note: "和主站共用" },
   { label: "次请求", note: "只发一次，不自动重发" },
 ];
 

@@ -135,7 +135,7 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
           ...mapGatewayError({ status: 400, body: { code: "safety_filter" } }),
           billing: "unknown",
           userMessage:
-            "内容未通过审核，主站可能已计费，请修改提示词，并到主站用量页核对",
+            "内容未通过审核，请修改提示词，并到主站用量页核对这次的结果",
         });
       let bytes: Buffer;
       if (typeof output.b64_json === "string" && output.b64_json)

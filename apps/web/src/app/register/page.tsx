@@ -32,7 +32,7 @@ export default function RegisterPage() {
         注册在<em className="text-acc not-italic">主站</em>完成
       </h1>
       <p className="mt-3 text-[15px] leading-relaxed text-fg-soft">
-        GGUU AI IMAGE 使用主站账号登录，生成费用从主站余额扣除。先在主站注册并充值，再回来用同一组邮箱和密码登录。
+        GGUU AI IMAGE 使用主站账号登录。先在主站注册并充值，再回来用同一组邮箱和密码登录。
       </p>
       <div className="mt-8 flex flex-col gap-3">
         {registerUrl ? (

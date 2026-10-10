@@ -219,7 +219,7 @@ describe("image job views", () => {
     );
     expect(view.getAllByText("结果未知，请先核对用量")).toHaveLength(1);
     expect(view.getByText("已生成，但没拿到图片")).toBeInTheDocument();
-    expect(view.getByText("没生成出来，这次不收费")).toBeInTheDocument();
+    expect(view.getByText("没生成出来")).toBeInTheDocument();
   });
 
   it("groups a studio batch in order and offers to cancel only its unsent pictures", () => {

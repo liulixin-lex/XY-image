@@ -55,7 +55,7 @@ export function AccountTab() {
 
       <SettingsSection
         title="余额"
-        description="生图和对话都从主站余额支付，价格由主站决定。用量明细以主站为准。"
+        description="余额和用量明细以主站为准。"
       >
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
           <div>

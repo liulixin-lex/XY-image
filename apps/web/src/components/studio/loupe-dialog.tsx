@@ -80,7 +80,7 @@ export function LoupeDialog({
               <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
                 <div>
                   <DialogTitle className="sr-only">作品详情</DialogTitle>
-                  <DialogDescription className="sr-only">描述、参数与计费信息</DialogDescription>
+                  <DialogDescription className="sr-only">描述、参数与状态</DialogDescription>
                   <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-fg">
                     {job.prompt || "（无描述）"}
                   </p>
@@ -156,7 +156,7 @@ export function LoupeDialog({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 self-start text-[13px] text-fg-soft underline decoration-line-strong underline-offset-4 hover:text-fg"
                   >
-                    {needsReconcile(job.billing, isActiveJob(job)) ? "去主站核对这一笔" : "在主站用量页查看"}
+                    {needsReconcile(job.billing, isActiveJob(job)) ? "去主站核对" : "在主站用量页查看"}
                     <ArrowUpRightIcon className="size-3.5" />
                   </a>
                 ) : null}

@@ -82,7 +82,7 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
               画布和{BRAND.agentName}
             </h3>
             <p className="mt-3 max-w-[36em] text-[15px] leading-relaxed text-fg-soft">
-              在无限画布上和{BRAND.agentName}聊需求，它会先想好画面，再连续生成、排到画布上；也可以自己用节点连起来：一段描述接到生成，结果排在旁边。每轮最多 6 张，每张单独计费。
+              在无限画布上和{BRAND.agentName}聊需求，它会先想好画面，再连续生成、排到画布上；也可以自己用节点连起来：一段描述接到生成，结果排在旁边。每轮最多 6 张。
             </p>
             <NodeBoard board={board} />
             <ModeLink href={signedIn ? "/projects" : "/login?next=%2Fprojects"}>打开画布</ModeLink>

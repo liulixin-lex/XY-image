@@ -504,8 +504,7 @@ function GeneratorNotice({
       ) : null}
       {partial ? (
         <output className="block text-[12.5px] leading-snug text-fg-soft">
-          只排上了 {partial.queued}/{partial.requested}{" "}
-          张，其余没有发出，不收费。
+          只排上了 {partial.queued}/{partial.requested} 张，其余没有发出。
         </output>
       ) : null}
       {status ? (
@@ -526,11 +525,7 @@ function GeneratorNotice({
         <p className="text-[12px] leading-snug text-fg-muted">
           {blockedReason}
         </p>
-      ) : (
-        <p className="text-[12px] leading-snug text-fg-muted">
-          按次从主站余额支付
-        </p>
-      )}
+      ) : null}
     </>
   );
 }
