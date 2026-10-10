@@ -13,7 +13,7 @@ export const BRAND = {
   /** The outlined tag that follows `short` in the wordmark. */
   tag: "AI IMAGE",
   /** One-line description for metadata and the landing page. */
-  tagline: "想到什么，就生成什么。主站账号直接登录，按次从主站余额扣费。",
+  tagline: "想到什么，就生成什么。主站账号直接登录，按次从主站余额支付。",
   /** Name of the design agent inside the canvas. */
   agentName: "设计助手",
 } as const;

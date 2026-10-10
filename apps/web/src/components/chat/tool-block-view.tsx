@@ -452,7 +452,7 @@ function imagePendingNotice(
   if (output?.pending === "storage") {
     return {
       title: "图片已生成，正在保存",
-      message: "这张已经扣费，不用重新生成。保存好后会自动放到画布上。",
+      message: "这张已经生成，正在保存，好了会自动放到画布上，不用重新生成。",
     };
   }
   if (typeof output?.error === "string" && /timed out/i.test(output.error)) {

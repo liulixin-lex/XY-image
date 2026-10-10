@@ -189,9 +189,9 @@ export function describeOutcome(job: ImageJobView): JobOutcome {
     ? describeIssue(job.errorCode ?? "upstream_unknown", job.errorMessage)
     : null;
   if (needsReconcile(job.billing) || (issue?.maybeCharged && !isBillingSettled(job.billing)))
-    return { tone: "unknown", title: "结果未知，可能已扣费" };
-  if (job.billing === "not_charged") return { tone: "not_charged", title: "没生成出来，这次没有扣费" };
-  if (job.billing === "charged") return { tone: "charged_failed", title: "主站已扣费，但没拿到图片" };
+    return { tone: "unknown", title: "结果未知，请先核对用量" };
+  if (job.billing === "not_charged") return { tone: "not_charged", title: "没生成出来，这次不收费" };
+  if (job.billing === "charged") return { tone: "charged_failed", title: "已生成，但没拿到图片" };
   return { tone: "failed", title: issue?.title ?? "生成失败" };
 }
 

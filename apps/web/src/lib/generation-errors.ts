@@ -35,7 +35,7 @@ export type IssueSpec = {
 const CATALOG: Record<string, IssueSpec> = {
   insufficient_balance: {
     title: "主站余额不足",
-    message: "这次没有发出生成请求，也没有扣费。充值后回到这里重新提交。",
+    message: "这次没有发出生成请求，不收费。充值后回到这里重新提交。",
     action: "recharge",
     weight: "dialog",
     maybeCharged: false,
@@ -135,15 +135,15 @@ const CATALOG: Record<string, IssueSpec> = {
     maybeCharged: false,
   },
   upstream_unknown: {
-    title: "请求中断，可能已扣费",
-    message: "图片可能已经生成并扣费。请先到主站用量页核对，确认后再决定是否重新提交。",
+    title: "请求中断，结果待核对",
+    message: "图片可能已经生成。请先到主站用量页核对，确认后再决定是否重新提交。",
     action: "usage",
     weight: "dialog",
     maybeCharged: true,
   },
   storage_failed: {
     title: "图片已生成，但保存失败",
-    message: "主站很可能已经扣费。请联系管理员，并到主站用量页核对这一笔。",
+    message: "请联系管理员，并到主站用量页核对这一笔。",
     action: "usage",
     weight: "dialog",
     maybeCharged: true,
@@ -153,7 +153,7 @@ const CATALOG: Record<string, IssueSpec> = {
   // and nothing to resubmit, so not maybeCharged.
   storage_retrying: {
     title: "图片已生成，正在保存",
-    message: "这张已经扣费。保存成功后会出现在生成记录里，不用重新提交。",
+    message: "这张已经生成。保存成功后会出现在生成记录里，不用重新提交。",
     action: "none",
     weight: "toast",
     maybeCharged: false,

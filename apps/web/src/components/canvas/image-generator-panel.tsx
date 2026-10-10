@@ -603,7 +603,7 @@ function PanelNotice({
   if (state.kind === "stale") {
     return (
       <Notice tone="warn">
-        上次生成在页面关闭前没有返回结果，可能已经扣费。先到
+        上次生成在页面关闭前没有返回结果，可能已经生成。先到
         <Link href="/studio" className="mx-0.5 underline underline-offset-2">生图</Link>
         核对生成记录，再决定是否重新生成。
       </Notice>
@@ -622,7 +622,7 @@ function PanelNotice({
     return (
       <Notice tone="error">
         <span className="font-semibold">{state.spec.title}</span>
-        <span className="ml-1">{state.spec.maybeCharged ? "可能已扣费，请先核对再重试。" : state.spec.message}</span>
+        <span className="ml-1">{state.spec.maybeCharged ? "可能已经生成，请先核对再重试。" : state.spec.message}</span>
       </Notice>
     );
   }

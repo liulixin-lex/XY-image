@@ -38,13 +38,13 @@ describe("ToolBlockView", () => {
           toolName: "generate_image",
           status: "completed",
           input: { model: "gemini-3-pro-image", prompt: "面料特写" },
-          output: { error: "主站余额不足，这张没有生成，也没有扣费" },
+          output: { error: "主站余额不足，这张没有生成，不收费" },
         }}
       />,
     );
 
     expect(screen.getAllByText("图片生成失败")).toHaveLength(1);
-    expect(screen.getAllByText("主站余额不足，这张没有生成，也没有扣费")).toHaveLength(1);
+    expect(screen.getAllByText("主站余额不足，这张没有生成，不收费")).toHaveLength(1);
     // The generic "生成图片 / error: …" card no longer duplicates it.
     expect(screen.queryByText("生成图片")).not.toBeInTheDocument();
     expect(screen.getByText("Gemini 3 Pro Image")).toBeInTheDocument();
@@ -52,9 +52,9 @@ describe("ToolBlockView", () => {
 
   it.each([
     [
-      { error: "图片已生成并扣费，正在重新保存", pending: "storage", jobId: "j1" },
+      { error: "图片已生成，正在重新保存", pending: "storage", jobId: "j1" },
       "图片已生成，正在保存",
-      "这张已经扣费，不用重新生成。保存好后会自动放到画布上。",
+      "这张已经生成，正在保存，好了会自动放到画布上，不用重新生成。",
     ],
     [
       { error: "Job timed out after 660s", jobId: "j1" },

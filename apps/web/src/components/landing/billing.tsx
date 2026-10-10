@@ -1,6 +1,5 @@
 import { KeyRoundIcon, ReceiptTextIcon, WalletIcon } from "lucide-react";
 
-import { BillingBadge } from "../billing/billing-badge";
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
 
 const FACTS = [
@@ -11,13 +10,13 @@ const FACTS = [
   },
   {
     icon: WalletIcon,
-    title: "按次从主站余额扣费",
-    body: "没有积分，也没有套餐。价格按你的 Key 所在分组计算，直接从主站美元余额里扣。",
+    title: "按次计费，从主站余额支付",
+    body: "没有积分，也没有套餐。价格按你的 Key 所在分组计算，直接用主站的美元余额支付。",
   },
   {
     icon: ReceiptTextIcon,
     title: "每一笔都查得到",
-    body: "每张图都带主站请求 ID。连接中断时会标成「待核对」，不会自动重发，也不会当成没扣费。",
+    body: "每张图都带主站请求 ID。连接中断时会标成「待核对」，不会自动重发，等你核对后再决定。",
   },
 ];
 
@@ -72,10 +71,6 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
                 <dd className="text-right text-fg">GPT Image 2</dd>
                 <dt className="text-fg-muted">尺寸</dt>
                 <dd className="text-right text-fg tabular">2K · {sample.ratio}</dd>
-                <dt className="text-fg-muted">扣费</dt>
-                <dd className="text-right">
-                  <BillingBadge status="charged" />
-                </dd>
                 <dt className="text-fg-muted">请求 ID</dt>
                 <dd className="truncate text-right font-mono text-[12px] text-fg">req_4c1e9a07…b2</dd>
               </dl>

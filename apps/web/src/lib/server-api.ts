@@ -583,7 +583,7 @@ export async function generateImageDirect(
     console.error("[generate-image] request interrupted", error);
     throw new ApiApplicationError(
       "upstream_unknown",
-      "连接中断，图片可能已生成并扣费，请先到主站用量页核对",
+      "连接中断，图片可能已经生成，请先到主站用量页核对",
     );
   }
   if (!response.ok) return handleErrorResponse(response);

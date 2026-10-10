@@ -113,7 +113,6 @@ function BatchBlock({
 }) {
   const { lead, jobs } = group;
   const done = jobs.filter((job) => job.status === "succeeded").length;
-  const charged = jobs.filter((job) => job.billing === "charged").length;
   const toCheck = jobs.filter((job) => describeOutcome(job).tone === "unknown").length;
   const unsent = jobs.filter(isUnsentJob);
   const active = jobs.some(isActiveJob);
@@ -161,7 +160,6 @@ function BatchBlock({
               active || toCheck || done < group.size
                 ? `已完成 ${done}/${group.size}`
                 : formatWhen(lead.createdAt),
-              charged ? `已扣费 ${charged} 张` : null,
               toCheck ? `待核对 ${toCheck} 张` : null,
             ]
               .filter(Boolean)
@@ -385,7 +383,7 @@ function Placeholder({
     return (
       <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-ok-wash px-4 text-center">
         <span className="font-display text-[17px] text-fg">{outcome.title}</span>
-        <span className="text-[12px] leading-relaxed text-fg-soft">已经扣费，存好后会出现在这里，不用重新提交</span>
+        <span className="text-[12px] leading-relaxed text-fg-soft">已经生成好了，存好后会出现在这里，不用重新提交</span>
       </div>
     );
   }

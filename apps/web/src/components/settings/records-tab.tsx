@@ -146,7 +146,6 @@ export function RecordsTab() {
                   <th scope="col" className="px-4 py-2.5 font-normal">提示词</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">模型 · 规格</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">状态</th>
-                  <th scope="col" className="px-4 py-2.5 font-normal">计费</th>
                   <th scope="col" className="px-4 py-2.5 font-normal">请求 ID</th>
                 </tr>
               </thead>
@@ -178,9 +177,11 @@ export function RecordsTab() {
                         {modelName(job.model)}
                         <span className="text-fg-muted"> · {describeImageParams(job)}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-fg">{isSavingJob(job) ? "保存中" : STATUS[job.status]}</td>
-                      <td className="px-4 py-3">
-                        <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                      <td className="px-4 py-3 whitespace-nowrap text-fg">
+                        <span className="inline-flex items-center gap-2">
+                          {isSavingJob(job) ? "保存中" : STATUS[job.status]}
+                          <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {job.requestId ? (

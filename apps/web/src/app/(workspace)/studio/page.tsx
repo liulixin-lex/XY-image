@@ -156,7 +156,7 @@ export default function StudioPage() {
   const cancelBatch = useCallback(
     async (batchId: string) => {
       const canceled = await studio.cancelBatch(batchId);
-      if (canceled > 0) success(`已取消 ${canceled} 张，没有发出，也没有扣费`);
+      if (canceled > 0) success(`已取消 ${canceled} 张，都还没发出，不收费`);
       else toast("没有可以取消的了：剩下的已经发出，会生成完");
     },
     [studio, success, toast],
@@ -297,7 +297,7 @@ function EmptyFeed({ onPick }: { onPick: (item: ShowcaseItem) => void }) {
         从一句<em className="text-acc not-italic">描述</em>开始
       </h2>
       <p className="mt-3 max-w-[36em] text-[15px] leading-relaxed text-fg-soft">
-        在左边写好描述，选比例、画质和张数，点「生成」。每次生成的图会排在这里，每张都标着是否扣费和请求 ID。
+        在左边写好描述，选比例、画质和张数，点「生成」。每次生成的图会排在这里，每张都带主站请求 ID，可以在主站用量页查到。
       </p>
       <ul className="mt-9 grid grid-cols-2 gap-x-4 gap-y-7 md:grid-cols-4">
         {SUGGESTIONS.map((item) => (

@@ -217,9 +217,9 @@ describe("image job views", () => {
         actions={noActions}
       />,
     );
-    expect(view.getAllByText("结果未知，可能已扣费")).toHaveLength(1);
-    expect(view.getByText("主站已扣费，但没拿到图片")).toBeInTheDocument();
-    expect(view.getByText("没生成出来，这次没有扣费")).toBeInTheDocument();
+    expect(view.getAllByText("结果未知，请先核对用量")).toHaveLength(1);
+    expect(view.getByText("已生成，但没拿到图片")).toBeInTheDocument();
+    expect(view.getByText("没生成出来，这次不收费")).toBeInTheDocument();
   });
 
   it("groups a studio batch in order and offers to cancel only its unsent pictures", () => {

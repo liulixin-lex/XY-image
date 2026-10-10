@@ -121,7 +121,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
           <span className="max-w-[18em] text-[11.5px] leading-snug text-fg-soft">
             {live
               ? name ?? "请求已发往主站"
-              : "页面刷新前没有返回结果，可能已扣费。选中它查看说明。"}
+              : "页面刷新前没有返回结果，可能已经生成。选中它查看说明。"}
           </span>
         ) : null}
       </div>

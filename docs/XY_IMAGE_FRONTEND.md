@@ -27,7 +27,7 @@
 - **会话**：`lib/auth-context.tsx`。所有受保护请求一旦返回 401，就调用 `emitAuthExpired()`（`lib/server-api.ts`）。AuthProvider 对同一次过期只处理一次：本地退出（`signOut({ scope: "local" })`），然后跳转到 `/login?reason=expired`。WebSocket 连续两次以 4001 关闭也走同一个事件（`hooks/use-websocket.ts`）。页面里不要自己调用 `signOut` 处理 401。
 - **账户**：`lib/account-context.tsx` 统一提供账户、余额、Key、图像模型和对话模型。生成结束后调用 `notifyGenerationSettled()` 刷新余额。`balance === null` 表示读不到，界面要显示「暂不可读」或「未选择 Key」，不能显示 `$0`。
 - **错误**：`lib/generation-errors.ts` 是错误码目录，`components/issues/issue-provider.tsx` 负责路由。余额不足、Key 不可用、「可能已扣费」这类阻断性问题弹对话框，并只给一个能解决问题的动作（充值、去设置、去主站用量页）；临时性问题用 toast。调用方只需 `report(error)` 或 `reportCode(code, message)`，不要自己写这类文案。
-- **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中表示「结算中」，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。已扣费但 Storage 暂时写不进去的任务是 `queued` 加 `error_code = storage_retrying`：`isSavingJob` 为真，界面显示「保存中」，不能取消，不占并发名额（`busyCount`），本页提交的任务会弹一次提示；服务端补传成功后自动变成已完成（服务端 M6）。
+- **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中只是还没结算，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。界面只用 `billingFlag` 标两种：「待核对」和「未发出」，`charged` / `not_charged` 不显示标签（见下面第 7 条）。已扣费但 Storage 暂时写不进去的任务是 `queued` 加 `error_code = storage_retrying`：`isSavingJob` 为真，界面显示「保存中」，不能取消，不占并发名额（`busyCount`），本页提交的任务会弹一次提示；服务端补传成功后自动变成已完成（服务端 M6）。
 - **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 id（主站 `openai:<model>`，自己的服务商 `custom:<providerId>:<model>`），为空表示用设置里的默认；列表里已经没有的 id（换了 Key、服务商停用或删除）会自动回到默认。
 
 ## 计费安全规则（改代码前必读）
@@ -38,6 +38,7 @@
 4. **画质和质量是两个参数：** 画质是输出尺寸档位 1K / 2K / 4K，主站按档计价；质量是 自动 / 低 / 中 / 高，自动表示不传、由厂商决定。每个模型能选什么来自 `/api/image-models` 的 `resolutions`、`qualities`、`aspectRatios`、`maxRatio`（旧服务器只发 `maxQuality` 时由 `lib/image-model-meta.ts` 补齐）。前端和后端都用 `@loomic/shared` 的 `resolveImageParams` 算实际发送值，所以界面显示的就是会发出去的；比如 OpenAI 的 16:9 在 1K 做不出来（见 `maxRatio`），1K 会禁用并按 2K 发送。旧记录的 `quality: standard / hd / ultra` 按 `LEGACY_IMAGE_PARAMS` 读成 1K 低 / 2K 中 / 4K 自动，显示时质量为空。没有视频、积分和支付入口。
 5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）。10-09 起不再写工作区设置（运行时已改读账户偏好，`model-resolver.ts`）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
 6. **自己的服务商不走主站计费。** 用自定义服务商对话时费用由服务商收取，不从主站余额扣，界面要写明；`provider_*` 错误码一律 `maybeCharged: false`，文案不对服务商那边的扣费下任何结论。生图（生图页、画布生图、助手的生图工具）仍然只走主站。
+7. **界面不出现「已扣费」这类文案**（用户 2026-10-10）。成功的图不标计费状态，失败的写原因（「没生成出来，这次不收费」）；可能已生成的写「结果待核对」「图片可能已经生成」，并给主站用量页入口。描述价格时用「按次从主站余额支付」「按次计费」。服务端 `gatewayMessages`（`apps/server/src/features/xy2api/errors.ts`）会直接显示给用户，同样遵守；设计助手的系统提示也要求它不说「已扣费」。
 
 ## 自定义对话模型服务商
 

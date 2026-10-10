@@ -307,7 +307,7 @@ export const Composer = forwardRef<
     setBeforeRewrite(null);
     if (result.queued < result.requested)
       toast(
-        `排上了 ${result.queued} 张，另外 ${result.requested - result.queued} 张没有发出，也没有扣费。`,
+        `排上了 ${result.queued} 张，另外 ${result.requested - result.queued} 张没有发出，不收费。`,
       );
   };
 
@@ -602,7 +602,7 @@ export const Composer = forwardRef<
           ) : count > MAX_IN_FLIGHT ? (
             `每张单独计费。同时最多发出 ${MAX_IN_FLIGHT} 张，其余排队，还没发出的可以取消。`
           ) : (
-            "按次从主站余额扣费。每次请求只发一次，失败不会自动重发。"
+            "按次从主站余额支付。每次请求只发一次，失败不会自动重发。"
           )}
         </p>
       </div>

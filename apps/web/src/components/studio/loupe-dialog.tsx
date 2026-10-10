@@ -105,7 +105,10 @@ export function LoupeDialog({
 
                 <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5 text-[13px]">
                   <dt className="text-fg-muted">状态</dt>
-                  <dd className="text-fg">{jobStatusLabel(job)}</dd>
+                  <dd className="flex items-center gap-2 text-fg">
+                    {jobStatusLabel(job)}
+                    <BillingBadge status={job.billing} active={isActiveJob(job)} />
+                  </dd>
                   <dt className="text-fg-muted">模型</dt>
                   <dd className="text-fg">{modelName}</dd>
                   <dt className="text-fg-muted">规格</dt>
@@ -128,10 +131,6 @@ export function LoupeDialog({
                   <dt className="text-fg-muted">提交时间</dt>
                   <dd className="text-fg tabular">
                     {new Date(job.createdAt).toLocaleString("zh-CN", { hour12: false })}
-                  </dd>
-                  <dt className="text-fg-muted">计费</dt>
-                  <dd>
-                    <BillingBadge status={job.billing} active={isActiveJob(job)} />
                   </dd>
                   <dt className="text-fg-muted">请求 ID</dt>
                   <dd className="min-w-0">
