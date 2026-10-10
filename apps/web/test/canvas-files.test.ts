@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildFilesPayload,
   forgetStoredFiles,
-  loadCanvasFiles,
   markFilesStored,
   resetStoredFiles,
 } from "../src/lib/canvas-files";
@@ -53,46 +52,6 @@ describe("canvas save payload", () => {
     expect(buildFilesPayload("c2", { f: file("f") }).sentWithData).toEqual([
       "f",
     ]);
-  });
-});
-
-describe("loading canvas files", () => {
-  it("keeps inline files and reads stored ones as data URLs", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    // A plain stub: Node's Response does not take jsdom's Blob.
-    const fetchImpl = vi.fn(async (url: string) =>
-      url.endsWith("/gone.png")
-        ? { ok: false, status: 404 }
-        : {
-            ok: true,
-            status: 200,
-            blob: async () => new Blob(["png"], { type: "image/png" }),
-          },
-    );
-    const loaded = await loadCanvasFiles(
-      {
-        inline: {
-          id: "inline",
-          dataURL: PNG,
-          mimeType: "image/png",
-          created: 5,
-        },
-        stored: { id: "stored", storageUrl: "https://db.test/a/stored.png" },
-        gone: { id: "gone", storageUrl: "https://db.test/a/gone.png" },
-        empty: { id: "empty" },
-      },
-      fetchImpl as unknown as typeof fetch,
-    );
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(loaded.map((f) => f.id)).toEqual(["inline", "stored"]);
-    expect(loaded[0]).toEqual({
-      id: "inline",
-      dataURL: PNG,
-      mimeType: "image/png",
-      created: 5,
-    });
-    expect(loaded[1]?.mimeType).toBe("image/png");
-    expect(loaded[1]?.dataURL).toMatch(/^data:image\/png;base64,/);
   });
 });
 

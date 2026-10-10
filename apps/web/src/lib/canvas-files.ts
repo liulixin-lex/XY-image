@@ -1,11 +1,11 @@
 /**
- * Canvas image files between Excalidraw and the server.
+ * Canvas image files between the node canvas and the server.
  *
  * The server keeps canvas images in Supabase Storage and returns them with a
- * `storageUrl` instead of a data URL; Excalidraw needs data URLs, so they are
- * fetched here. A save sends each file's data once: files the server already
- * has go without `dataURL` and the server keeps its stored copy. When an image
- * still uses a file the server has no data for, the save answer lists it in
+ * `storageUrl` instead of a data URL; the canvas shows them from that URL. A
+ * save sends each file's data once: files the server already has go without
+ * `dataURL` and the server keeps its stored copy. When an image still uses a
+ * file the server has no data for, the save answer lists it in
  * `missingFileIds` and the editor sends it again with its data.
  */
 
@@ -15,13 +15,6 @@ export type ServerCanvasFile = {
   mimeType?: unknown;
   created?: unknown;
   storageUrl?: unknown;
-};
-
-export type ExcalidrawFile = {
-  id: string;
-  dataURL: string;
-  mimeType: string;
-  created: number;
 };
 
 type SceneFile = {
@@ -86,59 +79,4 @@ export function buildFilesPayload(
     files[id] = entry;
   }
   return { files, sentWithData };
-}
-
-/**
- * Turns the server's files into Excalidraw files: inline data URLs as they
- * are, storage URLs fetched and read as data URLs. Files that fail to load are
- * left out (the image shows as missing; the server still has it).
- */
-export async function loadCanvasFiles(
-  files: Record<string, ServerCanvasFile>,
-  fetchImpl: typeof fetch = fetch,
-): Promise<ExcalidrawFile[]> {
-  const loaded = await Promise.all(
-    Object.entries(files).map(async ([fileId, file]) => {
-      const base = {
-        id: typeof file.id === "string" ? file.id : fileId,
-        mimeType: typeof file.mimeType === "string" ? file.mimeType : "",
-        created: typeof file.created === "number" ? file.created : Date.now(),
-      };
-      if (
-        typeof file.dataURL === "string" &&
-        file.dataURL.startsWith("data:")
-      ) {
-        return { ...base, dataURL: file.dataURL };
-      }
-      if (typeof file.storageUrl !== "string" || !file.storageUrl) return null;
-      try {
-        const response = await fetchImpl(file.storageUrl);
-        if (!response.ok) {
-          console.warn(
-            `[canvas-files] file ${fileId} not loaded: ${response.status}`,
-          );
-          return null;
-        }
-        const blob = await response.blob();
-        return {
-          ...base,
-          mimeType: base.mimeType || blob.type,
-          dataURL: await readAsDataURL(blob),
-        };
-      } catch (error) {
-        console.warn(`[canvas-files] file ${fileId} not loaded:`, error);
-        return null;
-      }
-    }),
-  );
-  return loaded.filter((file): file is ExcalidrawFile => file !== null);
-}
-
-function readAsDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
 }
