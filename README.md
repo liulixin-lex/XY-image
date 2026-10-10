@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-10，v0.0.2）：功能开发完成。** 本版换成 F2 海报·柔和版视觉（亮暗两套主题），加了节点式画布、一次多张、提示词优化、1K/2K/4K 画质和局部重绘 / 扩图。整套服务（自建 Supabase、API、Worker、前端、TLS 边缘）已在实验环境里跑通，上游用模拟服务，不产生费用；浏览器端到端、双用户隔离、计费、重启和故障、手机和容量演练都已通过。**还没有和真实主站联调，也没有部署到生产。** 本版的最终报告和上线前要做的事见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-10，v0.0.3）：功能开发完成。** 本版让前端更流畅，布局和设计不变：正文中文改用系统字体，开启 React Compiler，动效只交给合成器，没有显卡加速的电脑自动关掉背景模糊，生图列表改用缩略图。首页示例条 12 张都能滑到。上一版 v0.0.2 换成了 F2 海报·柔和版视觉（亮暗两套主题），加了节点式画布、一次多张、提示词优化、1K/2K/4K 画质和局部重绘 / 扩图。整套服务（自建 Supabase、API、Worker、前端、TLS 边缘）已在实验环境里跑通，上游用模拟服务，不产生费用；浏览器端到端、双用户隔离、计费、重启和故障、手机和容量演练都已通过。**还没有和真实主站联调，也没有部署到生产。** 本版的最终报告和上线前要做的事见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -42,8 +42,8 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 532 项
-pnpm --filter @loomic/web test    # 225 项
+pnpm --filter @loomic/server test # 536 项
+pnpm --filter @loomic/web test    # 231 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
 pnpm test:selfhost                # 16 项通过，1 项跳过
