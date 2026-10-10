@@ -20,6 +20,7 @@ import type {
   ImageProvider,
 } from "../types.js";
 import {
+  beforeSending,
   editPrompt,
   frameFor,
   openaiMaskPng,
@@ -144,6 +145,12 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         return response;
       },
     });
+    // Built before the try: a failure while preparing an edit sends nothing.
+    const editInputs = params.edit
+      ? await beforeSending("xy2api-openai", () =>
+          maskEditInputs(params, resolved.aspectRatio, ctx),
+        )
+      : null;
     try {
       const request = {
         model: params.model,
@@ -159,12 +166,9 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
           ? { output_compression: this.env.imageOutputCompression }
           : {}),
       };
-      const result = await (params.edit
+      const result = await (editInputs
         ? client.images.edit(
-            {
-              ...request,
-              ...(await maskEditInputs(params, resolved.aspectRatio, ctx)),
-            },
+            { ...request, ...editInputs },
             { signal: ctx.signal },
           )
         : params.inputImages?.length
