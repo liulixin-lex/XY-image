@@ -1,41 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+
+import type { NodeCanvasStore } from "../lib/node-canvas/store";
 
 type CanvasEmptyHintProps = {
-  excalidrawApi: any;
+  /** The node canvas store; null while the editor mounts. */
+  store: NodeCanvasStore | null;
   onOpenChat: () => void;
 };
 
+const idle = () => () => {};
+
 /**
- * Floating overlay hint shown when the Excalidraw canvas has no visible
- * elements. Pressing the `C` key opens the chat sidebar and focuses the
- * chat input textarea.
+ * Floating overlay hint shown while the board is empty. Pressing the `C` key
+ * opens the chat sidebar and focuses the chat input textarea.
  */
-export function CanvasEmptyHint({
-  excalidrawApi,
-  onOpenChat,
-}: CanvasEmptyHintProps) {
-  const [hasElements, setHasElements] = useState(false);
+export function CanvasEmptyHint({ store, onOpenChat }: CanvasEmptyHintProps) {
+  // Unknown (no store yet) counts as not empty: no hint flashes on open.
+  const hasElements = useSyncExternalStore(
+    store ? store.subscribe : idle,
+    () => (store ? store.getState().scene.nodes.length > 0 : true),
+    () => true,
+  );
   const onOpenChatRef = useRef(onOpenChat);
   onOpenChatRef.current = onOpenChat;
-
-  // Poll the Excalidraw API every 500ms to determine if the canvas contains
-  // any non-deleted elements.
-  useEffect(() => {
-    function check() {
-      if (!excalidrawApi) {
-        setHasElements(false);
-        return;
-      }
-      const elements: any[] = excalidrawApi.getSceneElements?.() ?? [];
-      setHasElements(elements.some((el: any) => !el.isDeleted));
-    }
-
-    check();
-    const id = setInterval(check, 500);
-    return () => clearInterval(id);
-  }, [excalidrawApi]);
 
   // Global keydown listener for the `C` shortcut.
   useEffect(() => {
@@ -64,9 +53,7 @@ export function CanvasEmptyHint({
             // Sidebar might animate open; retry once more.
             setTimeout(() => {
               document
-                .querySelector<HTMLTextAreaElement>(
-                  "textarea[data-chat-input]",
-                )
+                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
                 ?.focus();
             }, 100);
           }
@@ -89,10 +76,14 @@ export function CanvasEmptyHint({
         <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-frame glass px-1.5 font-mono text-xs text-fg-soft shadow-subtle">
           C
         </kbd>
-        把想法告诉助手，或用底部工具栏的「生成」直接出图
+        把想法告诉助手，或按
+        <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-frame glass px-1.5 font-mono text-xs text-fg-soft shadow-subtle">
+          G
+        </kbd>
+        放一个生成节点直接出图
       </p>
       <p className="max-w-xs text-center text-sm leading-relaxed text-fg-muted md:pointer-fine:hidden">
-        点右上角的对话按钮把想法告诉助手，或用底部工具栏的「生成」直接出图
+        点右上角的对话按钮把想法告诉助手，或用左边工具栏的「生成节点」直接出图
       </p>
     </div>
   );

@@ -114,6 +114,7 @@ import {
   ZOOM_LIMITS,
   ZoomBar,
 } from "./canvas-chrome";
+import { type CanvasPanel, FilesPanel, LayersPanel } from "./canvas-panels";
 import { type NodeCanvasActions, NodeCanvasProvider } from "./context";
 import { FlowEdge } from "./flow-edge";
 import { GeneratorNode } from "./generator-node";
@@ -122,6 +123,9 @@ import { PendingNode } from "./pending-node";
 import { PROMPT_WIDTH, PromptNode } from "./prompt-node";
 
 const SAVE_DEBOUNCE_MS = 1500;
+/** A failed save is tried again after this, doubling up to the max. */
+const SAVE_RETRY_MS = 5000;
+const SAVE_RETRY_MAX_MS = 60_000;
 /** Resends per file after the server reports it missing (see persist). */
 const MAX_FILE_RESENDS = 2;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
@@ -187,10 +191,6 @@ type NodeCanvasEditorProps = {
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
   /** Fetch the server's copy and merge it (store.mergeRemote). */
   onSyncRequest?: () => void;
-  layersOpen?: boolean;
-  filesOpen?: boolean;
-  onToggleLayers?: () => void;
-  onToggleFiles?: () => void;
 };
 
 export function NodeCanvasEditor(props: NodeCanvasEditorProps) {
@@ -270,10 +270,6 @@ function EditorInner({
   onReady,
   onSelectionChange,
   onSyncRequest,
-  layersOpen,
-  filesOpen,
-  onToggleLayers,
-  onToggleFiles,
 }: NodeCanvasEditorProps) {
   const theme = useCanvasTheme();
   const flow = useReactFlow<SceneNode, SceneEdge>();
@@ -328,6 +324,12 @@ function EditorInner({
     store.getState,
   );
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [panel, setPanel] = useState<CanvasPanel | null>(null);
+  const togglePanel = useCallback(
+    (next: CanvasPanel) => setPanel((open) => (open === next ? null : next)),
+    [],
+  );
+  const closePanel = useCallback(() => setPanel(null), []);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -345,6 +347,9 @@ function EditorInner({
   const resendCounts = useRef(new Map<string, number>());
   const saveInFlight = useRef(false);
   const saveAgain = useRef(false);
+  const saveFailures = useRef(0);
+  // False once the editor is gone: a failed final flush is not retried.
+  const mounted = useRef(true);
 
   const buildPayload = useCallback((): SavePayload | null => {
     const elements = store.elements();
@@ -419,10 +424,24 @@ function EditorInner({
     try {
       await persist(payload);
       savedRevision.current = Math.max(savedRevision.current, revision);
+      saveFailures.current = 0;
       store.markSaved(revision);
     } catch (error) {
-      console.error("[node-canvas] save failed:", error);
+      // Saving is free and idempotent (versions decide), so it is retried
+      // with backoff until it lands; the header shows it is not saved yet.
+      const delay = Math.min(
+        SAVE_RETRY_MAX_MS,
+        SAVE_RETRY_MS * 2 ** saveFailures.current,
+      );
+      saveFailures.current += 1;
+      console.error(
+        `[node-canvas] save failed (attempt ${saveFailures.current}), retrying in ${delay} ms:`,
+        error,
+      );
       store.setSaveStatus("error");
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (mounted.current)
+        saveTimer.current = setTimeout(() => void saveNow(), delay);
     } finally {
       saveInFlight.current = false;
     }
@@ -498,8 +517,10 @@ function EditorInner({
         // Best effort during teardown.
       }
     };
+    mounted.current = true;
     window.addEventListener("beforeunload", flushOnUnload);
     return () => {
+      mounted.current = false;
       window.removeEventListener("beforeunload", flushOnUnload);
       if (thumbTimer.current) clearTimeout(thumbTimer.current);
       if (store.revision !== savedRevision.current) void flushRef.current();
@@ -1085,10 +1106,10 @@ function EditorInner({
               onCreate={create}
               onUndo={() => store.undo()}
               onRedo={() => store.redo()}
-              layersOpen={layersOpen}
-              filesOpen={filesOpen}
-              onToggleLayers={onToggleLayers}
-              onToggleFiles={onToggleFiles}
+              layersOpen={panel === "layers"}
+              filesOpen={panel === "files"}
+              onToggleLayers={() => togglePanel("layers")}
+              onToggleFiles={() => togglePanel("files")}
             />
           </Panel>
           <MiniMap
@@ -1104,6 +1125,11 @@ function EditorInner({
             <ZoomBar />
           </Panel>
         </ReactFlow>
+        {panel === "layers" ? (
+          <LayersPanel onClose={closePanel} onPick={handle.focusElement} />
+        ) : panel === "files" ? (
+          <FilesPanel onClose={closePanel} onPick={handle.focusElement} />
+        ) : null}
         <input
           ref={fileInputRef}
           type="file"

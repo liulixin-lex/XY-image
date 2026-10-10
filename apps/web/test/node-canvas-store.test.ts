@@ -64,6 +64,27 @@ function makeStore(
 }
 
 describe("node canvas store", () => {
+  it("a locked node can't be dragged or deleted, and unlocking is undoable", () => {
+    const store = makeStore([prompt, reference]);
+    store.setLocked("ref1", true);
+    const node = store.scene.nodes.find((n) => n.id === "ref1");
+    expect(node).toMatchObject({ draggable: false, deletable: false });
+    expect(store.element("ref1")).toMatchObject({ locked: true, version: 2 });
+
+    store.removeElements(["ref1"]);
+    expect(store.element("ref1")?.isDeleted).not.toBe(true);
+
+    store.setLocked("ref1", false);
+    const unlocked = store.scene.nodes.find((n) => n.id === "ref1");
+    expect(unlocked?.draggable).toBeUndefined();
+    expect(unlocked?.deletable).toBeUndefined();
+    store.undo();
+    expect(store.scene.nodes.find((n) => n.id === "ref1")).toMatchObject({
+      draggable: false,
+      deletable: false,
+    });
+  });
+
   it("a drag is one undo step and one new version, saved once it ends", () => {
     const store = makeStore([prompt]);
     store.onNodesChange([

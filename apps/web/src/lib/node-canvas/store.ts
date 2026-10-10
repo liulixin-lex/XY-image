@@ -26,7 +26,7 @@ import {
   elementsToScene,
   sceneToElements,
 } from "./adapter";
-import { createElement, deleteElement, jobIdOf } from "./element";
+import { bumpElement, createElement, deleteElement, jobIdOf } from "./element";
 import { type GeneratorJob, readGenerator, updateGenerator } from "./generator";
 import { SceneHistory } from "./history";
 import { mergeRemoteElements } from "./merge";
@@ -409,6 +409,25 @@ export class NodeCanvasStore {
     nodes[index] = { ...node, data: { ...node.data, el } };
     const record = options.record ?? true;
     this.change({ ...scene, nodes }, record ? this.elements() : null);
+  }
+
+  /** Locks or unlocks an element: a locked node can't be dragged or deleted. */
+  setLocked(id: string, locked: boolean) {
+    const { scene } = this.state;
+    const index = scene.nodes.findIndex((n) => n.id === id);
+    const node = scene.nodes[index];
+    if (!node || node.type === "pending") return;
+    if (Boolean(node.data.el.locked) === locked) return;
+    const { draggable: _d, deletable: _x, ...rest } = node;
+    const el = bumpElement(node.data.el, { locked });
+    const nodes = [...scene.nodes];
+    nodes[index] = {
+      ...rest,
+      ...(locked ? { draggable: false, deletable: false } : {}),
+      data: { ...node.data, el },
+    };
+    this.change({ ...scene, nodes });
+    console.info(`[node-canvas] ${locked ? "locked" : "unlocked"} ${id}`);
   }
 
   /** Start of a text edit: the whole edit is one undo step. */

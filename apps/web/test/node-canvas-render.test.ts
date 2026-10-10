@@ -191,3 +191,62 @@ describe("labelInk", () => {
     expect(labelInk("#e03131", "#ffec99")).toBe("#e03131");
   });
 });
+
+describe("canvas panels", () => {
+  it("names layers plainly and lists only generated pictures", async () => {
+    const { layerLabel, isGeneratedPicture } = await import(
+      "../src/components/node-canvas/canvas-panels"
+    );
+    const node = (
+      type: string,
+      el: Partial<SceneElement>,
+      label?: SceneElement,
+    ) =>
+      ({
+        id: "n",
+        type,
+        position: { x: 0, y: 0 },
+        data: {
+          el: {
+            id: "n",
+            type,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            version: 1,
+            ...el,
+          },
+          ...(label ? { label } : {}),
+        },
+      }) as Parameters<typeof layerLabel>[0];
+    expect(
+      layerLabel(
+        node("generator", {
+          customData: { generator: { prompt: "雨夜街道" } },
+        }),
+      ),
+    ).toBe("生成：雨夜街道");
+    expect(layerLabel(node("generator", {}))).toBe("生成");
+    expect(layerLabel(node("prompt", { text: "  夏日\n柔光  " }))).toBe(
+      "夏日 柔光",
+    );
+    expect(layerLabel(node("shape", { type: "ellipse" }))).toBe("椭圆");
+    expect(layerLabel(node("line", { type: "arrow" }))).toBe("箭头");
+
+    const image = (customData: Record<string, unknown>) =>
+      ({
+        id: "i",
+        type: "image",
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        version: 1,
+        customData,
+      }) as SceneElement;
+    expect(isGeneratedPicture(image({ jobId: "job-1" }))).toBe(true);
+    expect(isGeneratedPicture(image({ source: "generated" }))).toBe(true);
+    expect(isGeneratedPicture(image({}))).toBe(false);
+  });
+});

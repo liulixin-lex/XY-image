@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 
 import type { MessageMention } from "@loomic/shared";
 import { ATTACHMENT_ACCEPT, type ImageAttachmentState } from "../hooks/use-image-attachments";
-import type { CanvasSelectedElement } from "./canvas-editor";
+import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";

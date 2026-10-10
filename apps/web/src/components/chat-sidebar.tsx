@@ -30,7 +30,7 @@ import { useAccount, useImageModels } from "../lib/account-context";
 import { BRAND } from "../lib/brand";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import { fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
-import type { CanvasSelectedElement } from "./canvas-editor";
+import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import {
   type BrandKitMentionItem,
   type CanvasImageItem,
