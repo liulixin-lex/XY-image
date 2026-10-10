@@ -23,6 +23,7 @@ import type {
   SubmitImageJobFn,
 } from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
+import { createToolErrorMiddleware } from "./tool-errors.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 export type LoomicAgent = Pick<
@@ -116,6 +117,9 @@ export function createLoomicDeepAgent(options: {
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
+    // Innermost tool-call middleware: tool errors go back to the model
+    // instead of ending the run (tool-errors.ts).
+    middleware: [createToolErrorMiddleware()],
     model: resolvedModel,
     name: "loomic",
     ...(options.store ? { store: options.store } : {}),

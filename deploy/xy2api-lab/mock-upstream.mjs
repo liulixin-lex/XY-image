@@ -20,6 +20,11 @@
 //   [[mock:imagedelay=20000]]  in a chat message: the generate_image call the
 //                        scripted model makes sleeps that long; the chat reply
 //                        itself is not delayed (stopping a run mid-generation)
+//   [[mock:badtool]]     in a chat message: the scripted model first calls
+//                        generate_image with an argument the tool's schema
+//                        rejects (placementX: "left"), reads the error the
+//                        server hands back, then calls it again correctly
+//                        (a tool argument error must not end the run)
 //
 // TODO(agent01): if xy2api starts forwarding new upstream paths for images
 // (e.g. async/batch variants), add them here and record a fixture in
@@ -281,33 +286,59 @@ function userWords(text) {
     .trim();
 }
 
+function imageCall(lastText, { badArgs = false } = {}) {
+  const imageDelay = Number(directives(lastText).imagedelay);
+  const prompt =
+    (lastText
+      .replace(/\[\[mock:[^\]]*\]\]/g, "")
+      .trim()
+      .slice(0, 400) || "lab image") +
+    (imageDelay > 0 ? ` [[mock:delay=${imageDelay}]]` : "");
+  return {
+    kind: "tool",
+    name: "generate_image",
+    args: {
+      title: prompt.slice(0, 24),
+      prompt,
+      aspectRatio: "1:1",
+      quality: "standard",
+      ...(badArgs ? { placementX: "left" } : {}),
+    },
+  };
+}
+
+// The server's answer when the tool's schema rejected the arguments
+// (apps/server/src/agent/tool-errors.ts).
+const ARGUMENT_ERROR = /参数不符合要求/;
+
 // Decide what the scripted "model" does next: a generate_image tool call when
 // the user asks for an image and the tool is offered, otherwise plain text.
-function planReply({ lastRole, lastText: fullText, toolNames }) {
+// `toolOutputs` are the tool results since the last user message.
+function planReply({ lastRole, lastText: fullText, toolNames, toolOutputs = [] }) {
   const lastText = userWords(fullText);
   if (lastRole === "tool") {
+    const argumentErrors = toolOutputs.filter((t) => ARGUMENT_ERROR.test(t)).length;
+    const lastOutput = toolOutputs.at(-1) ?? "";
+    // Fix the call once, as a model would after reading the error.
+    if (ARGUMENT_ERROR.test(lastOutput) && argumentErrors === 1 && toolNames.includes("generate_image"))
+      return imageCall(lastText);
+    if (ARGUMENT_ERROR.test(lastOutput))
+      return { kind: "text", text: "（模拟上游）工具说参数不对，这次没有出图。" };
     return { kind: "text", text: "（模拟上游）图片已生成，已放到画布上。" };
   }
   if (toolNames.includes("generate_image") && IMAGE_INTENT.test(lastText)) {
-    const imageDelay = Number(directives(lastText).imagedelay);
-    const prompt =
-      (lastText
-        .replace(/\[\[mock:[^\]]*\]\]/g, "")
-        .trim()
-        .slice(0, 400) || "lab image") +
-      (imageDelay > 0 ? ` [[mock:delay=${imageDelay}]]` : "");
-    return {
-      kind: "tool",
-      name: "generate_image",
-      args: {
-        title: prompt.slice(0, 24),
-        prompt,
-        aspectRatio: "1:1",
-        quality: "standard",
-      },
-    };
+    return imageCall(lastText, { badArgs: Boolean(directives(lastText).badtool) });
   }
   return { kind: "text", text: `（模拟上游）收到：${lastText.slice(0, 80)}` };
+}
+
+/** Tool results after the last user message, as text (chat completions). */
+function chatToolOutputs(messages) {
+  const lastUser = messages.findLastIndex((m) => m?.role === "user");
+  return messages
+    .slice(lastUser + 1)
+    .filter((m) => m?.role === "tool")
+    .map((m) => textOf(m.content));
 }
 
 function usageFor(text) {
@@ -345,7 +376,12 @@ async function handleChatCompletions(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.function?.name ?? t?.name)
     .filter(Boolean);
-  const plan = planReply({ lastRole: last.role, lastText, toolNames });
+  const plan = planReply({
+    lastRole: last.role,
+    lastText,
+    toolNames,
+    toolOutputs: chatToolOutputs(messages),
+  });
   ctx.plan = plan.kind;
   const id = `chatcmpl-mock-${randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
@@ -437,11 +473,16 @@ function responsesInputText(input) {
   const lastUser = [...items].reverse().find((i) => i?.role === "user");
   const lastRole =
     last.type === "function_call_output" ? "tool" : (last.role ?? "user");
-  return { lastRole, lastText: textOf(lastUser?.content) };
+  const lastUserIndex = items.findLastIndex((i) => i?.role === "user");
+  const toolOutputs = items
+    .slice(lastUserIndex + 1)
+    .filter((i) => i?.type === "function_call_output")
+    .map((i) => (typeof i.output === "string" ? i.output : textOf(i.output)));
+  return { lastRole, lastText: textOf(lastUser?.content), toolOutputs };
 }
 
 async function handleResponses(req, res, body, ctx) {
-  const { lastRole, lastText } = responsesInputText(body.input);
+  const { lastRole, lastText, toolOutputs } = responsesInputText(body.input);
   const d = directives(lastText);
   ctx.directives = d;
   if (d.delay) await sleep(Number(d.delay));
@@ -462,7 +503,7 @@ async function handleResponses(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.name ?? t?.function?.name)
     .filter(Boolean);
-  const plan = planReply({ lastRole, lastText, toolNames });
+  const plan = planReply({ lastRole, lastText, toolNames, toolOutputs });
   ctx.plan = plan.kind;
   const id = `resp_mock_${randomUUID().replaceAll("-", "")}`;
   const model = body.model ?? CHAT_MODELS[0];
