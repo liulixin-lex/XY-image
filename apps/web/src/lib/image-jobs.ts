@@ -2,7 +2,13 @@
  * Typed views over background_jobs rows of type `image_generation`.
  * The API returns payload/result as loose records; read them defensively.
  */
-import type { BackgroundJob } from "@loomic/shared";
+import {
+  type BackgroundJob,
+  type ImageQuality,
+  type ImageResolution,
+  isLegacyImageQuality,
+  normalizeImageParams,
+} from "@loomic/shared";
 
 import {
   type BillingStatus,
@@ -18,7 +24,10 @@ export type ImageJobView = {
   requestId: string | null;
   prompt: string;
   model: string | null;
-  quality: "standard" | "hd";
+  /** 画质 asked for (older jobs: read from their single quality field). */
+  resolution: ImageResolution;
+  /** 质量 asked for; null for jobs from before the setting existed. */
+  quality: ImageQuality | null;
   aspectRatio: string | null;
   inputImages: string[];
   url: string | null;
@@ -50,6 +59,9 @@ function num(value: unknown): number | null {
 export function toImageJobView(job: BackgroundJob): ImageJobView {
   const payload = job.payload ?? {};
   const result = job.result ?? {};
+  const params = normalizeImageParams(payload);
+  // Old jobs only had standard / hd (= 1K / 2K) and chose no 质量 themselves.
+  const legacy = payload.resolution === undefined && isLegacyImageQuality(payload.quality);
   return {
     id: job.id,
     status: job.status,
@@ -57,7 +69,8 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     requestId: job.xy2api_request_id ?? null,
     prompt: str(payload.prompt) ?? "",
     model: str(payload.model),
-    quality: payload.quality === "hd" ? "hd" : "standard",
+    resolution: params.resolution,
+    quality: legacy ? null : params.quality,
     aspectRatio: str(payload.aspect_ratio),
     inputImages: Array.isArray(payload.input_images)
       ? payload.input_images.filter((v): v is string => typeof v === "string")

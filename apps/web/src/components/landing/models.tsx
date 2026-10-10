@@ -2,7 +2,7 @@ import { ArrowRightIcon } from "lucide-react";
 import Link from "next/link";
 
 import { BRAND } from "@/lib/brand";
-import { KNOWN_IMAGE_MODELS, QUALITY_LABEL } from "@/lib/image-model-meta";
+import { KNOWN_IMAGE_MODELS } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
 
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
@@ -15,7 +15,8 @@ import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
  * The miniature controls are pictures of the product, not controls: they
  * are aria-hidden and inert. The real ones are one click away.
  * TODO(agent01): keep these sentences in step with the studio (batch size,
- * prompt rewrite, mask edit) and the canvas (agent cap per turn).
+ * prompt rewrite; add 局部重绘 / 扩图 only once mask edit ships, M-G) and the
+ * canvas (agent cap per turn; the node wording assumes the M-D node canvas).
  */
 export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; signedIn: boolean }) {
   const batch = samples.slice(0, 4);
@@ -32,7 +33,7 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
             <Sticker>生图</Sticker>
             <h3 className="mt-5 font-display text-[clamp(30px,2.6vw,40px)] leading-tight font-normal text-fg">一句话出图</h3>
             <p className="mt-3 max-w-[30em] text-[15px] leading-relaxed text-fg-soft">
-              写一句描述，选比例、画质和张数，一次出 1 到 4 张。描述太短可以先让它帮你写具体；满意的那张接着改：以它为参考、局部重绘或者扩图。
+              写一句描述，选比例、画质（1K 到 4K）、质量和张数，一次出 1 到 4 张。描述太短可以先让它帮你写具体；满意的那张接着改：以它为参考，或者做变体。
             </p>
             <div aria-hidden className="pointer-events-none relative mt-9 flex-1 select-none">
               <div className="grid grid-cols-4 gap-2.5">
@@ -57,7 +58,7 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
                 ))}
               </div>
               <div className="mt-6 flex flex-wrap items-center gap-2">
-                {["3:4", "2K", "4 张"].map((chip) => (
+                {["3:4", "4K", "质量高", "4 张"].map((chip) => (
                   <span
                     key={chip}
                     className="sk inline-flex h-[30px] items-center rounded-[9px] bg-tint/[0.055] px-3 text-[12.5px] font-semibold text-fg-soft tabular"
@@ -92,14 +93,14 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
           <div className="lg:col-span-4">
             <h3 className="font-display text-[clamp(30px,2.6vw,40px)] leading-tight font-normal text-fg">能用哪些模型</h3>
             <p className="mt-3 max-w-[26em] text-[15px] leading-relaxed text-fg-soft">
-              实际能用哪些，以你的 Key 所在分组为准。画质只有 1K 和 2K 两档。
+              实际能用哪些，以你的 Key 所在分组为准。画质分 1K、2K、4K，质量分自动、低、中、高，每个模型支持的档位不同。
             </p>
           </div>
           <ul className="divide-y divide-line border-y border-line lg:col-span-8">
             {KNOWN_IMAGE_MODELS.map((model) => (
               <li
                 key={model.id}
-                className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 py-5 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_12rem]"
+                className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 py-5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"
               >
                 <span className="text-[19px] leading-tight font-bold tracking-[-0.01em] text-fg">
                   {model.displayName}
@@ -110,7 +111,12 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
                 </span>
                 <span className="col-start-2 row-start-1 flex justify-end gap-2 text-[12.5px] font-semibold text-fg-soft sm:col-start-auto sm:row-start-auto">
                   <span className="sk inline-flex h-7 items-center rounded-[8px] bg-tint/[0.055] px-2.5 tabular">
-                    <span className="sk-in">最高 {QUALITY_LABEL[model.maxQuality]}</span>
+                    <span className="sk-in">最高 {model.resolutions.at(-1)}</span>
+                  </span>
+                  <span className="sk inline-flex h-7 items-center rounded-[8px] bg-tint/[0.055] px-2.5 tabular">
+                    <span className="sk-in">
+                      {model.qualities.length > 1 ? `质量 ${model.qualities.length} 档` : "质量自动"}
+                    </span>
                   </span>
                   <span className="sk hidden h-7 items-center rounded-[8px] bg-tint/[0.055] px-2.5 tabular sm:inline-flex">
                     <span className="sk-in">

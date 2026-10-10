@@ -13,7 +13,7 @@ import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
 import { SiteNav } from "@/components/landing/site-nav";
 import { useAuth } from "@/lib/auth-context";
 import { getXy2apiWebUrl } from "@/lib/env";
-import type { AspectRatio } from "@/lib/image-model-meta";
+import type { AspectRatio, ImageResolution } from "@/lib/image-model-meta";
 import { fetchAuthConfig } from "@/lib/xy2api-api";
 
 /**
@@ -35,7 +35,7 @@ export default function LandingPage() {
   const [selected, setSelected] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState<AspectRatio>("3:4");
-  const [quality, setQuality] = useState<"standard" | "hd">("hd");
+  const [resolution, setResolution] = useState<ImageResolution>("2K");
   const promptBox = useRef<PromptBoxHandle>(null);
   const top = useRef<HTMLDivElement>(null);
 
@@ -90,8 +90,8 @@ export default function LandingPage() {
           onPromptChange={setPrompt}
           ratio={ratio}
           onRatioChange={setRatio}
-          quality={quality}
-          onQualityChange={setQuality}
+          resolution={resolution}
+          onResolutionChange={setResolution}
         />
         <GallerySection items={SHOWCASE_ITEMS} onPreview={setSelected} onUseSample={copySample} />
         <ModesSection samples={SHOWCASE_ITEMS.slice(5, 12)} signedIn={Boolean(user)} />

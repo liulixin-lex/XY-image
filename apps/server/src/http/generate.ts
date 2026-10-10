@@ -1,3 +1,8 @@
+import {
+  IMAGE_QUALITIES,
+  IMAGE_RESOLUTIONS,
+  LEGACY_IMAGE_QUALITIES,
+} from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
@@ -17,8 +22,10 @@ import { sendAccountError } from "./account.js";
 const schema = z.object({
   prompt: z.string().trim().min(1).max(4000),
   model: z.string().optional(),
-  aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
-  quality: z.enum(["standard", "hd"]).optional(),
+  aspectRatio: z.string().max(10).optional(),
+  resolution: z.enum(IMAGE_RESOLUTIONS).optional(),
+  /** auto / low / medium / high; standard / hd from older pages still work. */
+  quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
   inputImages: z.array(z.string()).max(14).optional(),
 });
 export function registerGenerateRoutes(
@@ -49,7 +56,13 @@ export function registerGenerateRoutes(
           // Sent from this process, not the worker: no dispatch gate here.
           const prepared = await options.xy2api.billing.prepareImageJob(
             user,
-            payload,
+            {
+              model: payload.model,
+              resolution: payload.resolution,
+              quality: payload.quality,
+              aspect_ratio: payload.aspectRatio,
+              input_images: payload.inputImages,
+            },
             { sendsNow: true },
           );
           return jobService.createJob(user, {
@@ -60,10 +73,9 @@ export function registerGenerateRoutes(
             payload: {
               prompt: payload.prompt,
               model: prepared.model,
+              resolution: prepared.resolution,
               quality: prepared.quality,
-              ...(payload.aspectRatio
-                ? { aspect_ratio: payload.aspectRatio }
-                : {}),
+              aspect_ratio: prepared.aspect_ratio,
               ...(payload.inputImages
                 ? { input_images: payload.inputImages }
                 : {}),

@@ -111,6 +111,7 @@ export default function StudioPage() {
       composer.current?.applyParams({
         prompt: job.prompt,
         model: job.model,
+        resolution: job.resolution,
         quality: job.quality,
         aspectRatio: job.aspectRatio,
       });
@@ -137,6 +138,7 @@ export default function StudioPage() {
       composer.current?.applyParams({
         prompt: job.prompt,
         model: job.model,
+        resolution: job.resolution,
         quality: job.quality,
         aspectRatio: job.aspectRatio,
       });

@@ -60,7 +60,9 @@ async function route() {
     prepareImageJob: vi.fn(async () => ({
       keyId: 7,
       model: "gpt-image-2",
-      quality: "standard" as const,
+      resolution: "2K" as const,
+      quality: "high" as const,
+      aspect_ratio: "3:4",
     })),
   };
   await registerJobRoutes(app, {
@@ -108,9 +110,13 @@ describe("studio batch routes", () => {
     expect(new Set(payloads.map((p) => p.batch_id))).toEqual(
       new Set([body.batch_id]),
     );
+    // The stored payload holds what the billing guard resolved for the model.
     expect(payloads[0]).toMatchObject({
       prompt: "雨夜霓虹街口",
       model: "gpt-image-2",
+      resolution: "2K",
+      quality: "high",
+      aspect_ratio: "3:4",
       batch_size: 3,
     });
     expect(payloads[0]).not.toHaveProperty("count");

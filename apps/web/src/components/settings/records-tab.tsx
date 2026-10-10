@@ -12,7 +12,7 @@ import { useAccount, useImageModels } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, isActiveJob, isFailedJob, isSavingJob, toImageJobView } from "@/lib/image-jobs";
-import { QUALITY_LABEL, findModelMeta } from "@/lib/image-model-meta";
+import { describeImageParams, findModelMeta } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
 
@@ -176,7 +176,7 @@ export function RecordsTab() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-fg-soft">
                         {modelName(job.model)}
-                        <span className="text-fg-muted"> · {QUALITY_LABEL[job.quality]}</span>
+                        <span className="text-fg-muted"> · {describeImageParams(job)}</span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-fg">{isSavingJob(job) ? "保存中" : STATUS[job.status]}</td>
                       <td className="px-4 py-3">

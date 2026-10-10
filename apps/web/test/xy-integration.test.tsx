@@ -165,7 +165,9 @@ describe("image job views", () => {
     const view = toImageJobView(base);
     expect(view).toMatchObject({
       prompt: "雨夜的霓虹街",
-      quality: "hd",
+      // An older job: its single quality field meant 2K and it had no 质量.
+      resolution: "2K",
+      quality: null,
       aspectRatio: "16:9",
       billing: "unknown",
       requestId: "req_123",
@@ -261,9 +263,18 @@ describe("image job views", () => {
     expect(onCancelBatch).toHaveBeenCalledWith(batchId);
   });
 
-  it("treats anything but hd as 1K", () => {
-    const view = toImageJobView({ ...base, payload: { prompt: "x", quality: "ultra" } } as BackgroundJob);
-    expect(view.quality).toBe("standard");
+  it("reads 画质 and 质量, and falls back for unknown values", () => {
+    const read = (payload: Record<string, unknown>) =>
+      toImageJobView({ ...base, payload: { prompt: "x", ...payload } } as BackgroundJob);
+    expect(read({ resolution: "4K", quality: "high" })).toMatchObject({
+      resolution: "4K",
+      quality: "high",
+    });
+    expect(read({ quality: "standard" })).toMatchObject({ resolution: "1K", quality: null });
+    expect(read({ resolution: "8K", quality: "max" })).toMatchObject({
+      resolution: "2K",
+      quality: "auto",
+    });
   });
 });
 

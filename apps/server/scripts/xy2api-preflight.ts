@@ -44,12 +44,16 @@ async function main() {
     );
   registerAllProviders(env);
   for (const model of imageModels) {
-    for (const quality of ["standard", "hd"] as const) {
+    // One paid call per 画质 the model lists, at the cheapest 质量 it offers.
+    const entry = findImageModel(catalog, model);
+    const quality = entry?.qualities.includes("low") ? "low" : "auto";
+    for (const resolution of entry?.resolutions ?? (["1K"] as const)) {
       const started = Date.now();
       const result = await generateImage(
         resolveImageProviderName(model),
         {
           model,
+          resolution,
           quality,
           prompt: "一颗红苹果，纯白背景，无文字",
           aspectRatio: "1:1",
@@ -60,11 +64,10 @@ async function main() {
         JSON.stringify({
           stage: "image",
           model,
-          requestedQuality: quality,
-          effectiveQuality:
-            quality === "hd"
-              ? findImageModel(catalog, model)?.maxQuality
-              : "standard",
+          resolution,
+          quality,
+          // The main site bills OpenAI images by this size's long edge.
+          size: `${result.width}x${result.height}`,
           elapsedMs: Date.now() - started,
           bytes: Buffer.from(result.url.split(",", 2)[1] ?? "", "base64")
             .length,

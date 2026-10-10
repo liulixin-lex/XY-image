@@ -1,9 +1,25 @@
+import { IMAGE_QUALITIES, IMAGE_RESOLUTIONS } from "@loomic/shared";
 import { tool } from "langchain";
 import { z } from "zod";
 
 import type { AvailableModel } from "../../generation/providers/registry.js";
 
 const DEFAULT_MODEL = "unavailable";
+
+/** " (sizes 1K/2K/4K; quality …; ratios …; up to N reference images)" from catalog fields. */
+function describeCapabilities(model: AvailableModel): string {
+  const parts = [
+    model.resolutions?.length ? `sizes ${model.resolutions.join("/")}` : "",
+    model.qualities?.length ? `quality ${model.qualities.join("/")}` : "",
+    model.aspectRatios?.length ? `ratios ${model.aspectRatios.join(", ")}` : "",
+    model.supportsEdit === false
+      ? "no reference images"
+      : model.maxInputImages
+        ? `up to ${model.maxInputImages} reference images`
+        : "",
+  ].filter(Boolean);
+  return parts.length ? ` (${parts.join("; ")})` : "";
+}
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -16,7 +32,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
-    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
+    ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}${describeCapabilities(m)}`).join("\n")}`
     : "Model identifier (no providers currently registered)";
 
   // z.enum needs [string, ...string[]], but we may have 0 models at test time.
@@ -46,14 +62,21 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .optional()
       .default("1:1")
       .describe(
-        "Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match.",
+        "Aspect ratio, one of the model's ratios listed above (e.g. 1:1, 3:4, 16:9). An unsupported ratio is moved to the nearest supported one.",
+      ),
+    resolution: z
+      .enum(IMAGE_RESOLUTIONS)
+      .optional()
+      .default("2K")
+      .describe(
+        "Output size class: 1K, 2K (default) or 4K. Use 4K only when the user asks for print or very large output; it is slower and may cost more. A size the model lacks is moved to its largest smaller one.",
       ),
     quality: z
-      .enum(["standard", "hd"])
+      .enum(IMAGE_QUALITIES)
       .optional()
-      .default("hd")
+      .default("auto")
       .describe(
-        "Image quality/resolution level. standard: ~1K fast preview, hd: ~2K production quality (default), 4K is unavailable.",
+        "Rendering effort: auto (vendor default, recommended), low (fast drafts), medium, high (most detail, slowest). Ignored by models without this setting.",
       ),
     outputFormat: z
       .enum(["png", "jpg", "webp"])
@@ -65,7 +88,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .array(z.string())
       .optional()
       .describe(
-        "Reference image URLs for editing/transformation. Google models accept up to 14, Flux models accept 1. Imagen 4 and Recraft V3 are text-only.",
+        "Reference image URLs for editing/transformation, within the model's reference image limit listed above.",
       ),
     placementX: z
       .number()
@@ -97,6 +120,7 @@ type ImageGenerateInput = {
   prompt: string;
   model: string;
   aspectRatio?: string;
+  resolution?: string;
   quality?: string;
   outputFormat?: string;
   inputImages?: string[];
@@ -142,6 +166,7 @@ export type SubmitImageJobFn = (input: {
   model: string;
   aspectRatio: string;
   inputImages?: string[];
+  resolution?: string;
   quality?: string;
 }) => Promise<{
   jobId: string;
@@ -214,6 +239,7 @@ export async function runImageGenerate(
         title: input.title,
         model: input.model,
         aspectRatio: input.aspectRatio ?? "1:1",
+        ...(input.resolution ? { resolution: input.resolution } : {}),
         ...(input.quality ? { quality: input.quality } : {}),
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       });

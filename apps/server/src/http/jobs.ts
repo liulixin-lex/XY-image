@@ -52,7 +52,9 @@ export async function registerJobRoutes(
         const input = imagePayloadSchema.parse({
           ...payload,
           model: prepared.model,
+          resolution: prepared.resolution,
           quality: prepared.quality,
+          aspect_ratio: prepared.aspect_ratio,
         });
         return options.jobService.createJob(user, {
           workspaceId: viewer.workspace.id,
@@ -94,7 +96,9 @@ export async function registerJobRoutes(
         const input = imagePayloadSchema.parse({
           ...payload,
           model: prepared.model,
+          resolution: prepared.resolution,
           quality: prepared.quality,
+          aspect_ratio: prepared.aspect_ratio,
         });
         const created: BackgroundJob[] = [];
         for (let index = 0; index < count; index += 1) {
@@ -164,14 +168,12 @@ export async function registerJobRoutes(
           user,
           batchId,
         );
-        return reply
-          .code(200)
-          .send(
-            cancelImageBatchResponseSchema.parse({
-              batch_id: batchId,
-              canceled,
-            }),
-          );
+        return reply.code(200).send(
+          cancelImageBatchResponseSchema.parse({
+            batch_id: batchId,
+            canceled,
+          }),
+        );
       } catch (error) {
         if (isZodError(error)) return sendAccountError(reply, error);
         return sendJobError(error, reply, "job_cancel_failed");

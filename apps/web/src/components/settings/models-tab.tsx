@@ -21,7 +21,7 @@ import {
   preferredChatModelId,
 } from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { describeCapabilities, modelCapabilities } from "@/lib/image-model-meta";
 
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
@@ -97,7 +97,7 @@ export function ModelsTab() {
               value: m.id,
               text: m.displayName,
               label: m.displayName,
-              description: `${m.description} · 最高 ${QUALITY_LABEL[m.maxQuality ?? "hd"]}`,
+              description: `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
             }))}
             ariaLabel="默认生图模型"
             placeholder="未设置（使用列表第一个）"
@@ -113,7 +113,7 @@ export function ModelsTab() {
                   <span className="block truncate text-[12px] text-fg-muted">{m.description}</span>
                 </span>
                 <span className="data-label shrink-0 text-fg-soft">
-                  {m.maxQuality === "standard" ? "仅 1K" : "1K / 2K"}
+                  {describeCapabilities(modelCapabilities(m))}
                 </span>
               </li>
             ))}

@@ -269,7 +269,49 @@ describe("user key synchronization", () => {
     fixture.tables.background_jobs = [job("running", "pending")];
     await expect(
       fixture.billing.prepareImageJob({ id: "user-1" }, {}, { sendsNow: true }),
-    ).resolves.toMatchObject({ quality: "standard" });
+    ).resolves.toMatchObject({
+      resolution: "2K",
+      quality: "auto",
+      aspect_ratio: "1:1",
+    });
+  });
+  it("resolves 画质 / 质量 / 比例 per model and checks references up front", async () => {
+    const fixture = setup();
+    await fixture.keys.syncKeys("user-1");
+    vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 5 });
+    fixture.tables.background_jobs = [];
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { resolution: "4K", quality: "high", aspect_ratio: "21:9" },
+      ),
+    ).resolves.toMatchObject({
+      model: "gpt-image-2",
+      resolution: "4K",
+      quality: "high",
+      aspect_ratio: "21:9",
+    });
+    // An older page's single quality field keeps meaning what it meant.
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, { quality: "hd" }),
+    ).resolves.toMatchObject({ resolution: "2K", quality: "medium" });
+    // Unknown ratios move to the nearest one the model has, and it is logged.
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { aspect_ratio: "7:3" },
+      ),
+    ).resolves.toMatchObject({ aspect_ratio: "21:9" });
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("aspect 7:3→21:9"),
+    );
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { input_images: Array.from({ length: 11 }, () => "data:") },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input", statusCode: 400 });
   });
 });
 

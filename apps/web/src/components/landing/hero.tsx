@@ -2,7 +2,7 @@
 
 import { forwardRef } from "react";
 
-import type { AspectRatio } from "@/lib/image-model-meta";
+import type { AspectRatio, ImageResolution } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
 
 import { PosterStage, type StageImage } from "./poster-stage";
@@ -31,11 +31,11 @@ export const Hero = forwardRef<
     onPromptChange: (value: string) => void;
     ratio: AspectRatio;
     onRatioChange: (ratio: AspectRatio) => void;
-    quality: "standard" | "hd";
-    onQualityChange: (quality: "standard" | "hd") => void;
+    resolution: ImageResolution;
+    onResolutionChange: (resolution: ImageResolution) => void;
   }
 >(function Hero(
-  { items, selected, onSelect, prompt, onPromptChange, ratio, onRatioChange, quality, onQualityChange },
+  { items, selected, onSelect, prompt, onPromptChange, ratio, onRatioChange, resolution, onResolutionChange },
   ref,
 ) {
   const current = items[selected] ?? items[0]!;
@@ -93,8 +93,8 @@ export const Hero = forwardRef<
             onChange={onPromptChange}
             ratio={ratio}
             onRatioChange={onRatioChange}
-            quality={quality}
-            onQualityChange={onQualityChange}
+            resolution={resolution}
+            onResolutionChange={onResolutionChange}
             className="mt-7 w-full max-w-[640px] lg:mt-[clamp(18px,3.4dvh,36px)]"
           />
         </div>

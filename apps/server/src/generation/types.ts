@@ -1,3 +1,5 @@
+import type { ImageQuality, ImageResolution } from "@loomic/shared";
+
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
   /** Provider-scoped model ID, e.g. "google/nano-banana-pro" */
@@ -8,15 +10,20 @@ export interface ModelInfo {
   description: string;
   /** URL to the model owner's avatar/icon */
   iconUrl?: string;
+  /** Image models from the catalog: what the model accepts. */
+  resolutions?: readonly string[];
+  qualities?: readonly string[];
+  aspectRatios?: readonly string[];
+  supportsEdit?: boolean;
+  maxInputImages?: number;
 }
 
 /**
- * Semantic quality levels — each provider translates to its own resolution param.
- * - standard: ~1K (fastest, preview quality)
- * - hd:       ~2K (default, production quality)
- * - ultra:    ~4K (highest, print quality — not all models support this)
+ * 画质 (output size class) and 质量 (effort level), the product's two image
+ * knobs. Each provider translates them into its vendor's own fields; see
+ * features/xy2api/catalog.ts for the protocol mapping.
  */
-export type ImageQuality = "standard" | "hd" | "ultra";
+export type { ImageQuality, ImageResolution } from "@loomic/shared";
 
 export type OutputFormat = "png" | "jpg" | "webp";
 
@@ -25,7 +32,9 @@ export interface ImageGenerateParams {
   model: string;
   aspectRatio?: string;
   inputImages?: string[];
-  /** Semantic quality level, provider translates to model-specific resolution */
+  /** 画质: 1K / 2K / 4K. */
+  resolution?: ImageResolution;
+  /** 质量: auto (vendor default) / low / medium / high. */
   quality?: ImageQuality;
   /** Output format preference */
   outputFormat?: OutputFormat;

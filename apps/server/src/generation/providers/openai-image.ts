@@ -46,9 +46,9 @@ const SIZES: Record<string, readonly [string, string, string]> = {
 
 function imageSize(params: ImageGenerateParams): string {
   const sizes = SIZES[params.aspectRatio ?? "1:1"] ?? SQUARE_SIZES;
-  const qualityIndex =
-    params.quality === "standard" ? 0 : params.quality === "ultra" ? 2 : 1;
-  return sizes[qualityIndex] ?? SQUARE_SIZES[1];
+  const index =
+    params.resolution === "1K" ? 0 : params.resolution === "4K" ? 2 : 1;
+  return sizes[index] ?? SQUARE_SIZES[1];
 }
 
 export class OpenAIImageProvider implements ImageProvider {
@@ -73,12 +73,7 @@ export class OpenAIImageProvider implements ImageProvider {
     }
 
     const size = imageSize(params);
-    const quality =
-      params.quality === "standard"
-        ? "low"
-        : params.quality === "ultra"
-          ? "high"
-          : "medium";
+    const quality = params.quality ?? "auto";
 
     try {
       const request = {
@@ -86,7 +81,7 @@ export class OpenAIImageProvider implements ImageProvider {
         prompt: params.prompt,
         // The installed SDK types predate GPT Image 2's flexible size support.
         size: size as "1024x1024",
-        quality: quality as "low" | "medium" | "high",
+        quality,
         output_format: "png" as const,
         n: 1,
       };

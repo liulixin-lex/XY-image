@@ -29,6 +29,7 @@ import type {
   ViewerResponse,
   WorkspaceSkillListResponse,
 } from "@loomic/shared";
+import type { ImageQuality, ImageResolution } from "@loomic/shared";
 
 import {
   type ChatModelList,
@@ -349,7 +350,7 @@ export async function fetchModels(
   });
 }
 
-export type ImageQuality = "standard" | "hd";
+export type { ImageQuality, ImageResolution };
 
 export type ImageModelInfo = {
   /** Exact id to send back (may be a `*-preview` alias). */
@@ -360,8 +361,19 @@ export type ImageModelInfo = {
   iconUrl?: string;
   /** Always null in P0; cost is decided by the main site. */
   priceUsd?: number | null;
-  /** `standard` = 1K only, `hd` = 1K and 2K. */
-  maxQuality?: ImageQuality;
+  /** Maker (openai, google, xai, …). */
+  vendor?: string;
+  /** 画质 / 质量 / 比例 the model accepts, from the server catalog. */
+  resolutions?: ImageResolution[];
+  /** Empty when the model has no 质量 setting. */
+  qualities?: ImageQuality[];
+  aspectRatios?: string[];
+  /** Widest shape (long side ÷ short side) a size can make; no entry = any. */
+  maxRatio?: Partial<Record<ImageResolution, number>>;
+  supportsEdit?: boolean;
+  maxInputImages?: number;
+  /** Sent by older servers instead: `standard` = 1K only, `hd` = 1K and 2K. */
+  maxQuality?: "standard" | "hd";
   accessible?: boolean;
   /** Compatibility fields from the old credits system. Never display. */
   creditCost?: number;
@@ -532,7 +544,8 @@ export type GenerateImageResponse = {
 export type GenerateImageOptions = {
   model?: string;
   aspectRatio?: string;
-  quality?: string;
+  resolution?: ImageResolution;
+  quality?: ImageQuality;
   /** Supabase Storage URLs or PNG/JPEG/WebP data URLs, max 10 MiB each. */
   inputImages?: string[];
 };
@@ -559,6 +572,7 @@ export async function generateImageDirect(
         prompt,
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
+        ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
@@ -581,6 +595,9 @@ export async function generateImageDirect(
 export type CreateImageJobInput = {
   prompt: string;
   model?: string;
+  /** 画质: 1K / 2K / 4K. */
+  resolution?: ImageResolution;
+  /** 质量: auto / low / medium / high. */
   quality?: ImageQuality;
   aspect_ratio?: string;
   input_images?: string[];

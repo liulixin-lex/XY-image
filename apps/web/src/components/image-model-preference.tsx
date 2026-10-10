@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useImageModels } from "../lib/account-context";
 import { describeIssue } from "../lib/generation-errors";
-import { QUALITY_LABEL } from "../lib/image-model-meta";
+import { describeCapabilities, modelCapabilities } from "../lib/image-model-meta";
 import { cn } from "../lib/utils";
 import { Segmented } from "./ui/select";
 
@@ -155,7 +155,7 @@ export function ImageModelPreferencePopover({
                   </span>
                 </span>
                 <span className="data-label shrink-0 text-fg-muted">
-                  {QUALITY_LABEL[m.maxQuality ?? "hd"]}
+                  {describeCapabilities(modelCapabilities(m))}
                 </span>
               </button>
             );

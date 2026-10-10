@@ -35,7 +35,7 @@
 1. **生成请求只发一次。** 无论失败、组件卸载还是重新挂载，都不自动重发。生图室提交时有防连点锁；画布生图面板用模块级的 `inFlight` 集合记录进行中的请求，关闭面板不会中止请求，已扣费的结果仍会放回画布。`test/studio-jobs.test.tsx` 覆盖了这几点。
 2. **未知不等于没扣费。** `upstream_unknown`、网络中断或状态不明的任务一律标「待核对」，并给出主站请求 ID 和用量页链接。画布上残留的「生成中」占位如果已经没有对应的请求，就显示「结果未知」，不会重新发送。
 3. **主站的秘密不进浏览器存储。** 密码、TOTP challenge、tokenHash、主站 JWT 和 API Key 都不写入 storage，也不打印到日志（`test/login.test.tsx` 有断言）。Supabase 影子用户的 `user.email` 是合成地址，不要展示；真实邮箱从 `useAccount()` 取。用户自己服务商的 API Key 只写不读：只在添加 / 编辑弹窗的表单状态里存在，保存或关闭后丢弃，接口只返回末 4 位 `keyHint`，日志只记服务商 id 和路径（`test/chat-providers-api.test.ts` 有断言）。
-4. **规格只有两档：** 1K（`standard`）和 2K（`hd`），由模型的 `maxQuality` 决定能否选 2K。没有 4K、视频、积分和支付入口。
+4. **画质和质量是两个参数：** 画质是输出尺寸档位 1K / 2K / 4K，主站按档计价；质量是 自动 / 低 / 中 / 高，自动表示不传、由厂商决定。每个模型能选什么来自 `/api/image-models` 的 `resolutions`、`qualities`、`aspectRatios`、`maxRatio`（旧服务器只发 `maxQuality` 时由 `lib/image-model-meta.ts` 补齐）。前端和后端都用 `@loomic/shared` 的 `resolveImageParams` 算实际发送值，所以界面显示的就是会发出去的；比如 OpenAI 的 16:9 在 1K 做不出来（见 `maxRatio`），1K 会禁用并按 2K 发送。旧记录的 `quality: standard / hd / ultra` 按 `LEGACY_IMAGE_PARAMS` 读成 1K 低 / 2K 中 / 4K 自动，显示时质量为空。没有视频、积分和支付入口。
 5. **偏好的字段格式：** 偏好接口的响应是 snake_case，更新请求是 camelCase。默认对话模型写入账户偏好时用裸模型名（例如 `gpt-5.4`）加 `defaultChatProviderId`（自己的服务商 id；主站为 `null`）。10-09 起不再写工作区设置（运行时已改读账户偏好，`model-resolver.ts`）。旧服务器的偏好接口不认 `defaultChatProviderId`，所以只有响应里带 `default_chat_provider_id` 时才发这个字段（`lib/chat-models.ts` 的 `chatPreferencePatch`）。
 6. **自己的服务商不走主站计费。** 用自定义服务商对话时费用由服务商收取，不从主站余额扣，界面要写明；`provider_*` 错误码一律 `maybeCharged: false`，文案不对服务商那边的扣费下任何结论。生图（生图页、画布生图、助手的生图工具）仍然只走主站。
 

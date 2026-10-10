@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAmbientImage } from "@/components/ambient/ambient-provider";
 import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
 import { type ImageJobView, toImageJobView } from "@/lib/image-jobs";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { describeImageParams } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
 
@@ -120,7 +120,9 @@ export function RecentPrints() {
                 </span>
                 <span className="mt-2 flex items-center gap-2 pl-1">
                   <span className="numeral text-[18px] text-fg-soft">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="data-label text-fg-muted">{QUALITY_LABEL[job.quality]}</span>
+                  <span className="data-label text-fg-muted">
+                    {describeImageParams({ resolution: job.resolution, quality: job.quality })}
+                  </span>
                 </span>
               </Link>
             </li>

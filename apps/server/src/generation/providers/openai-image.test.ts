@@ -45,7 +45,8 @@ describe("OpenAIImageProvider", () => {
       model: "openai-official/gpt-image-2.5-flare",
       prompt: "A red square",
       aspectRatio: "16:9",
-      quality: "ultra",
+      resolution: "4K",
+      quality: "high",
     });
     expect(mocks.generate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -77,7 +78,8 @@ describe("OpenAIImageProvider", () => {
     await provider.generate({
       model: "openai-official/gpt-image-2",
       prompt: "Make it blue",
-      quality: "standard",
+      resolution: "1K",
+      quality: "low",
       inputImages: [`data:image/png;base64,${png.toString("base64")}`],
     });
 

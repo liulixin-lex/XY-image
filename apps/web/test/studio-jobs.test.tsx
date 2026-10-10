@@ -34,7 +34,13 @@ vi.mock("../src/components/issues/issue-provider", () => ({
 import { useStudioJobs } from "../src/hooks/use-studio-jobs";
 import { ApiApplicationError } from "../src/lib/server-api";
 
-const INPUT = { prompt: "灯塔", model: "gpt-image-2", quality: "standard" as const, count: 1 };
+const INPUT = {
+  prompt: "灯塔",
+  model: "gpt-image-2",
+  resolution: "1K" as const,
+  quality: "auto" as const,
+  count: 1,
+};
 const BATCH = "8f14e45f-ceea-4e7a-9f6c-1d2b3c4d5e6f";
 const batchOf = (...jobs: unknown[]) => ({ batch_id: BATCH, requested: jobs.length, jobs });
 
@@ -43,7 +49,7 @@ function job(status: string, extra: Record<string, unknown> = {}) {
     id: "job_1",
     job_type: "image_generation",
     status,
-    payload: { prompt: "灯塔", model: "gpt-image-2", quality: "standard" },
+    payload: { prompt: "灯塔", model: "gpt-image-2", resolution: "1K", quality: "auto" },
     result: null,
     error_code: null,
     error_message: null,

@@ -98,7 +98,8 @@ describe("custom chat run wiring", () => {
           options.submitImageJob({
             prompt: "test",
             model: "gpt-image-2",
-            quality: "standard",
+            resolution: "2K",
+            quality: "auto",
             aspectRatio: "1:1",
             title: "test",
           }),

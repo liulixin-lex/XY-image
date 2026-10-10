@@ -51,13 +51,6 @@ const GOOGLE_VERTEX_IMAGE_MODELS: readonly ModelInfo[] = [
   },
 ];
 
-/** Semantic quality → Gemini imageSize param. */
-const QUALITY_TO_IMAGE_SIZE: Record<string, string> = {
-  standard: "1K",
-  hd: "2K",
-  ultra: "4K",
-};
-
 /** Gemini finish reasons that indicate content policy / safety blocks. */
 const SAFETY_FINISH_REASONS = new Set([
   "SAFETY",
@@ -100,7 +93,7 @@ export class GoogleVertexImageProvider implements ImageProvider {
     }
 
     const aspectRatio = params.aspectRatio ?? "1:1";
-    const imageSize = QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? "2K";
+    const imageSize = params.resolution ?? "2K";
 
     // Build content parts: text prompt + optional input images.
     const parts: Array<

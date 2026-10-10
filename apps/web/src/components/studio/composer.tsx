@@ -19,7 +19,7 @@ import {
   useState,
 } from "react";
 
-import { IMAGE_BATCH_MAX } from "@loomic/shared";
+import { IMAGE_BATCH_MAX, resolveImageParams } from "@loomic/shared";
 
 import { ATTACHMENT_ACCEPT, useImageAttachments } from "@/hooks/use-image-attachments";
 import {
@@ -31,13 +31,19 @@ import {
 import { useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import {
-  ASPECT_RATIOS,
-  type AspectRatio,
+  type ImageQuality,
+  type ImageResolution,
+  QUALITIES,
+  QUALITY_HINT,
   QUALITY_LABEL,
-  maxReferenceImages,
+  RESOLUTIONS,
+  RESOLUTION_HINT,
+  isAspectRatio,
+  modelCapabilities,
+  resolutionUnavailable,
 } from "@/lib/image-model-meta";
 import type { PendingDraft } from "@/lib/pending-prompt";
-import { type ImageModelInfo, type ImageQuality, optimizePrompt } from "@/lib/server-api";
+import { type ImageModelInfo, optimizePrompt } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
 
 import { LiveDot } from "../ambient/live-dot";
@@ -45,7 +51,9 @@ import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
 import { Picker, Segmented } from "../ui/select";
+import { RatioGrid } from "./ratio-grid";
 
+/** Last-used 画质 / 质量 / 比例 / 数量 (v1 stored `quality: standard | hd` = 1K / 2K). */
 const PARAMS_KEY = "xy:studio-params";
 const PROMPT_MAX = 4000;
 /** The rewrite route takes at most this much text (optimizePromptRequestSchema). */
@@ -56,7 +64,9 @@ export type ComposerHandle = {
   applyParams: (params: {
     prompt: string;
     model?: string | null;
-    quality?: ImageQuality;
+    resolution?: ImageResolution;
+    /** null for older records that had no 质量. */
+    quality?: ImageQuality | null;
     aspectRatio?: string | null;
   }) => void;
   /** Use an existing image (a previous result) as a reference. */
@@ -66,8 +76,11 @@ export type ComposerHandle = {
 };
 
 /**
- * The studio's settings panel (F2): description, references, ratio,
- * quality, how many pictures, model, and the one call to action.
+ * The studio's settings panel (F2): model, description, references, 比例,
+ * 画质 (1K / 2K / 4K), 质量 (自动 / 低 / 中 / 高), how many pictures, and the
+ * one call to action. Options the chosen model lacks stay visible but
+ * disabled; the panel shows (and sends) the closest supported value, the
+ * same rule the server applies.
  *
  * One click sends one batch request; the page owns submission and never
  * retries it. 优化提示词 is a separate, small chat request on the user's
@@ -92,14 +105,34 @@ export const Composer = forwardRef<
   const { error: toastError, toast } = useToast();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<string | null>(null);
-  const [quality, setQuality] = useState<ImageQuality>("hd");
-  const [ratio, setRatio] = useState<AspectRatio>("3:4");
+  // What the user picked; the model may need a nearby value (effective*).
+  const [resolution, setResolution] = useState<ImageResolution>("2K");
+  const [quality, setQuality] = useState<ImageQuality>("auto");
+  const [ratio, setRatio] = useState<string>("3:4");
   const [count, setCount] = useState(1);
   const [optimizing, setOptimizing] = useState(false);
   // The text before the last rewrite, for 撤销.
   const [beforeRewrite, setBeforeRewrite] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Settings continue below the visible part (short screens): fade the edge
+  // so 画质 / 质量 do not look missing; the scrollbar itself is hidden.
+  const [moreBelow, setMoreBelow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    for (const child of Array.from(el.children)) observer.observe(child);
+    return () => {
+      el.removeEventListener("scroll", check);
+      observer.disconnect();
+    };
+  }, []);
 
   const {
     attachments,
@@ -113,18 +146,33 @@ export const Composer = forwardRef<
     onReject: (message) => toastError(message),
   });
 
-  // Restore quality / ratio / count from the last session.
+  // Restore 画质 / 质量 / 比例 / 数量 from the last session. Saving waits for
+  // this: the first render still holds the defaults, and writing them would
+  // overwrite what is about to be restored (seen under StrictMode's
+  // double-run, where the second restore then read the defaults back).
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(PARAMS_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { quality?: string; ratio?: string; count?: number };
-      if (saved.quality === "standard" || saved.quality === "hd") setQuality(saved.quality);
-      if (ASPECT_RATIOS.includes(saved.ratio as AspectRatio)) setRatio(saved.ratio as AspectRatio);
+      const saved = JSON.parse(raw) as {
+        resolution?: unknown;
+        quality?: unknown;
+        ratio?: unknown;
+        count?: number;
+      };
+      if (RESOLUTIONS.includes(saved.resolution as ImageResolution))
+        setResolution(saved.resolution as ImageResolution);
+      else if (saved.quality === "standard" || saved.quality === "hd")
+        setResolution(saved.quality === "hd" ? "2K" : "1K");
+      if (QUALITIES.includes(saved.quality as ImageQuality)) setQuality(saved.quality as ImageQuality);
+      if (isAspectRatio(saved.ratio)) setRatio(saved.ratio);
       if (Number.isInteger(saved.count) && saved.count! >= 1 && saved.count! <= IMAGE_BATCH_MAX)
         setCount(saved.count!);
     } catch {
       // ignore malformed storage
+    } finally {
+      setRestored(true);
     }
   }, []);
 
@@ -133,19 +181,19 @@ export const Composer = forwardRef<
   useEffect(() => {
     if (!initialDraft) return;
     setPrompt(initialDraft.prompt);
-    if (initialDraft.quality) setQuality(initialDraft.quality);
-    if (ASPECT_RATIOS.includes(initialDraft.aspectRatio as AspectRatio))
-      setRatio(initialDraft.aspectRatio as AspectRatio);
+    if (initialDraft.resolution) setResolution(initialDraft.resolution);
+    if (initialDraft.aspectRatio) setRatio(initialDraft.aspectRatio);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [initialDraft]);
 
   useEffect(() => {
+    if (!restored) return;
     try {
-      localStorage.setItem(PARAMS_KEY, JSON.stringify({ quality, ratio, count }));
+      localStorage.setItem(PARAMS_KEY, JSON.stringify({ resolution, quality, ratio, count }));
     } catch {
       // ignore
     }
-  }, [quality, ratio, count]);
+  }, [restored, resolution, quality, ratio, count]);
 
   // Model: keep the current choice while valid; otherwise the saved
   // preference, otherwise the first model the key offers.
@@ -163,9 +211,15 @@ export const Composer = forwardRef<
   }, [models, preferredModel]);
 
   const current = models.find((m) => m.id === model) ?? null;
-  const supportsHd = current?.maxQuality !== "standard";
-  const effectiveQuality: ImageQuality = supportsHd ? quality : "standard";
-  const refLimit = maxReferenceImages(model);
+  const caps = modelCapabilities(current);
+  // What will actually be sent: the server applies the same shared rules.
+  const {
+    resolution: sendResolution,
+    quality: sendQuality,
+    aspectRatio: sendRatio,
+  } = resolveImageParams(caps, { resolution, quality, aspectRatio: ratio });
+  const topQuality = caps.qualities.at(-1);
+  const refLimit = caps.maxInputImages;
   const refCount = attachments.length;
   const overRefLimit = refCount > refLimit;
 
@@ -187,9 +241,9 @@ export const Composer = forwardRef<
         setPrompt(params.prompt);
         setBeforeRewrite(null);
         if (params.model && models.some((m) => m.id === params.model)) setModel(params.model);
+        if (params.resolution) setResolution(params.resolution);
         if (params.quality) setQuality(params.quality);
-        if (ASPECT_RATIOS.includes(params.aspectRatio as AspectRatio))
-          setRatio(params.aspectRatio as AspectRatio);
+        if (isAspectRatio(params.aspectRatio)) setRatio(params.aspectRatio);
         requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
       },
       addReference: (refImage) => {
@@ -239,8 +293,9 @@ export const Composer = forwardRef<
     const result = await onSubmit({
       prompt: trimmed,
       model,
-      quality: effectiveQuality,
-      aspect_ratio: ratio,
+      resolution: sendResolution,
+      quality: sendQuality,
+      aspect_ratio: sendRatio,
       count,
       ...(readyAttachments.length ? { input_images: readyAttachments.map((a) => a.url) } : {}),
     });
@@ -263,7 +318,7 @@ export const Composer = forwardRef<
     try {
       const result = await optimizePrompt(token, {
         prompt: trimmed.slice(0, OPTIMIZE_MAX),
-        aspect_ratio: ratio,
+        aspect_ratio: sendRatio,
       });
       setBeforeRewrite(prompt);
       setPrompt(result.prompt.slice(0, PROMPT_MAX));
@@ -289,7 +344,7 @@ export const Composer = forwardRef<
         value: m.id,
         text: m.displayName,
         label: m.displayName,
-        description: `${m.description} · 最高 ${QUALITY_LABEL[m.maxQuality ?? "hd"]}`,
+        description: `${m.description} · 最高 ${modelCapabilities(m).resolutions.at(-1) ?? "1K"}`,
       })),
     [models],
   );
@@ -307,7 +362,26 @@ export const Composer = forwardRef<
         addFiles(Array.from(e.dataTransfer.files));
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pt-6 pb-4 scrollbar-hidden sm:px-6">
+      <div
+        ref={scrollRef}
+        className={cn(
+          "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pt-5 pb-4 scrollbar-hidden sm:px-6",
+          moreBelow && "[mask-image:linear-gradient(to_bottom,#000_calc(100%-56px),transparent)]",
+        )}
+      >
+        <Field label="模型" inline>
+          <Picker
+            ariaLabel="模型"
+            value={model}
+            onValueChange={chooseModel}
+            options={modelOptions}
+            placeholder="没有可用模型"
+            disabled={models.length === 0}
+            className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
+            popupClassName="w-[300px]"
+          />
+        </Field>
+
         <Field label="提示词" htmlFor="studio-prompt">
           <div className="rounded-[14px] bg-panel/75 px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--line)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--acc),0_0_0_3px_var(--acc-soft)]">
             <textarea
@@ -443,64 +517,72 @@ export const Composer = forwardRef<
           </div>
         </Field>
 
-        <Field label="比例">
+        <Field label="比例" note={sendRatio !== ratio ? `当前模型用 ${sendRatio}` : undefined}>
+          <RatioGrid value={sendRatio} onValueChange={setRatio} supported={caps.aspectRatios} />
+        </Field>
+
+        <Field
+          label="画质"
+          note={
+            // Raised because the shape needs it (e.g. OpenAI 16:9 starts at 2K).
+            sendResolution !== resolution && caps.resolutions.includes(resolution)
+              ? `${sendRatio} 最小 ${sendResolution}，按 ${sendResolution} 出图`
+              : RESOLUTION_HINT[sendResolution]
+          }
+        >
           <Segmented
-            ariaLabel="画面比例"
-            value={ratio}
-            onValueChange={(v) => setRatio(v as AspectRatio)}
-            options={ASPECT_RATIOS.map((r) => ({ value: r, label: r }))}
+            ariaLabel="画质"
+            size="lg"
+            value={sendResolution}
+            onValueChange={(v) => setResolution(v as ImageResolution)}
+            options={RESOLUTIONS.map((value) => {
+              const reason = resolutionUnavailable(caps, value, sendRatio);
+              return { value, label: value, disabled: reason !== null, ...(reason ? { title: reason } : {}) };
+            })}
             className="flex w-full"
           />
         </Field>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-          <Field label="画质">
-            <Segmented
-              ariaLabel="画质"
-              size="lg"
-              value={effectiveQuality}
-              onValueChange={(v) => setQuality(v as ImageQuality)}
-              options={[
-                { value: "standard", label: "1K", title: "1K 标准" },
-                {
-                  value: "hd",
-                  label: "2K",
-                  title: supportsHd ? "2K 高清" : "当前模型最高 1K",
-                  disabled: !supportsHd,
-                },
-              ]}
-              className="flex w-full"
-            />
-          </Field>
-          <Field label="数量">
-            <Stepper value={count} min={1} max={IMAGE_BATCH_MAX} onChange={setCount} />
-          </Field>
-        </div>
-
-        <Field label="模型">
-          <Picker
-            ariaLabel="模型"
-            value={model}
-            onValueChange={chooseModel}
-            options={modelOptions}
-            placeholder="没有可用模型"
-            disabled={models.length === 0}
-            className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
-            popupClassName="w-[300px]"
+        <Field
+          label="质量"
+          note={caps.qualities.length ? QUALITY_HINT[sendQuality] : "当前模型不可调，由模型决定"}
+        >
+          <Segmented
+            ariaLabel="质量"
+            value={sendQuality}
+            onValueChange={(v) => setQuality(v as ImageQuality)}
+            options={QUALITIES.map((value) => {
+              const enabled = value === "auto" || caps.qualities.includes(value);
+              return {
+                value,
+                label: QUALITY_LABEL[value],
+                disabled: !enabled,
+                ...(enabled
+                  ? {}
+                  : {
+                      title: topQuality
+                        ? `当前模型最高 ${QUALITY_LABEL[topQuality]}`
+                        : "当前模型不可调",
+                    }),
+              };
+            })}
+            className="flex w-full"
           />
         </Field>
       </div>
 
       <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6">
-        <Button
-          variant="accent"
-          size="poster"
-          slant
-          className="h-14 w-full text-[21px]"
-          disabled={!canSubmit}
-          onClick={() => void submit()}
-          title={blockedReason ?? undefined}
-        >
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
+          <Stepper value={count} min={1} max={IMAGE_BATCH_MAX} onChange={setCount} />
+          <Button
+            variant="accent"
+            size="poster"
+            slant
+            className="h-14 w-full text-[21px]"
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+            title={blockedReason ?? undefined}
+          >
           {submitting ? (
             <>
               <LiveDot className="bg-acc-ink" />
@@ -512,7 +594,8 @@ export const Composer = forwardRef<
               <ArrowRightIcon strokeWidth={2.4} />
             </>
           )}
-        </Button>
+          </Button>
+        </div>
         <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted" aria-live="polite">
           {blockedReason && trimmed ? (
             <span className="text-fg-soft">{blockedReason}</span>
@@ -532,18 +615,30 @@ function Field({
   htmlFor,
   note,
   noteTone = "muted",
+  inline = false,
   children,
 }: {
   label: string;
   htmlFor?: string;
-  note?: string;
+  note?: string | undefined;
   noteTone?: "muted" | "alert";
+  /** Label and control on one row (short controls such as the model picker). */
+  inline?: boolean;
   children: React.ReactNode;
 }) {
   const Label = htmlFor ? "label" : "p";
+  if (inline)
+    return (
+      <div className="flex items-center gap-3">
+        <Label {...(htmlFor ? { htmlFor } : {})} className="poster-label shrink-0 text-[17px] leading-none text-fg">
+          {label}
+        </Label>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
+    );
   return (
     <div>
-      <div className="mb-2.5 flex items-baseline gap-2">
+      <div className="mb-2 flex items-baseline gap-2">
         <Label {...(htmlFor ? { htmlFor } : {})} className="poster-label text-[17px] leading-none text-fg">
           {label}
         </Label>
@@ -558,7 +653,7 @@ function Field({
   );
 }
 
-/** − n + for the number of pictures (each one a separate charge). */
+/** − n + for the number of pictures (each one a separate charge), beside 生成. */
 function Stepper({
   value,
   min,
@@ -576,7 +671,7 @@ function Stepper({
     <div
       role="group"
       aria-label="生成张数"
-      className="flex h-12 items-center justify-between rounded-[12px] bg-panel/75 px-2 shadow-[inset_0_0_0_1px_var(--line)]"
+      className="flex h-14 w-[118px] items-center justify-between rounded-[14px] bg-panel/75 px-2 shadow-[inset_0_0_0_1px_var(--line)]"
     >
       <button
         type="button"

@@ -11,7 +11,7 @@ import {
 import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, isActiveJob, isFailedJob, jobStatusLabel } from "@/lib/image-jobs";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
 
 import { BillingBadge, needsReconcile } from "../billing/billing-badge";
 import { useToast } from "../toast";
@@ -74,7 +74,7 @@ export function LoupeDialog({
                 </span>
                 <span className="truncate">{modelName}</span>
                 <span className="shrink-0 font-mono text-[12px] text-fg-muted">
-                  {QUALITY_LABEL[job.quality]} · {job.aspectRatio ?? "默认"}
+                  {describeImageParams({ ...job, aspectRatio: job.aspectRatio ?? "默认" })}
                 </span>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
@@ -110,9 +110,15 @@ export function LoupeDialog({
                   <dd className="text-fg">{modelName}</dd>
                   <dt className="text-fg-muted">规格</dt>
                   <dd className="text-fg tabular">
-                    {QUALITY_LABEL[job.quality]} · {job.aspectRatio ?? "默认比例"}
+                    {job.resolution} · {job.aspectRatio ?? "默认比例"}
                     {job.width && job.height ? ` · ${job.width}×${job.height}` : ""}
                   </dd>
+                  {job.quality ? (
+                    <>
+                      <dt className="text-fg-muted">质量</dt>
+                      <dd className="text-fg">{QUALITY_LABEL[job.quality]}</dd>
+                    </>
+                  ) : null}
                   {job.inputImages.length ? (
                     <>
                       <dt className="text-fg-muted">参考图</dt>

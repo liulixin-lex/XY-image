@@ -48,7 +48,9 @@ async function stopDuringImageWait(unsent: boolean) {
   vi.spyOn(services.billing, "prepareImageJob").mockResolvedValue({
     keyId: 7,
     model: "gpt-image-2",
-    quality: "standard",
+    resolution: "2K",
+    quality: "auto",
+    aspect_ratio: "1:1",
   } as never);
   const jobService = {
     createJob: vi.fn(async () => ({ id: "job-1" })),
@@ -107,7 +109,8 @@ async function stopDuringImageWait(unsent: boolean) {
     const waiting = submit({
       prompt: "灯塔",
       model: "gpt-image-2",
-      quality: "standard",
+      resolution: "2K",
+      quality: "auto",
       aspectRatio: "1:1",
       title: "灯塔",
     });

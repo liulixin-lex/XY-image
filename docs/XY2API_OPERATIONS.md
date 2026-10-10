@@ -65,11 +65,13 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
   node --env-file=/run/xy-preflight.env --import tsx scripts/xy2api-preflight.ts
 ```
 
-脚本先读 models/usage，逐模型 standard/hd 各调用一次，再对话；输出模型数量、余额、耗时、字节数、MIME、请求 ID，不打印 Key 或模型回答。`requestedQuality` 与 `effectiveQuality` 区分请求与降级：只支持 standard 的模型两次都会生成 standard。失败退出码非零。
+脚本先读 models/usage，逐模型对目录列出的每个画质各调用一次（1K / 2K / 4K，质量取该模型最便宜的 `low`，没有则 `auto`），再对话；输出模型数量、余额、画质、质量、实际尺寸、耗时、字节数、MIME、请求 ID，不打印 Key 或模型回答。一个支持三档画质的模型会产生三次付费调用，执行前按模型数估算费用。失败退出码非零。
+
+主站 xy2api 0.2.5 的生图计档规则（读源码确认，`image_billing_size.go` 等）：OpenAI 按返回图长边计档，≤1024 为 1K，≤2048 为 2K，更大为 4K；Gemini 按请求的 `imageConfig.imageSize`，缺省按 2K；Grok 读请求的 `size`（`1k` / `2k`），缺省按 2K。核对用量时用脚本输出的实际尺寸对照档位。
 
 若 `/v1/models` 省略生图模型，额外设置 PREFLIGHT_KEY_PLATFORM 为真实分组平台（openai/grok/gemini/antigravity/composite），使脚本与 Key 同步的平台回退规则一致。不要凭猜测选平台。Key 不支持全部协议时分别用各协议内测 Key 执行。
 
-每次运行后到主站用量页核对生成次数、实际费用、余额和 `client:<X-Client-Request-ID>`。出现 upstream_too_large 时，由主站负责人调整响应上限或在 LOOMIC_IMAGE_MODELS 中将对应模型 maxQuality 降为 standard，再重新做受影响模型验收。
+每次运行后到主站用量页核对生成次数、实际费用、余额和 `client:<X-Client-Request-ID>`。出现 upstream_too_large 时，由主站负责人调整响应上限或在 LOOMIC_IMAGE_MODELS 中把对应模型的 `resolutions` 去掉最高一档，再重新做受影响模型验收。
 
 ## 上线门槛与运行
 

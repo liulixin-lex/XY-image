@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  IMAGE_QUALITIES,
+  LEGACY_IMAGE_QUALITIES,
+  imageResolutionSchema,
+} from "./image-params.js";
+
 // --- Enums ---
 
 export const backgroundJobStatusSchema = z.enum([
@@ -24,7 +30,9 @@ export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1).max(4000),
   model: z.string().optional(),
   aspect_ratio: z.string().optional(),
-  quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  resolution: imageResolutionSchema.optional(),
+  /** New jobs store auto / low / medium / high; older ones standard / hd / ultra (= 1K / 2K / 4K). */
+  quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
 });
 export type ImageGenerationPayload = z.infer<
   typeof imageGenerationPayloadSchema
@@ -102,8 +110,14 @@ export const createImageJobRequestSchema = z.object({
   thread_id: z.string().optional(),
   prompt: z.string().min(1).max(4000),
   model: z.string().optional(),
-  aspect_ratio: z.string().optional(),
-  quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  aspect_ratio: z.string().max(10).optional(),
+  /** 画质: 1K / 2K / 4K. The server clamps to what the model supports. */
+  resolution: imageResolutionSchema.optional(),
+  /**
+   * 质量: auto / low / medium / high. The legacy values standard / hd / ultra
+   * (which meant 1K / 2K / 4K) are still accepted from older clients.
+   */
+  quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 

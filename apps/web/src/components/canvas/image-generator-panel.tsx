@@ -25,13 +25,27 @@ import {
 } from "../../lib/canvas-image-generator";
 import { createExcalidrawImageElement, fetchAsDataURL } from "../../lib/canvas-elements";
 import { type IssueSpec, describeIssue } from "../../lib/generation-errors";
-import { ASPECT_RATIOS, QUALITY_LABEL, maxReferenceImages } from "../../lib/image-model-meta";
-import { type ImageQuality, generateImageDirect } from "../../lib/server-api";
+import { normalizeImageParams, resolveImageParams } from "@loomic/shared";
+
+import {
+  ASPECT_RATIOS,
+  type ImageQuality,
+  type ImageResolution,
+  QUALITIES,
+  QUALITY_HINT,
+  QUALITY_LABEL,
+  RESOLUTIONS,
+  RESOLUTION_HINT,
+  describeCapabilities,
+  modelCapabilities,
+  resolutionUnavailable,
+} from "../../lib/image-model-meta";
+import { generateImageDirect } from "../../lib/server-api";
 import { cn } from "../../lib/utils";
 import { LiveDot } from "../ambient/live-dot";
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
-import { Picker, Segmented } from "../ui/select";
+import { Picker } from "../ui/select";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
@@ -89,9 +103,11 @@ export function ImageGeneratorPanel({
   const [prompt, setPrompt] = useState(data.prompt);
   const [model, setModel] = useState<string | null>(data.model || null);
   const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
-  const [quality, setQuality] = useState<ImageQuality>(
-    data.quality === "hd" ? "hd" : "standard",
+  // Placeholders saved before 画质 / 质量 split stored quality standard / hd.
+  const [resolution, setResolution] = useState<ImageResolution>(
+    () => normalizeImageParams(data).resolution,
   );
+  const [quality, setQuality] = useState<ImageQuality>(() => normalizeImageParams(data).quality);
   const [state, setState] = useState<PanelState>(() => {
     if (data.status !== "generating") return { kind: "idle" };
     return inFlight.has(elementId) ? { kind: "generating" } : { kind: "stale" };
@@ -134,9 +150,14 @@ export function ImageGeneratorPanel({
   }, [models, preferred]);
 
   const current = models.find((m) => m.id === model) ?? null;
-  const supportsHd = current?.maxQuality !== "standard";
-  const effectiveQuality: ImageQuality = supportsHd ? quality : "standard";
-  const refLimit = maxReferenceImages(model);
+  const caps = modelCapabilities(current);
+  // What will actually be sent: the server applies the same shared rules.
+  const {
+    resolution: sendResolution,
+    quality: sendQuality,
+    aspectRatio: sendRatio,
+  } = resolveImageParams(caps, { resolution, quality, aspectRatio });
+  const refLimit = caps.maxInputImages;
   const overRefLimit = attachments.length > refLimit;
 
   // Auto-size the prompt.
@@ -162,9 +183,18 @@ export function ImageGeneratorPanel({
     [excalidrawApi, elementId],
   );
 
+  const changeResolution = useCallback(
+    (next: string) => {
+      const value = next as ImageResolution;
+      setResolution(value);
+      updateImageGeneratorElement(excalidrawApi, elementId, { resolution: value });
+    },
+    [excalidrawApi, elementId],
+  );
+
   const changeQuality = useCallback(
     (next: string) => {
-      const value: ImageQuality = next === "hd" ? "hd" : "standard";
+      const value = next as ImageQuality;
       setQuality(value);
       updateImageGeneratorElement(excalidrawApi, elementId, { quality: value });
     },
@@ -206,21 +236,29 @@ export function ImageGeneratorPanel({
     const params = {
       prompt: trimmed,
       model,
-      aspectRatio,
-      quality: effectiveQuality,
+      aspectRatio: sendRatio,
+      resolution: sendResolution,
+      quality: sendQuality,
     };
     updateImageGeneratorElement(excalidrawApi, elementId, {
       status: "generating",
       ...params,
     });
-    console.info("[image-gen] request sent", { elementId, model, quality: effectiveQuality });
+    console.info("[image-gen] request sent", {
+      elementId,
+      model,
+      resolution: sendResolution,
+      quality: sendQuality,
+      aspectRatio: sendRatio,
+    });
 
     let result: Awaited<ReturnType<typeof generateImageDirect>>;
     try {
       result = await generateImageDirect(tokenRef.current, trimmed, {
         model,
-        aspectRatio,
-        quality: effectiveQuality,
+        aspectRatio: sendRatio,
+        resolution: sendResolution,
+        quality: sendQuality,
         ...(readyAttachments.length
           ? { inputImages: readyAttachments.map((a) => a.url) }
           : {}),
@@ -277,8 +315,9 @@ export function ImageGeneratorPanel({
     canGenerate,
     model,
     trimmed,
-    aspectRatio,
-    effectiveQuality,
+    sendRatio,
+    sendResolution,
+    sendQuality,
     excalidrawApi,
     elementId,
     elementBounds,
@@ -327,13 +366,52 @@ export function ImageGeneratorPanel({
         value: m.id,
         text: m.displayName,
         label: m.displayName,
-        description: `${m.description} · 最高 ${QUALITY_LABEL[m.maxQuality ?? "hd"]}`,
+        description: `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
       })),
     [models],
   );
   const ratioOptions = useMemo(
-    () => ASPECT_RATIOS.map((r) => ({ value: r, text: r, label: r })),
-    [],
+    () =>
+      ASPECT_RATIOS.map((r) => ({
+        value: r,
+        text: r,
+        label: r,
+        disabled: !caps.aspectRatios.includes(r),
+        ...(caps.aspectRatios.includes(r) ? {} : { description: "当前模型不支持" }),
+      })),
+    [caps.aspectRatios],
+  );
+  const resolutionOptions = useMemo(
+    () =>
+      RESOLUTIONS.map((r) => {
+        const reason = resolutionUnavailable(
+          { resolutions: caps.resolutions, maxRatio: caps.maxRatio },
+          r,
+          sendRatio,
+        );
+        return {
+          value: r,
+          text: r,
+          label: r,
+          disabled: reason !== null,
+          description: reason ?? RESOLUTION_HINT[r],
+        };
+      }),
+    [caps.resolutions, caps.maxRatio, sendRatio],
+  );
+  const qualityOptions = useMemo(
+    () =>
+      QUALITIES.map((q) => {
+        const enabled = q === "auto" || caps.qualities.includes(q);
+        return {
+          value: q,
+          text: QUALITY_LABEL[q],
+          label: QUALITY_LABEL[q],
+          disabled: !enabled,
+          description: enabled ? QUALITY_HINT[q] : "当前模型不可调",
+        };
+      }),
+    [caps.qualities],
   );
 
   return createPortal(
@@ -452,23 +530,30 @@ export function ImageGeneratorPanel({
         </button>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <Segmented
-            value={effectiveQuality}
-            onValueChange={changeQuality}
-            ariaLabel="清晰度"
-            className="h-8"
-            options={[
-              { value: "standard", label: "1K" },
-              {
-                value: "hd",
-                label: "2K",
-                disabled: !supportsHd || generating,
-                title: supportsHd ? "2K" : "当前模型只支持 1K",
-              },
-            ]}
+          <Picker
+            value={sendResolution}
+            onValueChange={changeResolution}
+            options={resolutionOptions}
+            ariaLabel="画质"
+            disabled={generating}
+            side="top"
+            align="end"
+            className="h-8 w-[58px] tabular"
+            popupClassName="w-[240px]"
           />
           <Picker
-            value={aspectRatio}
+            value={sendQuality}
+            onValueChange={changeQuality}
+            options={qualityOptions}
+            ariaLabel="质量"
+            disabled={generating}
+            side="top"
+            align="end"
+            className="h-8 w-[64px]"
+            popupClassName="w-[200px]"
+          />
+          <Picker
+            value={sendRatio}
             onValueChange={changeRatio}
             options={ratioOptions}
             ariaLabel="画面比例"

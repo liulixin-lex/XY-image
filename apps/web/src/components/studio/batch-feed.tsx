@@ -24,7 +24,7 @@ import {
   isUnsentJob,
   jobAspect,
 } from "@/lib/image-jobs";
-import { QUALITY_LABEL } from "@/lib/image-model-meta";
+import { describeImageParams } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
 
 import { RevealImage } from "../ambient/reveal-image";
@@ -120,7 +120,7 @@ function BatchBlock({
   const titleId = `${groupAnchor(group.key)}-title`;
   const meta = [
     lead.aspectRatio ?? "默认比例",
-    QUALITY_LABEL[lead.quality],
+    describeImageParams({ resolution: lead.resolution, quality: lead.quality }),
     `${group.size} 张`,
     modelName(lead.model),
   ].join(" · ");

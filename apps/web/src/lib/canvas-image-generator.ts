@@ -1,13 +1,6 @@
-import { getViewportCenter } from "./canvas-elements";
+import { aspectRatioValue } from "@loomic/shared";
 
-// Aspect ratio to pixel dimensions mapping (at 1K base)
-const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
-  "1:1": { w: 1024, h: 1024 },
-  "16:9": { w: 1024, h: 576 },
-  "9:16": { w: 576, h: 1024 },
-  "4:3": { w: 1024, h: 768 },
-  "3:4": { w: 768, h: 1024 },
-};
+import { getViewportCenter } from "./canvas-elements";
 
 export type ImageGeneratorStatus = "idle" | "generating" | "completed" | "error";
 
@@ -17,6 +10,9 @@ export type ImageGeneratorData = {
   prompt: string;
   model: string;
   aspectRatio: string;
+  /** 画质 1K / 2K / 4K; missing on placeholders saved before it existed. */
+  resolution?: string;
+  /** 质量 auto / low / medium / high (older placeholders: standard / hd = 1K / 2K). */
   quality: string;
   inputImages?: string[];
   errorMessage?: string;
@@ -37,27 +33,10 @@ export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["1:1"]!;
-  const scale = Math.min(displayMaxSize / dims.w, displayMaxSize / dims.h);
-  return {
-    width: Math.round(dims.w * scale),
-    height: Math.round(dims.h * scale),
-  };
-}
-
-/**
- * Get the actual generation dimensions for an aspect ratio and quality level.
- */
-export function getGenerationDimensions(
-  aspectRatio: string,
-  quality: string,
-): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["1:1"]!;
-  const multiplier = quality === "ultra" ? 4 : quality === "hd" ? 2 : 1;
-  return {
-    width: dims.w * multiplier,
-    height: dims.h * multiplier,
-  };
+  const ratio = aspectRatioValue(aspectRatio) ?? 1;
+  return ratio >= 1
+    ? { width: displayMaxSize, height: Math.round(displayMaxSize / ratio) }
+    : { width: Math.round(displayMaxSize * ratio), height: displayMaxSize };
 }
 
 /**
@@ -72,6 +51,7 @@ export function createImageGeneratorElement(
   options?: {
     aspectRatio?: string;
     model?: string;
+    resolution?: string;
     quality?: string;
   },
 ): string {
@@ -87,7 +67,8 @@ export function createImageGeneratorElement(
     // image key can reach). Never hard-code a model id here.
     model: options?.model ?? "",
     aspectRatio,
-    quality: options?.quality ?? "standard",
+    resolution: options?.resolution ?? "2K",
+    quality: options?.quality ?? "auto",
   };
 
   const id = generateId();
