@@ -4,6 +4,8 @@
  */
 import {
   type BackgroundJob,
+  IMAGE_EDIT_MODES,
+  type ImageEditMode,
   type ImageQuality,
   type ImageResolution,
   isLegacyImageQuality,
@@ -46,6 +48,8 @@ export type ImageJobView = {
   batchIndex: number;
   /** Pictures asked for in its batch (1 for single jobs). */
   batchSize: number;
+  /** 局部重绘 / 扩图 of another picture; null for a normal request. */
+  edit: ImageEditMode | null;
 };
 
 function str(value: unknown): string | null {
@@ -88,7 +92,14 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     batchId: str(payload.batch_id),
     batchIndex: num(payload.batch_index) ?? 0,
     batchSize: num(payload.batch_size) ?? 1,
+    edit: editMode(payload.edit),
   };
+}
+
+function editMode(value: unknown): ImageEditMode | null {
+  const mode =
+    value && typeof value === "object" ? (value as { mode?: unknown }).mode : null;
+  return (IMAGE_EDIT_MODES as readonly unknown[]).includes(mode) ? (mode as ImageEditMode) : null;
 }
 
 export function isActiveJob(job: Pick<ImageJobView, "status">) {

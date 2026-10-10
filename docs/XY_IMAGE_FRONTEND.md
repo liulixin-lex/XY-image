@@ -16,7 +16,7 @@
 | `/login` | 主站邮箱和密码登录，支持 TOTP、Turnstile、限流倒计时、`?reason=expired` 和 `?next=` | `components/auth/login-view.tsx` |
 | `/register` | 只给出主站注册链接，本站不建账号 | `app/register/page.tsx` |
 | `/home` | 工作台首页：交给助手（新建画布并带上提示词）、起手式、余额和 Key 状态、最近生成、最近画布 | `app/(workspace)/home/page.tsx` |
-| `/studio` | 生图：左边是设置（`composer.tsx`：模型、提示词和「优化提示词」、参考图、比例、画质、质量、张数），中间是按请求分组的结果（`batch-feed.tsx`，一次多张的每张单独显示状态），右边是记录栏（`history-rail.tsx`），大图和详情在 `loupe-dialog.tsx` | `app/(workspace)/studio/page.tsx`、`hooks/use-studio-jobs.ts`、`components/studio/*` |
+| `/studio` | 生图：左边是设置（`composer.tsx`：模型、提示词和「优化提示词」、参考图、比例、画质、质量、张数），中间是按请求分组的结果（`batch-feed.tsx`，一次多张的每张单独显示状态），右边是记录栏（`history-rail.tsx`），大图和详情在 `loupe-dialog.tsx`，局部重绘和扩图在 `edit-dialog.tsx` | `app/(workspace)/studio/page.tsx`、`hooks/use-studio-jobs.ts`、`components/studio/*` |
 | `/projects` | 画布项目列表 | `app/(workspace)/projects/page.tsx` |
 | `/canvas?id=` | 节点画布（React Flow）：提示词卡片、生成节点、图片、文字、形状、画框；右侧设计助手 | `app/canvas/page.tsx`、`components/node-canvas/*`、`lib/node-canvas/*` |
 | `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对） | `components/settings/*` |
@@ -28,6 +28,7 @@
 - **账户**：`lib/account-context.tsx` 统一提供账户、余额、Key、图像模型和对话模型。生成结束后调用 `notifyGenerationSettled()` 刷新余额。`balance === null` 表示读不到，界面要显示「暂不可读」或「未选择 Key」，不能显示 `$0`。
 - **错误**：`lib/generation-errors.ts` 是错误码目录，`components/issues/issue-provider.tsx` 负责路由。余额不足、Key 不可用、结果待核对这类阻断性问题弹对话框，并只给一个能解决问题的动作（充值、去设置、去主站用量页）；临时性问题用 toast。调用方只需 `report(error)` 或 `reportCode(code, message)`，不要自己写这类文案。
 - **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中只是还没结算，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。界面只用 `billingFlag` 标两种：「待核对」和「未发出」，`charged` / `not_charged` 不显示标签（见下面第 7 条）。已扣费但 Storage 暂时写不进去的任务是 `queued` 加 `error_code = storage_retrying`：`isSavingJob` 为真，界面显示「保存中」，不能取消，不占并发名额（`busyCount`），本页提交的任务会弹一次提示；服务端补传成功后自动变成已完成（服务端 M6）。
+- **局部重绘 / 扩图**（M-G，2026-10-10）：从结果卡片的工具条或大图弹窗打开 `components/studio/edit-dialog.tsx`，只对已经出图的那张做，一次只改一张原图。局部重绘在 `mask-painter.tsx` 上涂：遮罩画布和原图同尺寸（长边最多 2048），画笔 / 擦除 / 撤销 / 重做 / 清空，`[` `]` 调笔刷，鼠标、触控笔和手指都能用；提交时把涂抹层导出成 PNG（不透明 = 要改），经 `/api/uploads` 上传，任务带 `edit: { mode: "inpaint", mask }`。扩图选新比例、放大倍数（不放大 / 1.25 / 1.5 / 2）和原图位置（九宫格），预览按 `@loomic/shared` 的 `outpaintFrame` 画出新画框，任务带 `edit: { mode: "outpaint", scale, anchor }`，补出来的画面由服务端按厂商做（`apps/server/src/generation/mask-edit.ts`：OpenAI 发真遮罩，Gemini 发高亮副本或灰框图）。只列 `/api/image-models` 里 `maskEdit: true` 的模型；当前 Key 一个都没有时不显示入口。涂得太少、画框没有多出画面、模型不支持、多于一张原图这几种情况在发出前就拦下（服务端同样再查一次，不扣费）。每张单独发一次，不自动重发。结果卡片的说明行和大图详情会标「局部重绘」「扩图」。
 - **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 id（主站 `openai:<model>`，自己的服务商 `custom:<providerId>:<model>`），为空表示用设置里的默认；列表里已经没有的 id（换了 Key、服务商停用或删除）会自动回到默认。
 
 ## 计费安全规则（改代码前必读）
@@ -92,7 +93,7 @@
 export PATH=$HOME/.local/bin:$PATH
 cd apps/web
 npx tsc -p tsconfig.json --noEmit
-npx vitest run                     # 31 个文件，218 个用例（2026-10-10）
+npx vitest run                     # 32 个文件，225 个用例（2026-10-10）
 cd ../.. && pnpm --filter @loomic/web build   # 静态导出到 apps/web/out
 ```
 

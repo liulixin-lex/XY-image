@@ -98,6 +98,51 @@ const png = async () =>
       .toBuffer()
   ).toString("base64");
 
+const sourcePng = async (width: number, height: number) =>
+  (
+    await sharp({
+      create: { width, height, channels: 3, background: { r: 30, g: 90, b: 200 } },
+    })
+      .png()
+      .toBuffer()
+  ).toString("base64");
+/** A studio-style mask: transparent, with an opaque block painted in. */
+const maskPng = async (
+  width: number,
+  height: number,
+  block: { left: number; top: number; width: number; height: number } | null,
+) =>
+  (
+    await sharp({
+      create: {
+        width,
+        height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite(
+        block
+          ? [
+              {
+                input: {
+                  create: {
+                    width: block.width,
+                    height: block.height,
+                    channels: 4,
+                    background: { r: 255, g: 255, b: 255, alpha: 1 },
+                  },
+                },
+                left: block.left,
+                top: block.top,
+              },
+            ]
+          : [],
+      )
+      .png()
+      .toBuffer()
+  ).toString("base64");
+
 describe("per-call gateway image transports", () => {
   it("sends one OpenAI request with the caller key and reads request id", async () => {
     const server = await gateway(200, { data: [{ b64_json: await png() }] });
@@ -201,6 +246,67 @@ describe("per-call gateway image transports", () => {
     expect(server.requests[0]?.path).toBe("/v1/images/edits");
     expect(server.requests[0]?.body).toContain('name="image[]"');
   });
+  it("sends 局部重绘 as one edit with the source, a mask and the wrapped prompt", async () => {
+    const picture = await sourcePng(96, 64);
+    const mask = await maskPng(48, 32, { left: 0, top: 0, width: 24, height: 32 });
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2",
+        prompt: "把左边换成森林",
+        resolution: "2K",
+        aspectRatio: "3:2",
+        inputImages: [`data:image/png;base64,${picture}`],
+        edit: { mode: "inpaint", mask: `data:image/png;base64,${mask}` },
+      },
+      { apiKey: "synthetic-edit-key", baseUrl: server.baseUrl },
+    );
+    expect(server.requests).toHaveLength(1);
+    const body = server.requests[0]?.body ?? "";
+    expect(server.requests[0]?.path).toBe("/v1/images/edits");
+    expect(body.match(/name="image\[\]"/g)).toHaveLength(1);
+    expect(body).toContain('name="mask"; filename="mask.png"');
+    expect(body).toContain("Edit only the transparent (masked) area");
+    expect(body).toContain("把左边换成森林");
+    expect(body).toContain("2048x1360");
+  });
+  it("sends 扩图 as the picture on a transparent frame of the new shape", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2",
+        prompt: "向两边延伸",
+        resolution: "2K",
+        aspectRatio: "16:9",
+        inputImages: [`data:image/png;base64,${await sourcePng(64, 64)}`],
+        edit: { mode: "outpaint", scale: 1, anchor: "center" },
+      },
+      { apiKey: "synthetic-edit-key", baseUrl: server.baseUrl },
+    );
+    const body = server.requests[0]?.body ?? "";
+    expect(body).toContain('name="mask"; filename="mask.png"');
+    expect(body).toContain('filename="source.png"');
+    expect(body).toContain("Extend the picture outward");
+    expect(body).toContain("2048x1152");
+  });
+  it("refuses an empty 局部重绘 mask without calling the main site", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await expect(
+      openai.generate(
+        {
+          model: "gpt-image-2",
+          prompt: "x",
+          inputImages: [`data:image/png;base64,${await sourcePng(32, 32)}`],
+          edit: {
+            mode: "inpaint",
+            mask: `data:image/png;base64,${await maskPng(32, 32, null)}`,
+          },
+        },
+        { apiKey: "synthetic-edit-key", baseUrl: server.baseUrl },
+      ),
+    ).rejects.toMatchObject({ name: "BillingGuardError", code: "invalid_input" });
+    expect(server.requests).toHaveLength(0);
+  });
   it.each([429, 503])("never retries an OpenAI %i response", async (status) => {
     const server = await gateway(status, {
       error: { type: "server_error", message: "synthetic-sensitive-message" },
@@ -282,6 +388,72 @@ describe("per-call gateway image transports", () => {
     expect(config.imageConfig).toEqual({ aspectRatio: "1:1", imageSize: "2K" });
     // Nano Banana Pro has no 质量 setting: no thinking config is sent.
     expect(config).not.toHaveProperty("thinkingConfig");
+  });
+  it("sends Gemini 局部重绘 as the source plus a highlighted copy", async () => {
+    const server = await gateway(200, {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { inlineData: { mimeType: "image/png", data: await png() } },
+            ],
+          },
+        },
+      ],
+    });
+    await gemini.generate(
+      {
+        model: "nano-banana-pro",
+        prompt: "换成晴天",
+        resolution: "2K",
+        aspectRatio: "1:1",
+        inputImages: [`data:image/png;base64,${await sourcePng(64, 64)}`],
+        edit: {
+          mode: "inpaint",
+          mask: `data:image/png;base64,${await maskPng(64, 64, { left: 0, top: 0, width: 64, height: 20 })}`,
+        },
+      },
+      { apiKey: "synthetic-google-key", baseUrl: server.baseUrl },
+    );
+    const request = JSON.parse(server.requests[0]?.body ?? "{}");
+    const parts = request.contents[0].parts;
+    expect(parts).toHaveLength(3);
+    expect(parts[0].text).toContain("highlighted in translucent magenta");
+    expect(parts[0].text).toContain("换成晴天");
+    expect(parts[1].inlineData.mimeType).toBe("image/png");
+    expect(parts[2].inlineData.mimeType).toBe("image/jpeg");
+  });
+  it("sends Gemini 扩图 as the picture on a gray frame", async () => {
+    const server = await gateway(200, {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { inlineData: { mimeType: "image/png", data: await png() } },
+            ],
+          },
+        },
+      ],
+    });
+    await gemini.generate(
+      {
+        model: "nano-banana-pro",
+        prompt: "继续画",
+        aspectRatio: "16:9",
+        inputImages: [`data:image/png;base64,${await sourcePng(64, 64)}`],
+        edit: { mode: "outpaint", scale: 1.5, anchor: "left" },
+      },
+      { apiKey: "synthetic-google-key", baseUrl: server.baseUrl },
+    );
+    const request = JSON.parse(server.requests[0]?.body ?? "{}");
+    const parts = request.contents[0].parts;
+    expect(parts).toHaveLength(2);
+    expect(parts[0].text).toContain("flat gray frame");
+    const framed = await sharp(
+      Buffer.from(parts[1].inlineData.data, "base64"),
+    ).metadata();
+    expect(framed.width && framed.height && framed.width / framed.height).toBeCloseTo(16 / 9, 1);
+    expect(request.generationConfig.imageConfig.aspectRatio).toBe("16:9");
   });
   it("maps Gemini 4K and 质量 to imageSize and thinkingLevel", async () => {
     const server = await gateway(200, {

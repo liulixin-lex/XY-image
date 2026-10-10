@@ -5,7 +5,7 @@ import { resolveImageProviderName } from "../../generation/providers/registry.js
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import { createSupabaseFetch } from "../../supabase/transport.js";
 import { describeErrorForLog } from "../../utils/error-sanitizer.js";
-import { imagePayloadSchema } from "./billing-guard.js";
+import { checkMaskEdit, imagePayloadSchema } from "./billing-guard.js";
 import { findImageModel } from "./catalog.js";
 import {
   BillingGuardError,
@@ -85,6 +85,8 @@ export async function executeImageJob(
     (payload.input_images?.length && !model.supportsEdit)
   )
     throw new BillingGuardError("invalid_input");
+  if (payload.edit)
+    checkMaskEdit(model, payload.input_images?.length ?? 0);
   const { data: member, error: memberError } = await admin
     .from("workspace_members")
     .select("user_id")
@@ -122,6 +124,7 @@ export async function executeImageJob(
           ...(payload.input_images
             ? { inputImages: payload.input_images }
             : {}),
+          ...(payload.edit ? { edit: payload.edit } : {}),
         },
         {
           apiKey: credential.apiKey,

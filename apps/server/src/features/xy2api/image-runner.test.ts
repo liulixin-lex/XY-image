@@ -139,6 +139,47 @@ describe("image billing lifecycle", () => {
     });
     expect(fixture.generate).not.toHaveBeenCalled();
   });
+  it("passes a 局部重绘 edit to the provider with its one source", async () => {
+    const fixture = setup();
+    const job = fixture.tables.background_jobs?.[0];
+    if (job)
+      job.payload = {
+        model: "gpt-image-2",
+        prompt: "把杯子换成红色",
+        resolution: "2K",
+        quality: "auto",
+        aspect_ratio: "1:1",
+        input_images: ["https://assets.example.com/a.png"],
+        edit: { mode: "inpaint", mask: "https://assets.example.com/m.png" },
+      };
+    await fixture.execute();
+    expect(fixture.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "把杯子换成红色",
+        inputImages: ["https://assets.example.com/a.png"],
+        edit: { mode: "inpaint", mask: "https://assets.example.com/m.png" },
+      }),
+      expect.anything(),
+    );
+  });
+  it("refuses an edit with two sources before claiming the job", async () => {
+    const fixture = setup();
+    const job = fixture.tables.background_jobs?.[0];
+    if (job)
+      job.payload = {
+        model: "gpt-image-2",
+        prompt: "x",
+        resolution: "2K",
+        quality: "auto",
+        input_images: ["https://a.example/1.png", "https://a.example/2.png"],
+        edit: { mode: "outpaint", scale: 1.5, anchor: "center" },
+      };
+    await expect(fixture.execute()).rejects.toMatchObject({
+      code: "invalid_input",
+    });
+    expect(fixture.generate).not.toHaveBeenCalled();
+    expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe("none");
+  });
   it("does not dispatch when the durable claim fails", async () => {
     const fixture = setup();
     fixture.failClaim();

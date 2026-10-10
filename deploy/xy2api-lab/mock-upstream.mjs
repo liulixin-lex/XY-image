@@ -9,7 +9,8 @@
 //   - OpenAI  /v1/models, /v1/chat/completions, /v1/responses,
 //             /v1/images/generations, /v1/images/edits
 //   - Gemini  /v1beta/models, /v1beta/models/{model}:generateContent
-//   - Lab     /healthz, /__mock/requests (recent request summaries, no secrets)
+//   - Lab     /healthz, /__mock/requests (recent request summaries, no secrets;
+//             edits list their file parts, e.g. ["image[]", "mask"])
 //
 // Fault injection is driven by directives inside the prompt / last user message,
 // so contract tests can exercise xy2api error mapping without extra endpoints:
@@ -224,10 +225,12 @@ async function readBody(req) {
 
 function parseMultipartFields(body, contentType) {
   const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType ?? "");
-  if (!m) return { fields: {}, files: 0 };
+  if (!m) return { fields: {}, files: 0, fileFields: [] };
   const boundary = `--${m[1] ?? m[2]}`;
   const fields = {};
   let files = 0;
+  // Names of the file parts (image[], mask): proves what xy2api forwarded.
+  const fileFields = [];
   // latin1 keeps byte offsets stable for binary parts; text fields are re-decoded as utf8.
   for (const section of body.toString("latin1").split(boundary)) {
     const headerEnd = section.indexOf("\r\n\r\n");
@@ -237,12 +240,13 @@ function parseMultipartFields(body, contentType) {
     if (!name) continue;
     if (/filename="/i.test(headers)) {
       files++;
+      fileFields.push(name);
       continue;
     }
     const value = section.slice(headerEnd + 4).replace(/\r\n$/, "");
     fields[name] = Buffer.from(value, "latin1").toString("utf8");
   }
-  return { fields, files };
+  return { fields, files, fileFields };
 }
 
 function bearer(req) {
@@ -615,16 +619,19 @@ async function handleResponses(req, res, body, ctx) {
 async function handleImages(req, res, raw, ctx, { edit }) {
   let params;
   if (edit && /multipart\/form-data/i.test(req.headers["content-type"] ?? "")) {
-    const { fields, files } = parseMultipartFields(
+    const { fields, files, fileFields } = parseMultipartFields(
       raw,
       req.headers["content-type"],
     );
     params = fields;
     ctx.inputFiles = files;
+    ctx.fileFields = fileFields;
   } else {
     params = raw.length ? JSON.parse(raw.toString("utf8")) : {};
   }
   ctx.model = params.model;
+  // Start of the prompt (lab prompts only): shows the server's edit wording arrived.
+  ctx.promptHead = String(params.prompt ?? "").slice(0, 48);
   const d = directives(params.prompt);
   ctx.directives = d;
   if (d.delay) await sleep(Number(d.delay));
@@ -687,6 +694,7 @@ async function handleGeminiGenerate(req, res, body, ctx, model) {
   const parts = body.contents?.at(-1)?.parts ?? [];
   const prompt = parts.map((p) => p.text ?? "").join(" ");
   ctx.inputFiles = parts.filter((p) => p.inlineData).length;
+  ctx.promptHead = prompt.trim().slice(0, 48);
   const d = directives(prompt);
   ctx.directives = d;
   if (d.delay) await sleep(Number(d.delay));

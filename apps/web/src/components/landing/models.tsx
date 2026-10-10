@@ -15,8 +15,9 @@ import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
  * The miniature controls are pictures of the product, not controls: they
  * are aria-hidden and inert. The real ones are one click away.
  * TODO(agent01): keep these sentences in step with the studio (batch size,
- * prompt rewrite; add 局部重绘 / 扩图 only once mask edit ships, M-G) and the
- * canvas (agent cap per turn; the node wording assumes the M-D node canvas).
+ * prompt rewrite, 局部重绘 / 扩图 from M-G, which Grok models cannot do) and
+ * the canvas (agent cap per turn; the node wording assumes the M-D node
+ * canvas).
  */
 export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; signedIn: boolean }) {
   const batch = samples.slice(0, 4);
@@ -33,7 +34,7 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
             <Sticker>生图</Sticker>
             <h3 className="mt-5 font-display text-[clamp(30px,2.6vw,40px)] leading-tight font-normal text-fg">一句话出图</h3>
             <p className="mt-3 max-w-[30em] text-[15px] leading-relaxed text-fg-soft">
-              写一句描述，选比例、画质（1K 到 4K）、质量和张数，一次出 1 到 4 张。描述太短可以先让它帮你写具体；满意的那张接着改：以它为参考，或者做变体。
+              写一句描述，选比例、画质（1K 到 4K）、质量和张数，一次出 1 到 4 张。描述太短可以先让它帮你写具体；满意的那张接着改：以它为参考、做变体，或者涂出一块重画、把画面往外扩。
             </p>
             <div aria-hidden className="pointer-events-none relative mt-9 flex-1 select-none">
               <div className="grid grid-cols-4 gap-2.5">

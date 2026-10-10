@@ -610,7 +610,7 @@ export const Composer = forwardRef<
   );
 });
 
-function Field({
+export function Field({
   label,
   htmlFor,
   note,
@@ -654,7 +654,7 @@ function Field({
 }
 
 /** − n + for the number of pictures (each one a separate charge), beside 生成. */
-function Stepper({
+export function Stepper({
   value,
   min,
   max,
