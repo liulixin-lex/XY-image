@@ -1,10 +1,11 @@
 /**
- * Ambient colour sampling for the 夜色光场 world.
+ * Ambient colour sampling for the soft-poster room (F2).
  *
  * The page is lit by the image on show: we read a tiny thumbnail of it and
- * pick two glow colours (`--amb`, `--amb-2`, bare "R G B" triplets). The
- * colours are normalised so they always glow on the night ground, even when
- * the source image is dull or dark.
+ * pick two haze colours (`--amb`, `--amb-2`, bare "R G B" triplets). The
+ * colours are normalised to a lively mid lightness so they read as coloured
+ * light on both the pale and the dim wall (globals.css scales them with
+ * `--haze`), even when the source image is dull or dark.
  *
  * Cross-origin images need CORS (Supabase storage sends it); when the
  * canvas is tainted or the image fails, callers keep the current light.
@@ -13,16 +14,16 @@
 export type Rgb = readonly [number, number, number];
 export type AmbientColors = { amb: Rgb; amb2: Rgb };
 
-/** Default light: teal over blue (also the static brand colours). */
+/** Default light: soft coral over berry (matches :root in globals.css). */
 export const DEFAULT_AMBIENT: AmbientColors = {
-  amb: [72, 214, 204],
-  amb2: [70, 120, 255],
+  amb: [224, 122, 102],
+  amb2: [196, 70, 128],
 };
 
 /** Used when an image has almost no colour (greyscale, near-black). */
 const NEUTRAL_AMBIENT: AmbientColors = {
-  amb: [150, 172, 214],
-  amb2: [92, 112, 176],
+  amb: [190, 160, 172],
+  amb2: [150, 120, 150],
 };
 
 const SAMPLE_SIZE = 24;
@@ -88,7 +89,7 @@ function avoidAmber(h: number) {
   return inAmber(h) ? WARM_FALLBACK_HUE : h;
 }
 
-/** Make a colour glow on the night ground: lively but never neon or murky. */
+/** Make a colour read as light on either wall: lively but never neon or murky. */
 function asGlow(h: number, s: number, l: number): Rgb {
   return hslToRgb(avoidAmber(h), clamp(s, 0.45, 0.82), clamp(l, 0.52, 0.64));
 }

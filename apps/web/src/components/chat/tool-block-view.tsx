@@ -561,7 +561,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
         type="button"
         onClick={onOpenPanel}
         aria-label={`查看「${title}」的详情`}
-        className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+        className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
       >
         <span
           className="relative block max-h-[320px] w-full overflow-hidden bg-muted"
@@ -686,7 +686,7 @@ function ToolDetailPanel({
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-amb"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-acc"
           >
             <svg
               className="h-4 w-4"

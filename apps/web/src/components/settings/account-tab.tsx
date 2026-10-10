@@ -78,7 +78,7 @@ export function AccountTab() {
         </div>
         {links ? (
           <div className="mt-6 flex flex-wrap gap-2">
-            <a href={links.recharge} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "glow" })}>
+            <a href={links.recharge} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "accent" })}>
               去主站充值
               <ArrowUpRightIcon strokeWidth={1.75} />
             </a>

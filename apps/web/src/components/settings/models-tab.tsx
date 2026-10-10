@@ -205,7 +205,7 @@ function ModelPickerBlock({
   if (error) {
     const spec = describeIssue(error, null);
     return (
-      <p className="max-w-xl rounded-md bg-white/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
+      <p className="max-w-xl rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] leading-relaxed text-fg-soft">
         {spec.title}。
         <Link href="/settings?tab=keys" className="ml-0.5 text-fg underline underline-offset-4">
           先选择 Key

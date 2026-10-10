@@ -257,7 +257,7 @@ export const Composer = forwardRef<
     <div className={className}>
       <section
         aria-label="生成设置"
-        className="glass rounded-[22px] pt-4 pr-3.5 pb-3.5 pl-4 transition-[border-color,box-shadow] focus-within:border-white/25 focus-within:shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_0_0_1px_rgb(var(--amb)/0.25),0_30px_80px_-40px_rgb(var(--amb)/0.6)]"
+        className="glass rounded-[22px] pt-4 pr-3.5 pb-3.5 pl-4 transition-[border-color,box-shadow] focus-within:border-tint/25 focus-within:shadow-[inset_0_1px_0_var(--glass-highlight),0_0_0_1px_rgb(var(--amb)/0.25),0_30px_80px_-40px_rgb(var(--amb)/0.6)]"
         onDragOver={(e) => {
           if (refLimit > 0) e.preventDefault();
         }}
@@ -340,7 +340,7 @@ export const Composer = forwardRef<
             }
           }}
           placeholder="描述你想要的画面：主体、场景、光线、风格。可以粘贴或拖入参考图。"
-          className="block min-h-[92px] w-full resize-none bg-transparent pr-1 text-[16px] leading-[1.7] text-fg caret-amb placeholder:text-fg-muted focus:outline-none sm:text-[16.5px]"
+          className="block min-h-[92px] w-full resize-none bg-transparent pr-1 text-[16px] leading-[1.7] text-fg caret-acc placeholder:text-fg-muted focus:outline-none sm:text-[16.5px]"
         />
 
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -360,7 +360,7 @@ export const Composer = forwardRef<
             onClick={() => fileRef.current?.click()}
             disabled={refLimit === 0 || refCount >= refLimit}
             title={refLimit === 0 ? "当前模型不支持参考图" : `添加参考图（最多 ${refLimit} 张）`}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-white/[0.06] px-3 text-[13px] font-medium text-fg transition-colors outline-none hover:border-line-strong hover:bg-white/[0.09] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb disabled:cursor-not-allowed disabled:text-fg-muted"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-tint/[0.06] px-3 text-[13px] font-medium text-fg transition-colors outline-none hover:border-line-strong hover:bg-tint/[0.09] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:text-fg-muted"
           >
             <ImagePlusIcon className="size-4 text-fg-soft" strokeWidth={1.75} />
             参考图
@@ -404,7 +404,7 @@ export const Composer = forwardRef<
           />
 
           <Button
-            variant="glow"
+            variant="accent"
             size="lg"
             className="ml-auto h-11 rounded-xl px-5"
             disabled={!canSubmit}

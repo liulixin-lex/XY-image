@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Noto_Sans_SC } from "next/font/google";
+import { Big_Shoulders, Geist, Geist_Mono, Noto_Sans_SC } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { BRAND } from "@/lib/brand";
@@ -23,8 +23,21 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
-// The display face (GGUU Display, from Smiley Sans / 得意黑) is self-hosted
-// in unicode-range chunks: see src/app/display-font.css.
+// Poster numerals: counts, balances, timers, indices. Variable, with the
+// optical-size axis so big figures get the condensed display cut.
+const bigShoulders = Big_Shoulders({
+  subsets: ["latin"],
+  variable: "--font-big-shoulders",
+  display: "swap",
+  axes: ["opsz"],
+  // next/font has no fallback metrics for this family (the build logged
+  // "Failed to find font override values"); no system face matches a
+  // condensed numeral anyway, so skip the size-adjusted fallback.
+  adjustFontFallback: false,
+});
+
+// The display face (GGUU Display = 优设标题黑) is self-hosted in
+// unicode-range chunks: see src/app/display-font.css.
 
 // Chinese text. Google serves it in unicode-range slices, so a page only
 // downloads the glyphs it renders. Not preloaded on purpose.
@@ -58,16 +71,20 @@ export const metadata: Metadata = {
   },
 };
 
+// Matches --ground in globals.css for each theme (browser chrome tint).
 export const viewport: Viewport = {
-  themeColor: "#0a0f1e",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f2f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#1c1a22" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="zh-CN"
-      className={cn("dark", geist.variable, geistMono.variable, notoSc.variable)}
+      className={cn(geist.variable, geistMono.variable, bigShoulders.variable, notoSc.variable)}
       suppressHydrationWarning
     >
       <body className="min-h-[100dvh] bg-background font-sans antialiased">

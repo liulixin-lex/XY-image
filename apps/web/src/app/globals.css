@@ -4,13 +4,24 @@
 @import "./display-font.css";
 
 /*
- * GGUU AI IMAGE design tokens: 夜色光场 (night light field).
- * A deep ink-blue room lit by the image on show. The ambient colour pair
- * (--amb / --amb-2, bare "R G B" triplets) is sampled from that image at
- * runtime by <AmbientProvider>; everything that glows reads it, so changing
- * the picture re-lights the page. Frosted glass is reserved for controls
- * that float over imagery (nav, composer, info cards). No amber/yellow
- * fields (product decision). Trouble is coral, never colour alone.
+ * GGUU AI IMAGE design tokens: 海报 · 柔和版 (soft poster, "F2").
+ *
+ * A lit room rather than a flat page: a wall that fades into a floor, a
+ * haze of colour taken from the picture on show (--amb / --amb-2, bare
+ * "R G B" triplets written by <AmbientProvider>), graphite ink instead of
+ * black, and one coral accent for the action that matters on each screen.
+ * Poster grammar: 优设标题黑 for display, Big Shoulders for numerals,
+ * slanted softly-rounded cuts (`sk`) for choices and calls to action.
+ *
+ * Light is the :root default; `.dark` (set by next-themes from the system
+ * setting or the manual toggle) swaps the same names. Components only use
+ * the semantic names below, never raw white/black, so both themes hold.
+ * `tint` is the overlay colour (ink in light, near-white in dark): use
+ * `bg-tint/[0.05]` where the old night theme used `bg-white/[0.05]`.
+ * Text over photographs stays literal white on a scrim in both themes.
+ *
+ * No amber/yellow fields (product decision). Trouble is a crimson distinct
+ * from the coral accent and always comes with words, never colour alone.
  */
 
 @custom-variant dark (&:is(.dark *));
@@ -18,10 +29,16 @@
 @theme inline {
     --font-sans: var(--font-geist), var(--font-noto-sc), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
     --font-heading: var(--font-geist), var(--font-noto-sc), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    /* Display: GGUU Display (subset of Smiley Sans / 得意黑, see display-font.css). */
+    /* Display: GGUU Display = 优设标题黑, self-hosted in unicode-range chunks (display-font.css). */
     --font-display: "GGUU Display", var(--font-noto-sc), "PingFang SC", system-ui, sans-serif;
+    /* Numerals: counts, balances, timers, indices. Latin digits only. */
+    --font-numeral: var(--font-big-shoulders), var(--font-geist), system-ui, sans-serif;
     --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
 
+    --color-wall: var(--wall);
+    --color-wall-2: var(--wall-2);
+    --color-floor: var(--floor);
+    --color-floor-2: var(--floor-2);
     --color-ground: var(--ground);
     --color-ground-deep: var(--ground-deep);
     --color-panel: var(--panel);
@@ -31,12 +48,24 @@
     --color-fg-muted: var(--fg-muted);
     --color-line: var(--line);
     --color-line-strong: var(--line-strong);
+    --color-tint: rgb(var(--tint));
+    --color-acc: var(--acc);
+    --color-acc-hover: var(--acc-hover);
+    --color-acc-ink: var(--acc-ink);
+    --color-acc-text: var(--acc-text);
+    --color-acc-soft: var(--acc-soft);
+    --color-acc-inverse: var(--acc-inverse);
     --color-alert: var(--alert);
     --color-alert-wash: var(--alert-wash);
+    --color-warn: var(--warn);
+    --color-warn-wash: var(--warn-wash);
     --color-live: var(--live);
     --color-ok: var(--ok);
+    --color-ok-wash: var(--ok-wash);
     --color-amb: rgb(var(--amb));
     --color-amb-2: rgb(var(--amb-2));
+    /* Scrim for controls and captions laid over photographs (both themes). */
+    --color-scrim: rgb(28 25 34 / 0.72);
 
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
@@ -79,45 +108,67 @@
     --color-background: var(--background);
 
     /*
-     * Radius rule: chips and segmented choices are full pills; controls 10px;
-     * panels and glass 16-22px; images 14px (frame).
+     * Radius rule: controls 10px, slanted cuts 11px, images 14px, cards and
+     * panels 16px, large floating panels 20px, full pills only for status dots.
      */
     --radius-frame: 14px;
     --radius-sm: 6px;
     --radius-md: 10px;
-    --radius-lg: 14px;
-    --radius-xl: 18px;
-    --radius-2xl: 22px;
-    --radius-3xl: 28px;
-    --radius-4xl: 32px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 20px;
+    --radius-3xl: 24px;
+    --radius-4xl: 28px;
 
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
+/* ── Light: a pale rose-grey wall over a slightly deeper floor ────── */
 :root {
-    /* Night room (hue ~225-230, blue-ink, never neutral black) */
-    --ground-deep: #060912;
-    --ground: #0a0f1e;
-    --panel: #131b31;
-    --well: #0e1528;
-    --fg: #eef2fa;
-    --fg-soft: #b0b9ce;
-    --fg-muted: #8590a8;
-    --line: rgb(255 255 255 / 0.1);
-    --line-strong: rgb(255 255 255 / 0.18);
-    --alert: #ff8a80;
-    --alert-wash: rgb(255 138 128 / 0.12);
-    --ok: #5ee0b4;
-    /* Ambient pair, sampled from the image on show (defaults: teal / blue). */
-    --amb: 72 214 204;
-    --amb-2: 70 120 255;
-    --live: rgb(var(--amb));
-    /* Frosted glass: only for controls floating over imagery. */
-    --glass: rgb(18 25 44 / 0.55);
-    --glass-strong: rgb(15 21 38 / 0.86);
-    --glass-highlight: rgb(255 255 255 / 0.07);
+    --wall: #f5f2f3;
+    --wall-2: #ede9eb;
+    --floor: #e6e1e4;
+    --floor-2: #dbd5d9;
+    --ground: var(--wall);
+    --ground-deep: var(--wall-2);
+    --panel: #fbfafb;
+    --well: #f0ecee;
+    --fg: #24212b;
+    --fg-soft: #5c5766;
+    --fg-muted: #6f6a78;
+    --tint: 36 33 43;
+    --line: rgb(36 33 43 / 0.1);
+    --line-strong: rgb(36 33 43 / 0.18);
+    --acc: #e5533d;
+    --acc-hover: #d6452f;
+    --acc-ink: #ffffff;
+    --acc-text: #bf3b2a;
+    --acc-soft: rgb(229 83 61 / 0.11);
+    --acc-glow: rgb(229 83 61 / 0.42);
+    /* Coral for text on an inked (bg-fg) surface. */
+    --acc-inverse: #ff8068;
+    --alert: #b4233f;
+    --alert-wash: rgb(180 35 63 / 0.09);
+    --warn: #b9560f;
+    --warn-wash: rgb(185 86 15 / 0.1);
+    --ok: #1f8a5b;
+    --ok-wash: rgb(31 138 91 / 0.11);
+    /* Ambient pair, sampled from the image on show (defaults: coral / berry). */
+    --amb: 224 122 102;
+    --amb-2: 196 70 128;
+    /* How strongly the ambient colour hazes the room. */
+    --haze: 0.2;
+    --live: var(--acc);
+    /* Frosted glass: only for controls floating over imagery or the room. */
+    --glass: rgb(255 255 255 / 0.62);
+    --glass-strong: rgb(255 255 255 / 0.86);
+    --glass-highlight: rgb(255 255 255 / 0.95);
+    /* Shadows are tinted to the room (warm graphite), never pure black. */
+    --shadow: rgb(84 52 60 / 0.14);
+    --shadow-2: rgb(84 52 60 / 0.26);
 
-    /* shadcn semantic aliases, mapped onto the world */
+    /* shadcn semantic aliases, mapped onto the room */
     --background: var(--ground);
     --foreground: var(--fg);
     --card: var(--panel);
@@ -130,21 +181,21 @@
     --secondary-foreground: var(--fg);
     --muted: var(--well);
     --muted-foreground: var(--fg-muted);
-    --accent: rgb(255 255 255 / 0.06);
+    --accent: rgb(var(--tint) / 0.06);
     --accent-foreground: var(--fg);
     --destructive: var(--alert);
     --success: var(--ok);
     --success-foreground: var(--ground);
-    --warning: var(--alert);
+    --warning: var(--warn);
     --warning-foreground: var(--ground);
     --info: var(--fg-soft);
     --info-foreground: var(--ground);
     --border: var(--line);
     --input: var(--line-strong);
-    --ring: rgb(var(--amb));
+    --ring: var(--acc);
     --border-light: var(--line);
     --input-border: var(--line-strong);
-    --chart-1: rgb(var(--amb));
+    --chart-1: var(--acc);
     --chart-2: rgb(var(--amb-2));
     --chart-3: var(--fg-muted);
     --chart-4: var(--alert);
@@ -154,10 +205,49 @@
     --sidebar-foreground: var(--fg);
     --sidebar-primary: var(--fg);
     --sidebar-primary-foreground: var(--ground);
-    --sidebar-accent: rgb(255 255 255 / 0.06);
+    --sidebar-accent: rgb(var(--tint) / 0.06);
     --sidebar-accent-foreground: var(--fg);
     --sidebar-border: var(--line);
-    --sidebar-ring: rgb(var(--amb));
+    --sidebar-ring: var(--acc);
+
+    color-scheme: light;
+}
+
+/* ── Dark: a dim plum-graphite room, the same poster in low light ─── */
+.dark {
+    --wall: #1c1a22;
+    --wall-2: #17151c;
+    --floor: #131118;
+    --floor-2: #0f0e13;
+    --ground: var(--wall);
+    --ground-deep: var(--floor);
+    --panel: #25222c;
+    --well: #17151c;
+    --fg: #f2eff4;
+    --fg-soft: #beb8c6;
+    --fg-muted: #a39dad;
+    --tint: 242 239 244;
+    --line: rgb(242 239 244 / 0.1);
+    --line-strong: rgb(242 239 244 / 0.18);
+    --acc: #ff8068;
+    --acc-hover: #ff927d;
+    --acc-ink: #24141a;
+    --acc-text: #ff977f;
+    --acc-soft: rgb(255 128 104 / 0.13);
+    --acc-glow: rgb(255 128 104 / 0.38);
+    --acc-inverse: #cf3f29;
+    --alert: #ff7b93;
+    --alert-wash: rgb(255 123 147 / 0.12);
+    --warn: #ffa066;
+    --warn-wash: rgb(255 160 102 / 0.12);
+    --ok: #5fd3a1;
+    --ok-wash: rgb(95 211 161 / 0.12);
+    --haze: 0.34;
+    --glass: rgb(40 36 48 / 0.58);
+    --glass-strong: rgb(37 34 44 / 0.9);
+    --glass-highlight: rgb(255 255 255 / 0.1);
+    --shadow: rgb(0 0 0 / 0.35);
+    --shadow-2: rgb(0 0 0 / 0.58);
 
     color-scheme: dark;
 }
@@ -177,32 +267,33 @@
     font-feature-settings: "ss01", "cv11";
   }
   ::selection {
-    background: rgb(var(--amb) / 0.35);
-    color: #fff;
+    background: var(--acc-soft);
+    background: color-mix(in oklab, var(--acc) 26%, transparent);
+    color: inherit;
   }
   input,
   textarea {
-    caret-color: rgb(var(--amb));
+    caret-color: var(--acc);
   }
   :focus-visible {
-    outline: 2px solid rgb(var(--amb));
+    outline: 2px solid var(--acc);
     outline-offset: 2px;
   }
   a {
     text-underline-offset: 0.22em;
     text-decoration-thickness: 1px;
   }
-  /* Thin translucent scrollbars that sit on any ground */
+  /* Thin translucent scrollbars that sit on either theme */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+    scrollbar-color: rgb(var(--tint) / 0.2) transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: rgb(255 255 255 / 0.18);
+    background: rgb(var(--tint) / 0.2);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
@@ -225,30 +316,77 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+/* Big poster numerals (counts, balance, timers). */
+@utility numeral {
+  font-family: var(--font-numeral);
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: 0.005em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* Section label in the display face, led by a coral slash: "/ 提示词". */
+@utility poster-label {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  &::before {
+    content: "/";
+    color: var(--acc);
+    margin-right: 0.12em;
+  }
+}
+
+/* ── Shape: the poster's slanted cut, softly rounded ────────────── */
+
+/*
+ * `sk` slants a box; put the label in a child with `sk-in` so the text
+ * stands upright. Uses `transform`, which composes with Tailwind v4's
+ * separate `translate` / `scale` / `rotate` properties (press states keep
+ * working). Keep it to choices and calls to action, not to whole panels.
+ */
+@utility sk {
+  transform: skewX(-10deg);
+}
+@utility sk-in {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  transform: skewX(10deg);
+}
+/* Images in a slanted frame: the picture is counter-skewed and overscanned. */
+@utility sk-frame {
+  transform: skewX(-8deg);
+  overflow: hidden;
+  & > img,
+  & > picture,
+  & > [data-sk-fill] {
+    transform: skewX(8deg) scale(1.16);
+  }
+}
 
 /* ── Materials ──────────────────────────────────────────────────── */
 
-/* Frosted glass for controls floating over imagery. */
+/* Frosted glass: controls and panels floating over the room or imagery. */
+/* Elevation is declared once: a lit top edge plus an offset shadow, no ring. */
 @utility glass {
   background: var(--glass);
-  border: 1px solid var(--line);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
-    0 24px 60px -24px rgb(2 4 10 / 0.7),
-    0 2px 6px -1px rgb(2 4 10 / 0.35);
-  backdrop-filter: blur(26px) saturate(170%);
-  -webkit-backdrop-filter: blur(26px) saturate(170%);
+    0 1px 2px var(--shadow),
+    0 24px 48px -28px var(--shadow-2);
+  backdrop-filter: blur(20px) saturate(125%);
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
 }
 /* Denser glass for popovers, menus and dialogs that sit over busy content. */
 @utility glass-strong {
   background: var(--glass-strong);
-  border: 1px solid var(--line);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
-    0 30px 70px -20px rgb(2 4 10 / 0.8),
-    0 4px 12px -2px rgb(2 4 10 / 0.4);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+    0 4px 12px -2px var(--shadow),
+    0 30px 70px -24px var(--shadow-2);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
@@ -265,32 +403,42 @@
   }
 }
 
-/* The primary action: near-white with a glow in the room's colour. */
-@utility glow-amb {
-  box-shadow:
-    0 10px 30px -10px rgb(var(--amb) / 0.7),
-    inset 0 -2px 0 rgb(10 15 30 / 0.12);
+/* The page's main action: coral, with a soft coral pool beneath it. */
+@utility shadow-acc {
+  box-shadow: 0 14px 30px -12px var(--acc-glow);
 }
-/* A lit image: thin highlight edge, deep drop, coloured spill. */
+/* Selected picture: a wall-coloured gap, then a coral ring. */
+@utility ring-picked {
+  box-shadow:
+    0 0 0 3px var(--ground),
+    0 0 0 5px var(--acc),
+    0 26px 46px -22px var(--acc-glow);
+}
+/* A lit image standing in the room: soft contact plus coloured spill (dark). */
 @utility shadow-lit {
   box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.14),
-    0 60px 120px -40px rgb(2 4 10 / 0.9),
-    0 0 140px -30px rgb(var(--amb) / 0.55);
+    0 2px 4px var(--shadow),
+    0 50px 80px -40px var(--shadow-2);
+  :where(.dark) & {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.06),
+      0 0 140px -30px rgb(var(--amb) / 0.6),
+      0 50px 80px -40px var(--shadow-2);
+  }
 }
 
-/* ── Depth: offset + soft blur, tinted to the night ground ─────── */
+/* ── Depth: offset + soft blur, tinted to the room ─────────────── */
 @utility shadow-subtle {
-  box-shadow: 0 1px 2px rgb(2 4 10 / 0.35);
+  box-shadow: 0 1px 2px var(--shadow);
 }
 @utility shadow-card {
-  box-shadow: 0 1px 2px rgb(2 4 10 / 0.3), 0 12px 28px -14px rgb(2 4 10 / 0.6);
+  box-shadow: 0 1px 2px var(--shadow), 0 22px 40px -26px var(--shadow-2);
 }
 @utility shadow-card-hover {
-  box-shadow: 0 2px 4px rgb(2 4 10 / 0.35), 0 24px 48px -18px rgb(2 4 10 / 0.75);
+  box-shadow: 0 2px 4px var(--shadow), 0 30px 50px -24px var(--shadow-2);
 }
 @utility shadow-float {
-  box-shadow: 0 6px 14px rgb(2 4 10 / 0.35), 0 30px 64px -20px rgb(2 4 10 / 0.8);
+  box-shadow: 0 6px 14px var(--shadow), 0 30px 64px -20px var(--shadow-2);
 }
 @utility scrollbar-hidden {
   scrollbar-width: none;
@@ -299,19 +447,12 @@
   }
 }
 
-/* Film grain over the room, so large blurred fields do not band. */
-.grain-overlay {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-}
-
 /* ── Status motion ───────────────────────────────────────────────── */
 
 /* Live dot: the only looping light, shown only while something runs. */
 @keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--amb) / 0.45), 0 0 10px rgb(var(--amb) / 0.8); }
-  50% { box-shadow: 0 0 0 5px rgb(var(--amb) / 0), 0 0 14px rgb(var(--amb) / 0.9); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--acc-glow); }
+  50% { box-shadow: 0 0 0 5px transparent; }
 }
 .animate-live {
   animation: live-pulse 1.8s ease-in-out infinite;
@@ -331,8 +472,8 @@
 
 /* Placeholder: a slow tonal swell for loading skeletons. */
 @keyframes breathe {
-  0%, 100% { background-color: rgb(255 255 255 / 0.04); }
-  50% { background-color: rgb(255 255 255 / 0.08); }
+  0%, 100% { background-color: rgb(var(--tint) / 0.04); }
+  50% { background-color: rgb(var(--tint) / 0.08); }
 }
 .animate-breathe {
   animation: breathe 2.4s ease-in-out infinite;
@@ -447,7 +588,7 @@
   margin-bottom: 0.75rem;
 }
 .markdown-content a {
-  color: rgb(var(--amb));
+  color: var(--acc-text);
   text-decoration: underline;
 }
 .markdown-content table {
@@ -502,13 +643,17 @@
   display: none !important;
 }
 
-/* Excalidraw (dark theme) picks up the night palette; selection is the brand teal. */
-.excalidraw.theme--dark {
-  --color-primary: #5fd3c9;
-  --color-primary-darker: #48bfb5;
-  --color-primary-darkest: #36a59c;
-  --color-primary-light: rgb(95 211 201 / 0.18);
-  --color-selection: #5fd3c9;
+/*
+ * Excalidraw picks up the room: selection is the coral accent in both themes.
+ * TODO(agent01): delete this block with Excalidraw once the node canvas
+ * (React Flow) lands (M-D in XY-IMAGE-HANDOFF.md).
+ */
+.excalidraw {
+  --color-primary: var(--acc);
+  --color-primary-darker: var(--acc-hover);
+  --color-primary-darkest: var(--acc-text);
+  --color-primary-light: var(--acc-soft);
+  --color-selection: var(--acc);
   --island-bg-color: var(--glass-strong);
   --popup-bg-color: var(--panel);
   --default-bg-color: var(--ground);

@@ -73,7 +73,7 @@ export const PromptBox = forwardRef<
     <form
       onSubmit={submit}
       className={cn(
-        "glass-strong group rounded-[20px] px-4 pt-4 pb-3.5 transition-[box-shadow,border-color] focus-within:border-white/20",
+        "glass rounded-[24px] px-[18px] pt-[18px] pb-3.5 transition-shadow focus-within:shadow-[inset_0_1px_0_var(--glass-highlight),0_0_0_2px_var(--acc-soft),0_24px_48px_-28px_var(--shadow-2)]",
         className,
       )}
     >
@@ -94,30 +94,32 @@ export const PromptBox = forwardRef<
           }
         }}
         placeholder="描述你想要的画面，比如：雨后的老街，霓虹倒影，胶片质感"
-        className="block min-h-[56px] w-full resize-none bg-transparent px-1 text-[16px] leading-[1.65] text-fg placeholder:text-fg-muted focus:outline-none sm:text-[17px]"
+        className="block min-h-[54px] w-full resize-none bg-transparent px-1 text-[16px] leading-[1.65] font-medium text-fg placeholder:font-normal placeholder:text-fg-muted focus:outline-none sm:text-[16.5px]"
       />
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <Picker
+          slant
           ariaLabel="画面比例"
           value={ratio}
           onValueChange={(v) => onRatioChange(v as AspectRatio)}
           options={ASPECT_RATIOS.map((r) => ({ value: r, text: r, label: r }))}
-          className="h-8 w-[78px]"
+          className="h-[34px] min-w-[58px] px-3 tabular"
         />
         <Picker
+          slant
           ariaLabel="画质"
           value={quality}
           onValueChange={(v) => onQualityChange(v as "standard" | "hd")}
           options={QUALITY_OPTIONS}
-          className="h-8 w-[70px]"
+          className="h-[34px] min-w-[52px] px-3 tabular"
           popupClassName="w-[200px]"
         />
-        <span className="hidden min-w-0 flex-1 truncate text-right text-[12.5px] text-fg-muted md:block">
+        <span className="hidden min-w-0 flex-1 truncate pl-1 text-[12.5px] text-fg-muted md:block">
           {user ? "会带着这段描述打开生图页" : "先用主站账号登录，写好的内容会保留"}
         </span>
-        <Button type="submit" variant="glow" size="lg" className="ml-auto h-11 rounded-xl px-5 md:ml-1">
+        <Button type="submit" variant="accent" size="poster" slant className="ml-auto">
           开始生成
-          <ArrowRightIcon strokeWidth={2} />
+          <ArrowRightIcon strokeWidth={2.4} />
         </Button>
       </div>
     </form>

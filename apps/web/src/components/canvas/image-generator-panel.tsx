@@ -426,7 +426,7 @@ export function ImageGeneratorPanel({
           placeholder={modelsLoading ? "读取模型…" : "无可用模型"}
           disabled={generating || models.length === 0}
           side="top"
-          className="h-8 max-w-[150px] border-transparent bg-transparent px-2 hover:bg-white/[0.06]"
+          className="h-8 max-w-[150px] border-transparent bg-transparent px-2 hover:bg-tint/[0.06]"
           popupClassName="w-[280px]"
         />
         <input
@@ -446,7 +446,7 @@ export function ImageGeneratorPanel({
           disabled={generating || refLimit === 0}
           title={refLimit === 0 ? "当前模型不支持参考图" : "添加参考图"}
           aria-label="添加参考图"
-          className="flex size-8 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-white/[0.06] hover:text-fg disabled:cursor-not-allowed disabled:text-line-strong disabled:hover:bg-transparent"
+          className="flex size-8 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg disabled:cursor-not-allowed disabled:text-line-strong disabled:hover:bg-transparent"
         >
           <ImagePlusIcon className="size-4" strokeWidth={1.75} />
         </button>
@@ -564,7 +564,7 @@ function Notice({ tone, children }: { tone: "warn" | "error"; children: React.Re
       role={tone === "error" ? "alert" : "status"}
       className={cn(
         "mx-2.5 mb-1.5 rounded-md px-3 py-2 text-[12.5px] leading-relaxed",
-        tone === "error" ? "bg-alert-wash text-alert" : "bg-white/[0.05] text-fg-soft",
+        tone === "error" ? "bg-alert-wash text-alert" : "bg-tint/[0.05] text-fg-soft",
       )}
     >
       {children}

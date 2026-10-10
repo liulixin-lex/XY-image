@@ -63,7 +63,7 @@ export function KeyGate({
       <div className="mt-5 flex flex-wrap items-center gap-2.5">
         <Link
           href="/settings?tab=keys"
-          className="inline-flex h-9 items-center rounded-md bg-fg px-3.5 text-sm font-medium text-ground hover:bg-white"
+          className="inline-flex h-9 items-center rounded-md bg-fg px-3.5 text-sm font-medium text-ground hover:bg-fg/88"
         >
           选择 Key
         </Link>

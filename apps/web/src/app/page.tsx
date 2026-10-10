@@ -11,20 +11,23 @@ import { ModesSection } from "@/components/landing/models";
 import type { PromptBoxHandle } from "@/components/landing/prompt-box";
 import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
 import { SiteNav } from "@/components/landing/site-nav";
+import { useAuth } from "@/lib/auth-context";
 import { getXy2apiWebUrl } from "@/lib/env";
 import type { AspectRatio } from "@/lib/image-model-meta";
 import { fetchAuthConfig } from "@/lib/xy2api-api";
 
 /**
- * Public landing page: the 氛围屏 room. The selected sample hangs on the
- * screen and lights the whole page (useAmbientImage + <AmbientField>);
- * the prompt box is real and hands its draft to the studio after login.
+ * Public landing page: the soft-poster room. The selected sample stands on
+ * the floor as a slanted panel and colours the whole page (useAmbientImage
+ * + <AmbientField>); the prompt box is real and hands its draft to the
+ * studio after login.
  *
  * Main-site links come from the API's public config when it answers, with
  * the build-time URL as a fallback so the page never waits on the network.
  */
 export default function LandingPage() {
   const fallback = getXy2apiWebUrl();
+  const { user } = useAuth();
   const [registerUrl, setRegisterUrl] = useState<string | null>(
     fallback ? `${fallback}/register` : null,
   );
@@ -91,10 +94,10 @@ export default function LandingPage() {
           onQualityChange={setQuality}
         />
         <GallerySection items={SHOWCASE_ITEMS} onPreview={setSelected} onUseSample={copySample} />
-        <ModesSection samples={SHOWCASE_ITEMS.slice(6, 10)} />
+        <ModesSection samples={SHOWCASE_ITEMS.slice(5, 12)} signedIn={Boolean(user)} />
         <BillingSection sample={SHOWCASE_ITEMS[1]!} />
       </main>
-      <Closing registerUrl={registerUrl} mainSiteUrl={fallback} onWrite={backToPrompt} />
+      <Closing registerUrl={registerUrl} mainSiteUrl={fallback} sample={current} onWrite={backToPrompt} />
     </div>
   );
 }

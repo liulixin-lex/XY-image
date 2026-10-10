@@ -3,13 +3,13 @@
 import { BrandMark } from "./brand/brand-mark";
 
 /**
- * Full-screen wait state: the mark glowing in the dark room, with a
- * breathing status dot. No spinner.
+ * Full-screen wait state: the coral mark on the wall, with a breathing
+ * status dot. No spinner.
  */
 export function LoadingScreen({ label = "正在载入" }: { label?: string }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[radial-gradient(60%_50%_at_50%_45%,rgb(var(--amb)/0.14),transparent_70%),var(--color-ground)]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[radial-gradient(60%_50%_at_50%_45%,rgb(var(--amb)/var(--haze)),transparent_70%),var(--color-ground)]"
       role="status"
       aria-live="polite"
     >

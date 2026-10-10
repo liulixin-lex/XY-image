@@ -124,7 +124,7 @@ export function RecordsTab() {
 
       <div className="mt-6">
         {failed && !jobs ? (
-          <p className="rounded-md bg-white/[0.05] px-4 py-3 text-[13px] text-fg-soft">
+          <p className="rounded-md bg-tint/[0.05] px-4 py-3 text-[13px] text-fg-soft">
             生成记录暂时读不到，点「刷新」再试一次。
           </p>
         ) : jobs === null ? (

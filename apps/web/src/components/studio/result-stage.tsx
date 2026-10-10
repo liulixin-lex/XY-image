@@ -70,7 +70,7 @@ export function ResultStage({
       {/* Floor: the band of light the screen stands on (desktop). */}
       <div
         aria-hidden
-        className="pointer-events-none absolute top-[calc(var(--stage-h)+22px)] right-[-12vw] left-[-70vw] hidden h-48 border-t border-white/[0.05] bg-[linear-gradient(to_bottom,rgb(var(--amb)/0.08),transparent_70%)] lg:block"
+        className="pointer-events-none absolute top-[calc(var(--stage-h)+22px)] right-[-12vw] left-[-70vw] hidden h-48 border-t border-tint/[0.05] bg-[linear-gradient(to_bottom,rgb(var(--amb)/0.08),transparent_70%)] lg:block"
       />
 
       <div className="relative flex items-end lg:h-[var(--stage-h)]">
@@ -130,7 +130,7 @@ export function ResultStage({
             <p className="mt-3 text-[12.5px] leading-relaxed text-fg-soft">
               生成的作品会出现在这里，整个页面也会换成它的光。
             </p>
-            <Button variant="glow" className="mt-4 h-9 w-full rounded-[10px]" onClick={() => onUseSample(sample)}>
+            <Button variant="accent" className="mt-4 h-9 w-full rounded-[10px]" onClick={() => onUseSample(sample)}>
               <RotateCcwIcon strokeWidth={2} />
               用这段描述试试
             </Button>
@@ -161,7 +161,7 @@ function ScreenOverlay({
       onClick={() => onOpen(job)}
       aria-label="查看大图"
       title="查看大图"
-      className="glass absolute top-4 right-4 flex size-9 items-center justify-center rounded-full text-fg transition-colors hover:bg-white/[0.16] focus-visible:outline-2 focus-visible:outline-amb"
+      className="glass absolute top-4 right-4 flex size-9 items-center justify-center rounded-full text-fg transition-colors hover:bg-tint/[0.16] focus-visible:outline-2 focus-visible:outline-acc"
     >
       <Maximize2Icon className="size-4" strokeWidth={1.75} />
     </button>
@@ -205,7 +205,7 @@ function JobInfo({
         </dd>
       </dl>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <Button variant="glow" className="col-span-2 h-9 rounded-[10px]" onClick={onReuse}>
+        <Button variant="accent" className="col-span-2 h-9 rounded-[10px]" onClick={onReuse}>
           <RotateCcwIcon strokeWidth={2} />
           做同款
         </Button>
@@ -272,7 +272,7 @@ export function RecentStrip({
                 key={job.id}
                 role="img"
                 aria-label={jobStatusLabel(job)}
-                className="flex h-[72px] w-14 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.06] shadow-[0_0_0_1px_rgb(var(--amb)/0.5)]"
+                className="flex h-[72px] w-14 shrink-0 items-center justify-center rounded-[10px] bg-tint/[0.06] shadow-[0_0_0_1px_rgb(var(--amb)/0.5)]"
               >
                 <svg viewBox="0 0 36 36" className="size-7 animate-spin [animation-duration:1.4s] motion-reduce:animate-none" aria-hidden>
                   <circle cx="18" cy="18" r="14" fill="none" stroke="rgb(255 255 255 / 0.12)" strokeWidth="3" />
@@ -299,7 +299,7 @@ export function RecentStrip({
               aria-label={done ? `看这张：${job.prompt || "生成结果"}` : `出了问题：${job.prompt || "生成结果"}`}
               onClick={() => (done ? onSelect(job) : onOpen(job))}
               className={cn(
-                "relative shrink-0 overflow-hidden rounded-[10px] transition-[width,height,opacity,box-shadow] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb",
+                "relative shrink-0 overflow-hidden rounded-[10px] transition-[width,height,opacity,box-shadow] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
                 selected
                   ? "h-[84px] w-16 opacity-100 shadow-[0_0_0_2px_rgb(255_255_255/0.9),0_0_30px_-4px_rgb(var(--amb)/0.8)]"
                   : "h-[72px] w-14 opacity-60 shadow-[0_0_0_1px_rgb(255_255_255/0.1)] hover:opacity-100",

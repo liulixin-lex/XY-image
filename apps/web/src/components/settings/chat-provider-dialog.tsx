@@ -262,7 +262,7 @@ function ProviderForm({
             onClick={() => setShowKey((v) => !v)}
             aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
             aria-pressed={showKey}
-            className="absolute inset-y-0 right-0 flex w-11 cursor-pointer items-center justify-center rounded-r-md text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+            className="absolute inset-y-0 right-0 flex w-11 cursor-pointer items-center justify-center rounded-r-md text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
           >
             {showKey ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
           </button>
@@ -302,7 +302,7 @@ function ProviderForm({
             aria-labelledby={`${idOf("models")}-label`}
             aria-invalid={errors.models ? true : undefined}
             aria-describedby={`${idOf("models")}-msg`}
-            className="min-h-28 w-full resize-y rounded-md border border-line-strong bg-white/[0.04] px-3.5 py-2.5 font-mono text-[13px] leading-relaxed text-fg outline-none placeholder:text-fg-muted hover:border-white/25 focus-visible:border-amb/70 focus-visible:bg-white/[0.06] focus-visible:shadow-[0_0_0_3px_rgb(var(--amb)/0.18)] aria-invalid:border-alert"
+            className="min-h-28 w-full resize-y rounded-md border border-line-strong bg-tint/[0.04] px-3.5 py-2.5 font-mono text-[13px] leading-relaxed text-fg outline-none placeholder:text-fg-muted hover:border-tint/25 focus-visible:border-acc/70 focus-visible:bg-tint/[0.06] focus-visible:shadow-[0_0_0_3px_rgb(var(--amb)/0.18)] aria-invalid:border-alert"
           />
         ) : null}
         <FieldMessage
@@ -318,7 +318,7 @@ function ProviderForm({
         />
       </div>
 
-      <p className="rounded-md bg-white/[0.05] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-fg-soft">
+      <p className="rounded-md bg-tint/[0.05] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-fg-soft">
         用这个服务商的模型对话时，费用由服务商收取，不从主站余额扣。
       </p>
 

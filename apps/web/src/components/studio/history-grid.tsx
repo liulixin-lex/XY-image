@@ -116,7 +116,7 @@ function HistoryTile({
     <li className="min-w-0">
       <div
         className={cn(
-          "group relative aspect-[4/5] overflow-hidden rounded-[14px] bg-white/[0.04] shadow-[0_0_0_1px_rgb(255_255_255/0.08)] transition-[box-shadow,transform] duration-300",
+          "group relative aspect-[4/5] overflow-hidden rounded-[14px] bg-tint/[0.04] shadow-[0_0_0_1px_rgb(255_255_255/0.08)] transition-[box-shadow,transform] duration-300",
           done &&
             "hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgb(255_255_255/0.2),0_30px_60px_-30px_rgb(2_4_10/0.9),0_0_50px_-14px_rgb(var(--amb)/0.6)]",
           selected && "shadow-[0_0_0_2px_rgb(255_255_255/0.85),0_0_40px_-10px_rgb(var(--amb)/0.8)]",
@@ -130,7 +130,7 @@ function HistoryTile({
               onClick={onSelect}
               aria-pressed={selected}
               aria-label={`放到屏幕上：${job.prompt || "生成结果"}`}
-              className="absolute inset-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+              className="absolute inset-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
             >
               <RevealImage
                 src={job.url!}
@@ -196,7 +196,7 @@ function HistoryTile({
           <button
             type="button"
             onClick={onOpen}
-            className="absolute inset-0 flex flex-col items-start justify-end gap-1 p-3.5 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amb"
+            className="absolute inset-0 flex flex-col items-start justify-end gap-1 p-3.5 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
           >
             <span className="text-[13px] font-semibold text-fg">
               {failed ? issue?.title : job.status === "canceled" ? "已取消" : "没有图片"}
@@ -244,7 +244,7 @@ function TileAction({
         e.stopPropagation();
         onClick();
       }}
-      className="pointer-events-auto flex size-8 items-center justify-center rounded-[9px] bg-white/[0.14] text-fg backdrop-blur-md transition-colors hover:bg-white/[0.24] [&_svg]:size-4 [&_svg]:stroke-[1.75]"
+      className="pointer-events-auto flex size-8 items-center justify-center rounded-[9px] bg-tint/[0.14] text-fg backdrop-blur-md transition-colors hover:bg-tint/[0.24] [&_svg]:size-4 [&_svg]:stroke-[1.75]"
     >
       {children}
     </button>

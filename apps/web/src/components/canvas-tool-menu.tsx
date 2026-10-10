@@ -108,7 +108,7 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
     <div
       className={cn(
         "pointer-events-none fixed overflow-hidden rounded-frame",
-        live ? "animate-breathe" : "border border-dashed border-alert/60 bg-white/[0.05]",
+        live ? "animate-breathe" : "border border-dashed border-alert/60 bg-tint/[0.05]",
       )}
       style={{ left: screenX, top: screenY, width: screenW, height: screenH, zIndex: 99 }}
     >
@@ -287,8 +287,8 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
                 }
               }}
               className={cn(
-                "flex size-8 items-center justify-center rounded-md transition-colors outline-none focus-visible:outline-2 focus-visible:outline-amb",
-                isActive ? "bg-fg text-ground" : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                "flex size-8 items-center justify-center rounded-md transition-colors outline-none focus-visible:outline-2 focus-visible:outline-acc",
+                isActive ? "bg-fg text-ground" : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
               )}
             >
               <Icon className="size-4" strokeWidth={1.75} />

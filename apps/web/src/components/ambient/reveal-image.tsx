@@ -83,7 +83,7 @@ export function RevealImage({
   );
 
   return (
-    <div ref={scope} className={cn("relative overflow-hidden bg-white/[0.04]", className)}>
+    <div ref={scope} className={cn("relative overflow-hidden bg-tint/[0.04]", className)}>
       {/* biome-ignore lint/a11y/useAltText: alt is provided by the caller */}
       <img
         ref={imgRef}

@@ -197,7 +197,7 @@ export default function StudioPage() {
                     <button
                       type="button"
                       onClick={() => trySample(item)}
-                      className="group flex w-full items-center gap-3 rounded-[14px] border border-line bg-white/[0.03] py-2 pr-4 pl-2 text-left transition-colors hover:border-line-strong hover:bg-white/[0.07]"
+                      className="group flex w-full items-center gap-3 rounded-[14px] border border-line bg-tint/[0.03] py-2 pr-4 pl-2 text-left transition-colors hover:border-line-strong hover:bg-tint/[0.07]"
                     >
                       {/* biome-ignore lint/performance/noImgElement: static export */}
                       <img

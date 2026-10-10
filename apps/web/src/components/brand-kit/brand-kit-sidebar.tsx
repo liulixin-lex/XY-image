@@ -35,7 +35,7 @@ export function BrandKitSidebar({
         <button
           type="button"
           onClick={onCreateKit}
-          className="flex min-h-[44px] w-full cursor-pointer items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm text-fg-soft transition-colors hover:border-white/30 hover:text-fg sm:min-h-0"
+          className="flex min-h-[44px] w-full cursor-pointer items-center gap-2 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm text-fg-soft transition-colors hover:border-tint/30 hover:text-fg sm:min-h-0"
         >
           <Plus className="h-4 w-4" />
           新建套件
@@ -52,7 +52,7 @@ export function BrandKitSidebar({
               key={kit.id}
               className={cn(
                 "group flex min-h-[44px] w-auto shrink-0 items-center gap-1 rounded-md pr-1 transition-colors md:min-h-0 md:w-full md:shrink",
-                isSelected ? "bg-panel shadow-subtle" : "hover:bg-white/[0.06]",
+                isSelected ? "bg-panel shadow-subtle" : "hover:bg-tint/[0.06]",
               )}
             >
               <button

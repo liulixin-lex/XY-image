@@ -69,7 +69,7 @@ export function BillingBadge({
     <span
       className={cn(
         "inline-flex h-[22px] items-center rounded-full px-2 text-[11.5px] font-medium leading-none",
-        value === "charged" && "bg-white/[0.12] text-fg",
+        value === "charged" && "bg-tint/[0.12] text-fg",
         value === "not_charged" && "border border-line-strong text-fg-muted",
         value === "none" && "border border-dashed border-line-strong text-fg-muted",
         needsReconcile(value) && "border border-alert/50 bg-alert-wash text-alert",

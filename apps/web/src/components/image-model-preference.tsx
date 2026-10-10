@@ -118,7 +118,7 @@ export function ImageModelPreferencePopover({
         ) : loading && models.length === 0 ? (
           <div className="space-y-1.5 p-1.5" aria-hidden>
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-10 animate-pulse rounded-md bg-white/[0.05]" />
+              <div key={i} className="h-10 animate-pulse rounded-md bg-tint/[0.05]" />
             ))}
           </div>
         ) : models.length === 0 ? (
@@ -135,7 +135,7 @@ export function ImageModelPreferencePopover({
                 onClick={() => toggleModel(m.id)}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
-                  selected ? "bg-white/[0.05]" : "hover:bg-white/[0.06]",
+                  selected ? "bg-tint/[0.05]" : "hover:bg-tint/[0.06]",
                 )}
               >
                 <span

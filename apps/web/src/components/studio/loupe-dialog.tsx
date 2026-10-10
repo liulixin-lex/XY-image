@@ -69,7 +69,7 @@ export function LoupeDialog({
 
             <div className="flex min-h-0 flex-col border-t border-line md:border-t-0 md:border-l">
               <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3.5 pr-14 text-[12.5px] text-fg-soft">
-                <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 font-medium text-fg">
+                <span className="rounded-full bg-tint/[0.08] px-2.5 py-0.5 font-medium text-fg">
                   {jobStatusLabel(job)}
                 </span>
                 <span className="truncate">{modelName}</span>
@@ -169,7 +169,7 @@ export function LoupeDialog({
                   </Button>
                 ) : null}
                 {job.url ? (
-                  <Button variant="glow" className="ml-auto" onClick={() => onDownload(job)}>
+                  <Button variant="accent" className="ml-auto" onClick={() => onDownload(job)}>
                     <DownloadIcon strokeWidth={1.75} />
                     下载
                   </Button>

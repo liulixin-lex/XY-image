@@ -36,7 +36,7 @@ function sectionsOf(options: PickerOption[]): PickerSection[] {
 
 /**
  * Compact keyboard-accessible select used for model / quality / ratio /
- * key pickers. Built on Base UI Select; pill trigger, glass popup.
+ * key pickers. Built on Base UI Select; 10px trigger, glass popup.
  */
 export function Picker({
   value,
@@ -50,6 +50,7 @@ export function Picker({
   side = "bottom",
   align = "start",
   icon,
+  slant = false,
 }: {
   value: string | null;
   onValueChange: (value: string) => void;
@@ -62,6 +63,8 @@ export function Picker({
   side?: "top" | "bottom";
   align?: "start" | "end" | "center";
   icon?: ReactNode;
+  /** Poster cut: slanted chip with an upright label (no chevron). */
+  slant?: boolean;
 }) {
   const current = options.find((option) => option.value === value);
   return (
@@ -77,15 +80,25 @@ export function Picker({
       <SelectPrimitive.Trigger
         aria-label={ariaLabel}
         className={cn(
-          "inline-flex h-9 max-w-full min-w-0 items-center gap-1.5 rounded-full border border-line bg-white/[0.06] px-3 text-[13px] font-medium text-fg transition-colors outline-none hover:border-line-strong hover:bg-white/[0.09] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb data-disabled:cursor-not-allowed data-disabled:text-fg-muted data-popup-open:border-line-strong data-popup-open:bg-white/[0.1]",
+          "inline-flex h-9 max-w-full min-w-0 items-center gap-1.5 rounded-[10px] border border-line bg-tint/[0.05] px-3 text-[13px] font-medium text-fg transition-colors outline-none hover:border-line-strong hover:bg-tint/[0.09] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc data-disabled:cursor-not-allowed data-disabled:text-fg-muted data-popup-open:border-line-strong data-popup-open:bg-tint/[0.1]",
+          slant && "sk justify-center border-transparent bg-tint/[0.055] font-semibold text-fg-soft hover:bg-tint/[0.09] hover:text-fg",
           className,
         )}
       >
-        {icon}
-        <span className="min-w-0 truncate">{current ? current.text : placeholder}</span>
-        <SelectPrimitive.Icon className="ml-auto shrink-0 text-fg-muted">
-          <ChevronsUpDownIcon className="size-3.5" strokeWidth={1.75} />
-        </SelectPrimitive.Icon>
+        {slant ? (
+          <span className="sk-in min-w-0 gap-1.5">
+            {icon}
+            <span className="min-w-0 truncate">{current ? current.text : placeholder}</span>
+          </span>
+        ) : (
+          <>
+            {icon}
+            <span className="min-w-0 truncate">{current ? current.text : placeholder}</span>
+            <SelectPrimitive.Icon className="ml-auto shrink-0 text-fg-muted">
+              <ChevronsUpDownIcon className="size-3.5" strokeWidth={1.75} />
+            </SelectPrimitive.Icon>
+          </>
+        )}
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
@@ -131,7 +144,7 @@ function renderItem(option: PickerOption) {
       key={option.value}
       value={option.value}
       disabled={option.disabled}
-      className="grid cursor-default grid-cols-[1fr_auto] items-center gap-x-3 rounded-lg px-2.5 py-2 text-[13px] text-fg outline-none select-none data-disabled:text-fg-muted data-highlighted:bg-white/[0.08]"
+      className="grid cursor-default grid-cols-[1fr_auto] items-center gap-x-3 rounded-lg px-2.5 py-2 text-[13px] text-fg outline-none select-none data-disabled:text-fg-muted data-highlighted:bg-tint/[0.08]"
     >
       <span className="min-w-0">
         <SelectPrimitive.ItemText className="block truncate font-medium">
@@ -142,15 +155,16 @@ function renderItem(option: PickerOption) {
         ) : null}
       </span>
       <SelectPrimitive.ItemIndicator>
-        <CheckIcon className="size-3.5 text-amb" strokeWidth={2.25} />
+        <CheckIcon className="size-3.5 text-acc-text" strokeWidth={2.25} />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   );
 }
 
 /**
- * Segmented choice for short fixed sets (1K / 2K, aspect ratios).
- * Radio-group semantics; disabled options stay visible with a reason.
+ * Segmented choice for short fixed sets (1K / 2K, aspect ratios): a row of
+ * slanted poster tabs, the chosen one inked. Radio-group semantics with
+ * arrow-key movement; disabled options stay visible with a reason (title).
  */
 export function Segmented({
   value,
@@ -158,23 +172,30 @@ export function Segmented({
   options,
   ariaLabel,
   className,
+  size = "md",
 }: {
   value: string;
   onValueChange: (value: string) => void;
   options: Array<{ value: string; label: ReactNode; disabled?: boolean; title?: string }>;
   ariaLabel: string;
   className?: string;
+  /** `lg` renders the label as a big poster numeral (1K / 2K, counts). */
+  size?: "md" | "lg";
 }) {
+  const move = (from: number, step: number) => {
+    for (let i = 1; i <= options.length; i += 1) {
+      const next = options[(from + step * i + options.length * i) % options.length];
+      if (next && !next.disabled) return next.value;
+    }
+    return null;
+  };
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn(
-        "inline-flex h-9 items-center rounded-full border border-line bg-white/[0.04] p-[3px]",
-        className,
-      )}
+      className={cn("inline-flex items-center gap-1.5", className)}
     >
-      {options.map((option) => {
+      {options.map((option, index) => {
         const active = option.value === value;
         return (
           <button
@@ -182,17 +203,36 @@ export function Segmented({
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={active ? 0 : -1}
             disabled={option.disabled}
             title={option.title}
             onClick={() => onValueChange(option.value)}
+            onKeyDown={(event) => {
+              const step =
+                event.key === "ArrowRight" || event.key === "ArrowDown"
+                  ? 1
+                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = move(index, step);
+              if (next === null) return;
+              onValueChange(next);
+              const group = event.currentTarget.parentElement;
+              requestAnimationFrame(() =>
+                group?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus(),
+              );
+            }}
             className={cn(
-              "h-full min-w-9 rounded-full px-3 text-[13px] tabular transition-[background-color,color,box-shadow] outline-none focus-visible:outline-2 focus-visible:outline-amb disabled:cursor-not-allowed disabled:text-fg-muted/50",
+              "sk flex-1 rounded-[10px] px-3 transition-[background-color,color,scale] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45",
+              size === "lg" ? "numeral h-12 text-[26px]" : "h-9 text-[13px] font-semibold tabular",
               active
-                ? "bg-white/[0.14] font-semibold text-fg shadow-subtle"
-                : "text-fg-soft hover:text-fg",
+                ? "bg-fg text-ground"
+                : "bg-tint/[0.055] text-fg-soft hover:bg-tint/[0.09] hover:text-fg",
             )}
           >
-            {option.label}
+            <span className="sk-in">{option.label}</span>
           </button>
         );
       })}

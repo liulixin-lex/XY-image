@@ -118,7 +118,7 @@ export function JobQueue({
 }
 
 const actionClass =
-  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-line-strong bg-white/[0.05] px-3 text-[13px] font-medium whitespace-nowrap text-fg transition-colors hover:bg-white/[0.1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb [&_svg]:size-3.5";
+  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-line-strong bg-tint/[0.05] px-3 text-[13px] font-medium whitespace-nowrap text-fg transition-colors hover:bg-tint/[0.1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc [&_svg]:size-3.5";
 
 function QueueRow({
   job,
@@ -195,7 +195,7 @@ function QueueRow({
           "relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[10px]",
           running && "bg-[radial-gradient(circle_at_30%_30%,rgb(var(--amb)/0.55),rgb(var(--amb-2)/0.35)_55%,rgb(255_255_255/0.04))] animate-breathe",
           (queued || saving) && "border border-dashed border-line-strong",
-          settled && (unknown ? "bg-alert-wash text-alert" : "bg-white/[0.06] text-fg-soft"),
+          settled && (unknown ? "bg-alert-wash text-alert" : "bg-tint/[0.06] text-fg-soft"),
         )}
       >
         {settled ? (
@@ -254,7 +254,7 @@ function QueueRow({
             onClick={onDismiss}
             aria-label="从这里移除"
             title="从这里移除（历史里还在）"
-            className="-mr-1 ml-1 flex size-8 shrink-0 items-center justify-center rounded-[9px] text-fg-muted transition-colors hover:bg-white/[0.08] hover:text-fg"
+            className="-mr-1 ml-1 flex size-8 shrink-0 items-center justify-center rounded-[9px] text-fg-muted transition-colors hover:bg-tint/[0.08] hover:text-fg"
           >
             <XIcon className="size-4" strokeWidth={1.75} />
           </button>

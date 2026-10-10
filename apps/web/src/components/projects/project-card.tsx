@@ -8,8 +8,8 @@ import { useState } from "react";
 import { cn, formatDate } from "@/lib/utils";
 
 /**
- * One canvas project: its latest render, lifting toward the light on hover.
- * Projects without a render show an empty dotted board.
+ * One canvas project: its latest render in a soft frame that lifts off the
+ * wall on hover. Projects without a render show an empty dotted board.
  */
 export function ProjectCard({
   project,
@@ -28,11 +28,11 @@ export function ProjectCard({
       <Link
         href={`/canvas?id=${project.primaryCanvas.id}`}
         className={cn(
-          "block rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amb",
+          "block rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc",
           highlighted && "outline-2 outline-offset-4 outline-alert",
         )}
       >
-        <div className="relative aspect-[16/10] overflow-hidden rounded-frame bg-white/[0.04] shadow-[0_0_0_1px_rgb(255_255_255/0.08)] transition-[box-shadow,transform] duration-300 group-hover:-translate-y-0.5 group-hover:shadow-[0_0_0_1px_rgb(255_255_255/0.2),0_24px_50px_-26px_rgb(2_4_10/0.9),0_0_44px_-14px_rgb(var(--amb)/0.55)]">
+        <div className="relative aspect-[16/10] overflow-hidden rounded-[16px] bg-panel shadow-[0_14px_30px_-20px_var(--shadow-2)] transition-[box-shadow,translate] duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_26px_44px_-22px_var(--shadow-2)]">
           {thumb ? (
             <img
               src={thumb}
@@ -42,7 +42,7 @@ export function ProjectCard({
               className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
             />
           ) : (
-            <span className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(rgb(255_255_255/0.08)_1px,transparent_1px)] text-[12.5px] text-fg-muted [background-size:18px_18px]">
+            <span className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(rgb(var(--tint)/0.12)_1px,transparent_1px)] text-[12.5px] text-fg-muted [background-size:18px_18px]">
               空白画布
             </span>
           )}
@@ -54,7 +54,7 @@ export function ProjectCard({
         type="button"
         onClick={() => onDelete(project.id)}
         aria-label={`删除项目 ${project.name}`}
-        className="absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-full bg-ground-deep/60 backdrop-blur-xl text-fg-soft opacity-0 shadow-subtle transition-[opacity,color] group-hover:opacity-100 hover:text-alert focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+        className="glass absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-[10px] text-fg-soft opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-alert focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
       >
         <Trash2Icon className="size-4" strokeWidth={1.75} />
       </button>
@@ -76,10 +76,12 @@ export function NewProjectCard({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group block w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amb disabled:cursor-wait"
+      className="group block w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc disabled:cursor-wait"
     >
-      <span className="flex aspect-[16/10] items-center justify-center rounded-frame border border-dashed border-line-strong bg-white/[0.02] text-fg-soft transition-colors group-hover:border-white/30 group-hover:bg-white/[0.05] group-hover:text-fg">
-        <PlusIcon className="size-5" strokeWidth={1.75} />
+      <span className="flex aspect-[16/10] items-center justify-center rounded-[16px] border border-dashed border-line-strong bg-tint/[0.02] transition-colors group-hover:border-acc/50 group-hover:bg-acc-soft">
+        <span className="sk flex h-11 w-12 items-center justify-center rounded-[12px] bg-acc text-acc-ink shadow-acc transition-[scale] group-hover:scale-105">
+          <PlusIcon className="sk-in size-5" strokeWidth={2.2} />
+        </span>
       </span>
       <span className="mt-3 block text-[14px] font-medium text-fg">{label}</span>
       <span className="mt-0.5 block text-[12px] text-fg-muted">空白开始，随时叫助手</span>

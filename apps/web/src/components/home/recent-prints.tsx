@@ -14,6 +14,9 @@ import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
 import { type ImageJobView, toImageJobView } from "@/lib/image-jobs";
 import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
+import { cn } from "@/lib/utils";
+
+import { buttonVariants } from "../ui/button";
 
 const LIMIT = 10;
 // Lights the room until the first result exists.
@@ -58,7 +61,7 @@ export function RecentPrints() {
   return (
     <section aria-labelledby="recent-prints">
       <div className="mb-4 flex items-baseline justify-between gap-4">
-        <h2 id="recent-prints" className="text-[18px] font-semibold text-fg">
+        <h2 id="recent-prints" className="poster-label text-[26px] leading-none text-fg">
           最近生成
         </h2>
         <Link
@@ -71,49 +74,53 @@ export function RecentPrints() {
       </div>
 
       {failed ? (
-        <p className="rounded-[16px] border border-dashed border-line-strong px-5 py-6 text-[13.5px] text-fg-soft">
+        <p className="rounded-[16px] bg-tint/[0.04] px-5 py-6 text-[13.5px] text-fg-soft">
           生成记录暂时读不到，稍后刷新页面再看。
         </p>
       ) : prints === null ? (
         <div className="flex gap-3 overflow-hidden" aria-label="读取中">
           {Array.from({ length: 7 }, (_, i) => (
-            <div key={i} className="aspect-[4/5] w-[156px] shrink-0 animate-breathe rounded-[14px]" />
+            <div key={i} className="sk aspect-[4/5] w-[156px] shrink-0 animate-breathe rounded-[14px]" />
           ))}
         </div>
       ) : prints.length === 0 ? (
         <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-[18px] px-5 py-5">
           <p className="text-[14px] text-fg-soft">还没有生成过图片。去「生图」写一句描述，就能出第一张。</p>
-          <Link
-            href="/studio"
-            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-fg px-4 text-[14px] font-semibold text-ground glow-amb transition-colors hover:bg-white"
-          >
-            去生图
-            <ArrowRightIcon className="size-4" strokeWidth={2} />
+          <Link href="/studio" className={buttonVariants({ variant: "accent", size: "lg", slant: true })}>
+            <span className="sk-in">
+              去生图
+              <ArrowRightIcon className="size-4" strokeWidth={2.2} />
+            </span>
           </Link>
         </div>
       ) : (
-        <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pt-1 pb-4 scrollbar-hidden">
+        <ol className="-mx-2 flex gap-3.5 overflow-x-auto px-3 pt-2 pb-5 scrollbar-hidden">
           {prints.map((job, index) => (
             <li key={job.id} className="shrink-0">
               <Link
                 href="/studio"
-                className={
-                  "group block w-[156px] overflow-hidden rounded-[14px] shadow-[0_0_0_1px_rgb(255_255_255/0.08)] transition-[box-shadow,transform] duration-300 outline-none hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgb(255_255_255/0.2),0_24px_50px_-26px_rgb(2_4_10/0.9),0_0_44px_-14px_rgb(var(--amb)/0.6)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb" +
-                  (index === 0 ? " shadow-[0_0_0_1.5px_rgb(255_255_255/0.6),0_0_40px_-12px_rgb(var(--amb)/0.7)]" : "")
-                }
+                className="group block w-[156px] rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc"
                 title={job.prompt}
               >
-                <span className="relative block aspect-[4/5] bg-white/[0.05]">
+                <span
+                  className={cn(
+                    "sk-frame relative block aspect-[4/5] rounded-[14px] bg-tint/[0.05] transition-[box-shadow,translate] duration-300 group-hover:-translate-y-1",
+                    index === 0
+                      ? "ring-picked"
+                      : "shadow-[0_14px_26px_-18px_var(--shadow-2)] group-hover:shadow-[0_24px_40px_-20px_var(--shadow-2)]",
+                  )}
+                >
                   {/* biome-ignore lint/performance/noImgElement: public storage URL */}
                   <img
                     src={job.url!}
                     alt={job.prompt || "生成结果"}
                     loading="lazy"
-                    className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                    className="size-full object-cover"
                   />
-                  <span className="absolute right-2 bottom-2 rounded-full bg-ground-deep/60 px-2 py-0.5 text-[11px] font-medium text-fg backdrop-blur-md">
-                    {QUALITY_LABEL[job.quality]}
-                  </span>
+                </span>
+                <span className="mt-2 flex items-center gap-2 pl-1">
+                  <span className="numeral text-[18px] text-fg-soft">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="data-label text-fg-muted">{QUALITY_LABEL[job.quality]}</span>
                 </span>
               </Link>
             </li>

@@ -450,7 +450,7 @@ function CanvasNotice({ kind }: { kind: keyof typeof NOTICE_COPY }) {
         <div className="mt-3 flex flex-wrap gap-3">
           {canRetry ? (
             <Button
-              variant="glow"
+              variant="accent"
               size="lg"
               onClick={() => {
                 console.info("[canvas] reloading after load failure");
@@ -463,7 +463,7 @@ function CanvasNotice({ kind }: { kind: keyof typeof NOTICE_COPY }) {
           ) : null}
           <Link
             href="/projects"
-            className={buttonVariants({ variant: canRetry ? "outline" : "glow", size: "lg" })}
+            className={buttonVariants({ variant: canRetry ? "outline" : "accent", size: "lg" })}
           >
             回到画布项目
           </Link>

@@ -24,19 +24,21 @@ const FACTS = [
 /** Billing truth, shown with the same record a finished picture carries. */
 export function BillingSection({ sample }: { sample: ShowcaseItem }) {
   return (
-    <section id="billing" aria-labelledby="billing-title" className="relative z-10 scroll-mt-6 py-24 lg:py-32">
-      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-16 px-5 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:px-[clamp(24px,4.4vw,96px)]">
+    <section id="billing" aria-labelledby="billing-title" className="relative z-10 scroll-mt-20 py-24 lg:py-32">
+      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-16 px-5 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:px-[clamp(24px,3.6vw,64px)]">
         <div className="lg:col-span-5">
-          <h2 id="billing-title" className="font-display text-[clamp(40px,4.6vw,68px)] leading-[1.04] text-fg">
+          <h2 id="billing-title" className="font-display text-[clamp(44px,5.4vw,84px)] leading-[1.04] font-normal text-fg">
             和主站共用
             <br />
-            一个账号、一份余额
+            <em className="text-acc not-italic">一个账号</em>
+            <br />
+            一份余额
           </h2>
           <dl className="mt-12 divide-y divide-line border-y border-line">
             {FACTS.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="grid grid-cols-[2.5rem_1fr] gap-x-4 py-6">
-                <span className="flex size-10 items-center justify-center rounded-full border border-line-strong bg-white/[0.04] text-amb">
-                  <Icon className="size-[18px]" strokeWidth={1.75} />
+              <div key={title} className="grid grid-cols-[2.75rem_1fr] gap-x-4 py-6">
+                <span className="sk flex size-11 items-center justify-center rounded-[12px] bg-acc-soft text-acc-text">
+                  <Icon className="sk-in size-[19px]" strokeWidth={1.9} />
                 </span>
                 <div>
                   <dt className="text-[17px] font-semibold text-fg">{title}</dt>
@@ -48,8 +50,11 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
         </div>
 
         <figure className="relative m-0 lg:col-span-6 lg:col-start-7">
-          <div className="relative mx-auto w-[min(100%,420px)] lg:mr-[18%]">
-            <div className="aspect-[3/4] overflow-hidden rounded-[22px] shadow-lit">
+          <div className="relative mx-auto w-[min(100%,400px)] lg:mr-[20%]">
+            <div className="absolute inset-0 translate-x-[7%] translate-y-[4%]">
+              <div className="sk h-full w-full rounded-[22px] bg-[rgb(var(--amb)/0.45)]" />
+            </div>
+            <div className="sk-frame shadow-lit relative aspect-[3/4] rounded-[22px]">
               {/* biome-ignore lint/performance/noImgElement: static export */}
               <img
                 src={sample.src}
@@ -60,9 +65,9 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
                 style={{ objectPosition: sample.focus }}
               />
             </div>
-            <div className="glass-strong absolute -bottom-10 left-6 w-[min(330px,calc(100vw-60px))] rounded-[18px] p-5 sm:left-auto sm:-right-[22%]">
-              <p className="text-[14px] leading-relaxed text-fg">{sample.prompt}</p>
-              <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-[13px]">
+            <div className="glass-strong absolute -bottom-12 left-4 w-[min(330px,calc(100vw-56px))] rotate-[1.5deg] rounded-[18px] p-5 sm:left-auto sm:-right-[24%]">
+              <p className="text-[14px] leading-relaxed font-medium text-fg">{sample.prompt}</p>
+              <dl className="mt-4 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2.5 text-[13px]">
                 <dt className="text-fg-muted">模型</dt>
                 <dd className="text-right text-fg">GPT Image 2</dd>
                 <dt className="text-fg-muted">尺寸</dt>
@@ -79,7 +84,7 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
               </p>
             </div>
           </div>
-          <figcaption className="mt-16 text-center text-xs text-fg-muted lg:text-left">示例记录</figcaption>
+          <figcaption className="mt-20 text-center text-xs text-fg-muted lg:text-left">示例记录</figcaption>
         </figure>
       </div>
     </section>

@@ -88,7 +88,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean | undefined 
         )
       }
       className={cn(
-        "h-8 border-transparent bg-transparent px-2 hover:bg-white/[0.06]",
+        "h-8 border-transparent bg-transparent px-2 hover:bg-tint/[0.06]",
         compact ? "max-w-[140px] text-[12px]" : "max-w-[180px]",
       )}
       popupClassName="w-[260px]"

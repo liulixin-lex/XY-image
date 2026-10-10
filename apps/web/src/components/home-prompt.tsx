@@ -131,7 +131,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
 
     return (
       <div
-        className="glass rounded-[22px] transition-[border-color,box-shadow] focus-within:border-white/25 focus-within:shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_0_0_1px_rgb(var(--amb)/0.25),0_30px_80px_-40px_rgb(var(--amb)/0.6)]"
+        className="glass rounded-[24px] transition-shadow focus-within:shadow-[inset_0_1px_0_var(--glass-highlight),0_0_0_2px_var(--acc-soft),0_24px_48px_-28px_var(--shadow-2)]"
         onDragOver={(e) => {
           if (onAddFiles) e.preventDefault();
         }}
@@ -194,9 +194,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
                 onClick={() => fileInputRef.current?.click()}
                 title="添加参考图"
                 aria-label="添加参考图"
-                className="flex size-9 items-center justify-center rounded-full border border-line bg-white/[0.06] text-fg-soft transition-colors hover:border-line-strong hover:bg-white/[0.09] hover:text-fg"
+                className="sk flex h-9 w-10 items-center justify-center rounded-[10px] bg-tint/[0.055] text-fg-soft transition-colors hover:bg-tint/[0.1] hover:text-fg"
               >
-                <ImagePlusIcon className="size-4" strokeWidth={1.75} />
+                <ImagePlusIcon className="sk-in size-4" strokeWidth={1.9} />
               </button>
             </>
           ) : null}
@@ -209,15 +209,17 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             aria-label="生图模型偏好"
             aria-expanded={modelPopoverOpen}
             className={cn(
-              "flex h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors",
+              "sk flex h-9 items-center rounded-[10px] px-3 text-[13px] font-semibold transition-colors",
               preference.mode === "manual"
-                ? "border-transparent bg-fg text-ground"
-                : "border-line bg-white/[0.06] text-fg-soft hover:border-line-strong hover:bg-white/[0.09] hover:text-fg",
+                ? "bg-fg text-ground"
+                : "bg-tint/[0.055] text-fg-soft hover:bg-tint/[0.1] hover:text-fg",
             )}
           >
-            <SlidersHorizontalIcon className="size-3.5" strokeWidth={1.75} />
-            <span className="hidden sm:inline">
-              {preference.mode === "manual" ? `指定 ${preference.models.length} 个生图模型` : "生图模型自动"}
+            <span className="sk-in gap-1.5">
+              <SlidersHorizontalIcon className="size-3.5" strokeWidth={1.9} />
+              <span className="hidden sm:inline">
+                {preference.mode === "manual" ? `指定 ${preference.models.length} 个生图模型` : "生图模型自动"}
+              </span>
             </span>
           </button>
           <ImageModelPreferencePopover
@@ -231,10 +233,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             disabled={!canSubmit}
             aria-label="开始"
             title={failedUpload ? "有图片上传失败，重试或移除后再发送" : "发送（Enter）"}
-            className="ml-auto flex h-11 items-center gap-1.5 rounded-xl bg-fg px-5 text-[15px] font-semibold text-ground glow-amb transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-white/[0.12] disabled:text-fg-muted disabled:shadow-none"
+            className="sk ml-auto flex h-12 items-center rounded-[14px] bg-acc px-6 font-display text-[19px] text-acc-ink shadow-acc transition-[background-color,scale] hover:bg-acc-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted disabled:shadow-none"
           >
-            交给助手
-            <ArrowUpIcon className="size-4" strokeWidth={2} />
+            <span className="sk-in gap-1.5">
+              交给助手
+              <ArrowUpIcon className="size-[18px]" strokeWidth={2.4} />
+            </span>
           </button>
         </div>
       </div>

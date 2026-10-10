@@ -79,10 +79,10 @@ function SettingsView() {
                 tabIndex={selected ? 0 : -1}
                 onClick={() => select(tab.id)}
                 className={cn(
-                  "relative h-9 shrink-0 rounded-[10px] px-4 text-[14px] font-medium whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amb",
+                  "relative h-9 shrink-0 rounded-[10px] px-4 text-[14px] font-medium whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
                   selected
-                    ? "bg-white/[0.1] text-fg"
-                    : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                    ? "bg-tint/[0.1] text-fg"
+                    : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
                 )}
               >
                 {tab.label}

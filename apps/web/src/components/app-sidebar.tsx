@@ -43,10 +43,10 @@ function useIsActive() {
 }
 
 /**
- * Workspace navigation. Desktop and tablet: a top bar floating over the
- * room (wordmark, a glass pill of sections, balance and account). It turns
- * into a glass strip once the page scrolls under it. Phones: the same top
- * bar without the pill, plus a bottom tab bar.
+ * Workspace navigation. Desktop and tablet: a top bar over the room
+ * (wordmark, slanted section tabs with the current one inked, balance,
+ * theme and account). It turns into a frosted strip once the page scrolls
+ * under it. Phones: the same top bar without the tabs, plus a bottom tab bar.
  *
  * (File name kept from the earlier side-rail layout so imports stay put.)
  */
@@ -65,18 +65,14 @@ export function AppSidebar() {
     <>
       <header
         data-scrolled={scrolled || undefined}
-        className="sticky top-0 z-40 border-b border-transparent transition-[background-color,border-color,backdrop-filter] duration-300 data-[scrolled]:border-line data-[scrolled]:bg-ground/70 data-[scrolled]:backdrop-blur-xl"
+        className="sticky top-0 z-40 transition-[background-color,box-shadow,backdrop-filter] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
       >
-        <div className="mx-auto flex h-[68px] max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-8 md:h-[84px] lg:px-12">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:px-8 md:h-[72px] lg:gap-8 lg:px-[clamp(20px,2.4vw,40px)]">
           <Link href="/home" aria-label={`${BRAND.name} 首页`} className="shrink-0 rounded-md">
-            {/* The nav is centred absolutely; at md the tag would run into it. */}
-            <BrandLockup tagClassName="md:max-lg:hidden" />
+            <BrandLockup tagClassName="md:max-xl:hidden" />
           </Link>
 
-          <nav
-            aria-label="主导航"
-            className="glass absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-[14px] p-[5px] md:flex"
-          >
+          <nav aria-label="主导航" className="hidden min-w-0 items-center gap-1 md:flex">
             {NAV_ITEMS.map((item) => {
               const active = isActive(item.href);
               return (
@@ -85,19 +81,17 @@ export function AppSidebar() {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "rounded-[10px] px-3.5 py-2 text-sm font-medium whitespace-nowrap transition-colors lg:px-4",
-                    active
-                      ? "bg-white/[0.1] text-fg"
-                      : "text-fg-soft hover:bg-white/[0.06] hover:text-fg",
+                    "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-colors lg:px-3.5",
+                    active ? "bg-fg text-ground" : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
                   )}
                 >
-                  {item.label}
+                  <span className="sk-in">{item.label}</span>
                 </Link>
               );
             })}
           </nav>
 
-          <AccountChip />
+          <AccountChip className="ml-auto" />
         </div>
       </header>
 
@@ -115,10 +109,10 @@ export function AppSidebar() {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 rounded-[14px] text-[11px] transition-colors",
-                active ? "bg-white/[0.1] font-semibold text-fg" : "text-fg-muted",
+                active ? "bg-fg font-semibold text-ground" : "text-fg-muted",
               )}
             >
-              <Icon className={cn("size-5", active && "text-amb")} strokeWidth={active ? 2 : 1.75} />
+              <Icon className="size-5" strokeWidth={active ? 2 : 1.75} />
               {item.label}
             </Link>
           );

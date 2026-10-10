@@ -119,7 +119,7 @@ export function CanvasLogoMenu({
   return (
     <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
-        className="flex size-9 cursor-pointer items-center justify-center rounded-md border border-line bg-panel/80 backdrop-blur-xl shadow-subtle transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-amb"
+        className="flex size-9 cursor-pointer items-center justify-center rounded-md border border-line bg-panel/80 backdrop-blur-xl shadow-subtle transition-colors outline-none hover:border-line-strong focus-visible:outline-2 focus-visible:outline-acc"
         aria-label="菜单"
       >
         <BrandMark className="size-6" aria-hidden title="" />

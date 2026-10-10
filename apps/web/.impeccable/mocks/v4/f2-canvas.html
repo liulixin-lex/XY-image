@@ -1,0 +1,214 @@
+<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><title>F 海报 柔和版 · 画布</title>
+<script>const t=new URLSearchParams(location.search).get("theme");if(t)document.documentElement.dataset.theme=t;</script>
+<style>
+@font-face{font-family:"Geist";src:url(../fonts/geist-400.ttf);font-weight:400}
+@font-face{font-family:"Geist";src:url(../fonts/geist-500.ttf);font-weight:500}
+@font-face{font-family:"Geist";src:url(../fonts/geist-600.ttf);font-weight:600}
+@font-face{font-family:"Geist";src:url(../fonts/geist-700.ttf);font-weight:700}
+@font-face{font-family:"Geist";src:url(../fonts/geist-800.ttf);font-weight:800}
+@font-face{font-family:"Geist Mono";src:url(../fonts/geist-mono-400.ttf);font-weight:400}
+@font-face{font-family:"Noto SC";src:url(../fonts/noto-sc-500.ttf);font-weight:500}
+@font-face{font-family:"Noto SC";src:url(../fonts/noto-sc-900.ttf);font-weight:900}
+@font-face{font-family:"Smiley";src:url(../fonts/SmileySans-Oblique.ttf.woff2);font-weight:400}
+@font-face{font-family:"ShuHei";src:url(../fonts/v4/pkg/alimama-shu-hei-ti/package/AlimamaShuHeiTi-Bold.woff2)}
+@font-face{font-family:"YouShe";src:url(../fonts/v4/pkg/you-she-biao-ti-hei/package/优设标题黑.ttf)}
+@font-face{font-family:"JinBu";src:url("../fonts/v4/pkg/ding-talk-jin-bu-ti/package/DingTalk JinBuTi.ttf")}
+@font-face{font-family:"PangMen";src:url(../fonts/v4/pkg/pang-men-zheng-dao-3/package/庞门正道标题体3.0.ttf)}
+@font-face{font-family:"Douyin";src:url(../fonts/v4/pkg/douyin-sans/package/DouyinSansBold.otf)}
+@font-face{font-family:"HuangYou";src:url(../fonts/v4/pkg/zcoolqingkehuangyouti/package/站酷庆科黄油体.ttf)}
+@font-face{font-family:"DaoLi";src:url(../fonts/v4/pkg/alimama-dao-li-ti/package/AlimamaDaoLiTi.woff2)}
+@font-face{font-family:"ChunFeng";src:url(../fonts/v4/pkg/slidechunfeng/package/演示春风楷.ttf)}
+@font-face{font-family:"Unbounded";src:url(../fonts/v4/unbounded-800.woff2);font-weight:800}
+@font-face{font-family:"Unbounded";src:url(../fonts/v4/unbounded-500.woff2);font-weight:500}
+@font-face{font-family:"Doto";src:url(../fonts/v4/doto-800.woff2);font-weight:800}
+@font-face{font-family:"Doto";src:url(../fonts/v4/doto-600.woff2);font-weight:600}
+@font-face{font-family:"Bricolage";src:url(../fonts/v4/bricolage-grotesque-800.woff2);font-weight:800}
+@font-face{font-family:"Syne";src:url(../fonts/v4/syne-800.woff2);font-weight:800}
+@font-face{font-family:"BigShoulders";src:url(../fonts/v4/big-shoulders-display-900.woff2);font-weight:900}
+@font-face{font-family:"Anybody";src:url(../fonts/v4/anybody-800.woff2);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{-webkit-font-smoothing:antialiased}
+
+body{width:1440px;height:900px;overflow:hidden;font-family:"Geist","PingFang SC",sans-serif;color:var(--ink);background:var(--stage)}
+.app{position:relative;width:1440px;height:900px}
+.top{position:absolute;left:0;right:364px;top:0;height:56px;display:flex;align-items:center;gap:14px;padding:0 16px 0 14px;z-index:4}
+.top .pj{font:600 14.5px "PingFang SC"}.top .st{font:400 12.5px "PingFang SC";color:var(--ink-3);display:flex;align-items:center;gap:4px}
+.top .sp{margin-left:auto}
+.top .z{font:500 12.5px "Geist Mono";color:var(--ink-2)}
+.top .bal{font:600 13px "Geist";display:flex;align-items:center;gap:8px}
+.top .bal small{font:400 12px "PingFang SC";color:var(--ink-3)}
+.av{width:30px;height:30px;display:grid;place-items:center;font:600 12px "PingFang SC";color:#fff;background:var(--avatar)}
+.rail{position:absolute;left:0;top:56px;bottom:0;width:60px;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:12px;z-index:4}
+.rail .t{width:40px;height:40px;display:grid;place-items:center;color:var(--ink-2)}
+.rail .t.on{color:var(--on-ink);background:var(--on)}
+.rail .sep{width:24px;height:1px;background:var(--hair);margin:6px 0}
+.stage{position:absolute;left:60px;top:56px;right:364px;bottom:0;overflow:hidden}
+.n{position:absolute;background:var(--node);color:var(--ink)}
+.n .h{display:flex;align-items:center;gap:6px;font:600 12.5px "PingFang SC";color:var(--ink-2)}
+.n .h .ic{color:var(--ink-3)}
+.n .b{font:400 13.5px/1.6 "PingFang SC";color:var(--ink)}
+.n .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font:400 12.5px "PingFang SC";color:var(--ink-3)}
+.n .kv b{font:500 12.5px "Geist";color:var(--ink);text-align:right;font-weight:500}
+.port{position:absolute;width:9px;height:9px;background:var(--stage);border:1.5px solid var(--edge)}
+.res{position:absolute;overflow:visible}
+.res img{display:block;width:100%;height:100%;object-fit:cover}
+.res .cap{position:absolute;left:0;top:-20px;font:400 11.5px "Geist Mono";color:var(--ink-3)}
+.sel{outline:2px solid var(--sel);outline-offset:3px}
+.tool{position:absolute;display:flex;align-items:center;gap:2px;padding:4px;background:var(--float);z-index:3}
+.tool span{height:32px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font:500 12.5px "PingFang SC";color:var(--ink-2);white-space:nowrap}
+.tool span.p{color:var(--on-ink);background:var(--on)}
+.tool i{width:1px;height:18px;background:var(--hair);margin:0 2px}
+.gen .bar{height:3px;background:var(--hair);position:relative;overflow:hidden}
+.gen .bar:after{content:"";position:absolute;left:0;top:0;bottom:0;width:46%;background:var(--sel)}
+.mini{position:absolute;left:16px;bottom:16px;width:176px;height:108px;background:var(--float)}
+.mini i{position:absolute;background:var(--ink-3);opacity:.45}
+.mini .vp{position:absolute;border:1.5px solid var(--sel);background:transparent;opacity:1}
+.zoom{position:absolute;left:204px;bottom:16px;height:36px;display:flex;align-items:center;gap:2px;padding:0 4px;background:var(--float);font:500 12px "Geist Mono";color:var(--ink-2)}
+.zoom span{width:30px;height:28px;display:grid;place-items:center}
+.chat{position:absolute;right:0;top:0;bottom:0;width:364px;display:flex;flex-direction:column;z-index:5}
+.chat .hd{height:56px;display:flex;align-items:center;gap:8px;padding:0 16px}
+.chat .hd b{font:600 14.5px "PingFang SC"}.chat .hd small{display:flex;align-items:center;gap:3px;font:400 12.5px "PingFang SC";color:var(--ink-3)}
+.chat .hd .sp{margin-left:auto;display:flex;gap:10px;color:var(--ink-3)}
+.msgs{flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.u{align-self:flex-end;max-width:84%;padding:10px 13px;font:400 13.5px/1.6 "PingFang SC";background:var(--ubub);color:var(--ink)}
+.a{font:400 13.5px/1.75 "PingFang SC";color:var(--ink)}
+.card{padding:12px;background:var(--node)}
+.card .r1{display:flex;align-items:center;gap:8px;font:600 13px "PingFang SC"}
+.card .r2{margin-top:4px;font:400 12px "Geist Mono";color:var(--ink-3)}
+.card .r3{margin-top:10px;display:flex;align-items:center;gap:10px}
+.card .r3 img{width:64px;height:84px;object-fit:cover}
+.card .r3 .ph{width:64px;height:84px;background:var(--hair);position:relative;overflow:hidden}
+.card .r3 p{font:400 12.5px/1.6 "PingFang SC";color:var(--ink-2)}
+.comp{margin:0 14px 14px;padding:12px;background:var(--node)}
+.comp .ph{font:400 13.5px/1.6 "PingFang SC";color:var(--ink-3);height:44px}
+.comp .row{display:flex;align-items:center;gap:6px}
+.comp .chip{height:30px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;font:500 12.5px "PingFang SC";color:var(--ink-2);background:var(--chipbg)}
+.comp .send{margin-left:auto;width:34px;height:34px;display:grid;place-items:center;background:var(--on);color:var(--on-ink)}
+
+:root{
+  --wall:#F5F2F3;--wall-2:#EDE9EB;--floor:#E6E1E4;--floor-2:#DBD5D9;
+  --ink:#24212B;--ink-2:#5C5766;--ink-3:#6F6A78;--hair:rgb(36 33 43 / .10);--hair-2:rgb(36 33 43 / .055);
+  --glass:rgb(255 255 255 / .62);--glass-2:rgb(255 255 255 / .84);--edge:rgb(255 255 255 / .95);
+  --acc:#E5533D;--acc-ink:#FFFFFF;--acc-text:#BF3B2A;--acc-soft:rgb(229 83 61 / .11);--acc-glow:rgb(229 83 61 / .42);
+  --amb:224 122 102;--amb2:196 70 128;--haze:.20;
+  --shadow:rgb(84 52 60 / .14);--shadow-2:rgb(84 52 60 / .26);
+  --ok:#1F8A5B;--ok-soft:rgb(31 138 91 / .11);--warn:#B9560F;--mute:#8B8693;
+  --grain-op:.07;--grain-blend:multiply;
+}
+[data-theme=dark]{
+  --wall:#1C1A22;--wall-2:#17151C;--floor:#131118;--floor-2:#0F0E13;
+  --ink:#F2EFF4;--ink-2:#BEB8C6;--ink-3:#A39DAD;--hair:rgb(242 239 244 / .10);--hair-2:rgb(242 239 244 / .055);
+  --glass:rgb(40 36 48 / .55);--glass-2:rgb(52 47 62 / .70);--edge:rgb(255 255 255 / .10);
+  --acc:#FF8068;--acc-ink:#24141A;--acc-text:#FF977F;--acc-soft:rgb(255 128 104 / .13);--acc-glow:rgb(255 128 104 / .38);
+  --haze:.26;--shadow:rgb(0 0 0 / .35);--shadow-2:rgb(0 0 0 / .58);
+  --ok:#5FD3A1;--ok-soft:rgb(95 211 161 / .12);--warn:#FFA066;--mute:#7C7686;--grain-op:.05;--grain-blend:screen;
+}
+[data-accent=berry]{--acc:#D9466F;--acc-text:#B5325A;--acc-soft:rgb(217 70 111 / .11);--acc-glow:rgb(217 70 111 / .40)}
+[data-theme=dark][data-accent=berry]{--acc:#FF89AA;--acc-ink:#2A1220;--acc-text:#FF9FBA;--acc-soft:rgb(255 137 170 / .13);--acc-glow:rgb(255 137 170 / .36)}
+[data-accent=tide]{--acc:#3F68DC;--acc-text:#2F55C2;--acc-soft:rgb(63 104 220 / .11);--acc-glow:rgb(63 104 220 / .38)}
+[data-theme=dark][data-accent=tide]{--acc:#86A6FF;--acc-ink:#0F1730;--acc-text:#9BB6FF;--acc-soft:rgb(134 166 255 / .14);--acc-glow:rgb(134 166 255 / .34)}
+body{font-family:"Geist","PingFang SC",sans-serif;color:var(--ink);background:var(--wall)}
+.grain{position:absolute;inset:0;pointer-events:none;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");opacity:var(--grain-op);mix-blend-mode:var(--grain-blend);z-index:20}
+.brand{display:flex;align-items:center;gap:10px;font:400 25px/1 "YouShe";letter-spacing:.02em}
+.brand .logo{width:24px;height:22px;border-radius:6px;background:var(--acc);transform:skewX(-14deg);box-shadow:0 6px 14px -6px var(--acc-glow)}
+.brand .tag{font:600 9.5px/1 "Geist";letter-spacing:.14em;padding:5px 7px;border-radius:5px;background:var(--hair-2);color:var(--ink-2);transform:skewX(-10deg)}
+/* slanted, softly rounded shapes: the poster cut without the sharp edges */
+.sk{display:inline-flex;align-items:center;justify-content:center;transform:skewX(-10deg);border-radius:11px}
+.sk>*{transform:skewX(10deg);display:inline-flex;align-items:center;gap:6px}
+.glass{background:var(--glass);backdrop-filter:blur(20px) saturate(1.25);-webkit-backdrop-filter:blur(20px) saturate(1.25);
+  box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2),0 1px 2px var(--shadow),0 24px 48px -28px var(--shadow-2)}
+
+:root{--stage:var(--wall);--node:var(--glass-2);--float:var(--glass-2);--edge:rgb(var(--amb) / .55);--edge-w:1.6;--dash:4 5;
+  --sel:var(--acc);--on:var(--ink);--on-ink:var(--wall);--ubub:var(--acc-soft);--chipbg:var(--hair-2);--avatar:var(--acc);--panel:var(--glass)}
+.app{background:radial-gradient(640px 460px at 600px 300px,rgb(var(--amb) / calc(var(--haze) * .75)),transparent 70%),
+  radial-gradient(500px 360px at 980px 80px,rgb(var(--amb2) / calc(var(--haze) * .45)),transparent 70%),linear-gradient(var(--wall),var(--wall-2))}
+.stage{background:transparent}
+.stage:before{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--hair) 1.1px,transparent 1.3px);background-size:24px 24px}
+.top{background:transparent}
+.top .pj{font:400 18px "YouShe";letter-spacing:.02em}
+.logo{width:22px;height:20px;border-radius:6px;background:var(--acc);transform:skewX(-14deg);box-shadow:0 6px 14px -6px var(--acc-glow)}
+.ib{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:var(--ink-2);background:var(--glass);box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2)}
+.top .bal{font:900 20px "BigShoulders"}
+.av{width:34px;border-radius:9px;transform:skewX(-10deg);font:400 15px "YouShe";color:var(--acc-ink)}
+.rail{left:12px;top:70px;bottom:auto;padding:8px 0 10px;border-radius:20px;background:var(--glass);backdrop-filter:blur(18px);box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2),0 24px 48px -28px var(--shadow-2)}
+.rail .t{border-radius:12px}.rail .t.on{transform:skewX(-10deg)}.rail .t.on svg{transform:skewX(10deg)}
+.n{border-radius:18px;padding:12px 14px;backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2),0 2px 4px var(--shadow),0 22px 40px -26px var(--shadow-2)}
+.n .h{font:400 15px "YouShe";color:var(--ink);letter-spacing:.02em}.n .h .ic{color:var(--acc)}
+.n .kv b{font:900 16px "BigShoulders"}
+.res{border-radius:14px;overflow:hidden;box-shadow:0 2px 4px var(--shadow),0 24px 36px -22px var(--shadow-2)}
+.res.sel{overflow:visible;outline:none;box-shadow:0 0 0 3px var(--wall),0 0 0 5px var(--acc),0 24px 40px -18px var(--acc-glow)}.res.sel img{border-radius:14px}
+.port{border-radius:50%;border-color:rgb(var(--amb));background:var(--wall)}
+.gbtn{margin-top:14px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--acc);color:var(--acc-ink);font:400 18px "YouShe";transform:skewX(-8deg);box-shadow:0 12px 24px -12px var(--acc-glow)}
+.note{margin-top:8px;font:500 12px "PingFang SC";color:var(--ok)}
+.gen .note{color:var(--ink-3)}
+.gen .bar{height:6px;border-radius:6px}.gen .bar:after{border-radius:6px;background:var(--acc)}
+.tool{border-radius:16px;background:rgb(28 25 34 / .74);backdrop-filter:blur(14px);box-shadow:inset 0 1px 0 rgb(255 255 255 / .12),0 20px 36px -18px var(--shadow-2)}
+.tool span{border-radius:10px;color:#fff}.tool span.p{background:var(--acc);color:var(--acc-ink)}.tool i{background:rgb(255 255 255 / .16)}
+.mini,.zoom{border-radius:14px;background:var(--glass);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2)}
+.mini{left:84px}.zoom{left:272px}
+.mask{position:absolute;inset:0;background:repeating-linear-gradient(-58deg,var(--acc-glow) 0 5px,transparent 5px 10px);clip-path:polygon(0 0,100% 0,100% 100%,0 100%,0 60%,30% 55%,32% 20%,68% 20%,70% 55%,100% 60%,100% 0)}
+.chat{top:12px;right:12px;bottom:12px;width:340px;border-radius:24px;background:var(--glass);backdrop-filter:blur(22px);box-shadow:inset 0 1px 0 var(--edge),0 0 0 1px var(--hair-2),0 30px 60px -30px var(--shadow-2)}
+.chat .hd b{font:400 18px "YouShe";letter-spacing:.02em}
+.u{border-radius:16px 16px 5px 16px;background:var(--acc-soft)}
+.card,.comp{border-radius:16px;box-shadow:inset 0 0 0 1px var(--hair-2)}
+.card .r1{font:400 15px "YouShe"}
+.comp .chip{border-radius:9px;transform:skewX(-8deg)}.comp .send{border-radius:12px;background:var(--acc);color:var(--acc-ink);transform:skewX(-8deg)}
+</style></head><body><div class="app f">
+<div class="top">
+  <span class="logo"></span><span class="pj">夏日人像</span><span class="st"><svg class="ic " width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>已保存</span>
+  <span class="sp"></span><span class="z">82%</span><span class="ib"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg></span><span class="ib"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></span><span class="ib"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v1"/><path d="M12 20v1"/><path d="M3 12h1"/><path d="M20 12h1"/><path d="m18.364 5.636-.707.707"/><path d="m6.343 17.657-.707.707"/><path d="m5.636 5.636.707.707"/><path d="m17.657 17.657.707.707"/></svg></span>
+  <span class="bal"><small>余额</small>$12.38</span><span class="av">林</span>
+</div>
+<div class="rail">
+  <span class="t on"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></span>
+  <span class="sep"></span>
+  <span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" x2="2" y1="6" y2="6"/><line x1="22" x2="2" y1="18" y2="18"/><line x1="6" x2="6" y1="2" y2="22"/><line x1="18" x2="18" y1="2" y2="22"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/></svg></span>
+  <span class="sep"></span>
+  <span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16"/><path d="M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><circle cx="13" cy="7" r="1" fill="currentColor"/><rect x="8" y="2" width="14" height="14" rx="2"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></span><span class="t"><svg class="ic " width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M16 12h2"/><path d="M16 8h2"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/><path d="M6 12h2"/><path d="M6 8h2"/></svg></span>
+</div>
+<div class="stage">
+  <svg style="position:absolute;left:0;top:0" width="1016" height="844" fill="none" stroke="var(--edge)" stroke-width="var(--edge-w)">
+    <path d="M272 150 C 332 150, 270 210, 330 210"/><path d="M222 392 C 282 392, 270 262, 330 262"/>
+    <path d="M580 236 C 640 236, 590 192, 650 192"/><path d="M580 236 C 640 236, 740 192, 800 192"/><path d="M580 236 C 640 236, 590 394, 650 394"/><path d="M580 236 C 640 236, 740 394, 800 394"/>
+    <path d="M718 286 C 718 330, 718 330, 718 360" stroke-dasharray="var(--dash)"/>
+    <path d="M718 286 L 718 300 Q 718 312 706 312 L 600 312 Q 588 312 588 324 L 588 600 Q 588 612 600 612 L 650 612" stroke="var(--sel)"/>
+  </svg>
+  <div class="n nd" style="left:40px;top:76px;width:232px"><div class="h"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>提示词</div><div class="b" style="margin-top:8px">夏日柔光人像，白色木屋前，淡色调，胶片质感，人物自然站姿</div></div>
+  <div class="port" style="left:268px;top:146px"></div>
+  <div class="n nd" style="left:40px;top:268px;width:182px"><div class="h"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></svg>参考图</div><img src="../../../public/images/showcase/web/showcase-7.webp" style="display:block;width:100%;height:190px;object-fit:cover;margin-top:8px" alt=""></div>
+  <div class="port" style="left:218px;top:388px"></div>
+  <div class="n nd gen0" style="left:330px;top:150px;width:250px">
+    <div class="h"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>生成<span style="margin-left:auto;font:500 12px Geist;color:var(--ink-3)">GPT Image 2 <svg class="ic " width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></div>
+    <div class="kv" style="margin-top:12px"><span>比例</span><b>3:4</b><span>画质</span><b>2K</b><span>数量</span><b>4 张</b><span>参考图</span><b>1</b></div>
+    <div class="gbtn">生成 4 张</div>
+    <div class="note">已完成 4/4，均已扣费</div>
+  </div>
+  <div class="port" style="left:326px;top:206px"></div><div class="port" style="left:326px;top:258px"></div><div class="port" style="left:576px;top:232px"></div>
+  <div class="tool" style="left:470px;top:42px"><span class="p"><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>以此为参考</span><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>变体</span><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 10 3 3"/><path d="M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"/><path d="M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"/></svg>局部重绘</span><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 15 6 6"/><path d="m15 9 6-6"/><path d="M21 16v5h-5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="m3 21 6-6"/><path d="M3 8V3h5"/><path d="M9 9 3 3"/></svg>扩图</span><i></i><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></span><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg></span><span><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span></div>
+  <div class="res sel" style="left:650px;top:104px;width:136px;height:182px"><img src="../../../public/images/showcase/web/showcase-11.webp" alt=""></div>
+  <div class="res" style="left:800px;top:104px;width:136px;height:182px"><img src="../../../public/images/showcase/web/showcase-2.webp" alt=""></div>
+  <div class="res" style="left:650px;top:306px;width:136px;height:182px"><img src="../../../public/images/showcase/web/showcase-10.webp" alt=""></div>
+  <div class="res" style="left:800px;top:306px;width:136px;height:182px"><img src="../../../public/images/showcase/web/showcase-5.webp" alt=""></div>
+  <div class="n nd gen" style="left:650px;top:560px;width:286px">
+    <div class="h"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 10 3 3"/><path d="M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"/><path d="M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"/></svg>局部重绘<span style="margin-left:auto;font:500 12px 'Geist Mono';color:var(--ink-3)">00:42</span></div>
+    <div style="display:flex;gap:10px;margin-top:10px"><div style="position:relative;width:60px;height:80px"><img src="../../../public/images/showcase/web/showcase-11.webp" style="width:60px;height:80px;object-fit:cover;opacity:.55" alt=""><span class="mask"></span></div>
+    <div class="b" style="font-size:12.5px;color:var(--ink-2)">只改涂抹的背景，换成海边，人物不变</div></div>
+    <div class="bar" style="margin-top:12px"></div><div class="note" style="margin-top:8px">生成中，已发出不会自动重发</div>
+  </div>
+  <div class="mini"><i style="left:14px;top:16px;width:22px;height:14px"></i><i style="left:14px;top:36px;width:18px;height:24px"></i><i style="left:46px;top:24px;width:26px;height:30px"></i><i style="left:84px;top:14px;width:30px;height:40px"></i><i style="left:84px;top:62px;width:30px;height:16px"></i><span class="vp" style="left:8px;top:8px;width:120px;height:82px"></span></div>
+  <div class="zoom"><span><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></span>82%<span><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span><span><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></span></div>
+</div>
+<aside class="chat">
+  <div class="hd"><b>设计助手</b><small>夏日人像系列 <svg class="ic " width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></small><span class="sp"><svg class="ic " width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg><svg class="ic " width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m8 9 3 3-3 3"/></svg></span></div>
+  <div class="msgs">
+    <div class="u">以第一张为底，把背景换成海边，人物不变</div>
+    <div class="a">好的。我用局部重绘只改背景，人物和光线保持不变，结果放在原图下方。</div>
+    <div class="card"><div class="r1"><svg class="ic " width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 10 3 3"/><path d="M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"/><path d="M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"/></svg>局部重绘<span style="margin-left:auto;font:400 12px 'Geist Mono';color:var(--ink-3)">00:42</span></div><div class="r2">GPT Image 2 · 3:4 · 2K</div>
+      <div class="r3"><span class="ph"></span><p>生成中。请求已发出，按次从主站余额扣费。</p></div></div>
+    <div class="u">再来两张不同构图的</div>
+    <div class="a">收到，排在这一张之后，同样放到画布上。</div>
+  </div>
+  <div class="comp"><div class="ph">说说你想怎么改，输入 @ 引用画布里的图</div>
+    <div class="row"><span class="chip"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>引用</span><span class="chip"><svg class="ic " width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>默认模型 <svg class="ic " width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span><span class="send"><svg class="ic " width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></span></div></div>
+</aside>
+</div></body></html>
