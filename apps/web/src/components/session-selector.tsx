@@ -1,7 +1,16 @@
 "use client";
 
 import type { ChatSessionSummary } from "@loomic/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ChevronDownIcon,
+  HistoryIcon,
+  SearchIcon,
+  SquarePenIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
 
 type SessionSelectorProps = {
   sessions: ChatSessionSummary[];
@@ -10,52 +19,6 @@ type SessionSelectorProps = {
   onNewChat: () => void;
   onDelete: (sessionId: string) => void;
 };
-
-function HistoryIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-      <path d="M12 7v5l4 2" />
-    </svg>
-  );
-}
-
-function NewChatIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path
-        fillOpacity={0.9}
-        d="M18.25 3A3.75 3.75 0 0 1 22 6.75v9a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM5.75 4.5A2.25 2.25 0 0 0 3.5 6.75v9A2.25 2.25 0 0 0 5.75 18h2.901c.412 0 .81.145 1.125.41l2.065 1.73a.25.25 0 0 0 .32 0l2.099-1.738A1.75 1.75 0 0 1 15.376 18h2.874a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25zm6.25 3a.75.75 0 0 1 .75.75v2.25H15a.75.75 0 0 1 0 1.5h-2.25v2.25a.75.75 0 0 1-1.5 0V12H9a.75.75 0 0 1 0-1.5h2.25V8.25A.75.75 0 0 1 12 7.5"
-      />
-    </svg>
-  );
-}
-
-function TrashIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
-      <path d="M5.75 2.5a.75.75 0 0 0-.75.75V4H2.5a.5.5 0 0 0 0 1h.614l.573 7.454A1.75 1.75 0 0 0 5.435 14h5.13a1.75 1.75 0 0 0 1.748-1.546L12.886 5h.614a.5.5 0 0 0 0-1H11v-.75a.75.75 0 0 0-.75-.75h-4.5ZM10 4H6v-.75a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25V4Z" />
-    </svg>
-  );
-}
-
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
-      <circle cx="7" cy="7" r="4.5" />
-      <path d="m10.5 10.5 3 3" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export function SessionSelector({
   sessions,
@@ -69,33 +32,49 @@ export function SessionSelector({
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
 
   const filtered = search.trim()
-    ? sessions.filter((s) => s.title.toLowerCase().includes(search.toLowerCase()))
+    ? sessions.filter((s) =>
+        s.title.toLowerCase().includes(search.toLowerCase()),
+      )
     : sessions;
 
-  // Close panel on outside click
+  const close = useCallback((restoreFocus: boolean) => {
+    setOpen(false);
+    setConfirmingId(null);
+    setSearch("");
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  // Close on an outside click or Escape; focus the search field on open.
   useEffect(() => {
     if (!open) return;
+    searchRef.current?.focus();
     function handleClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setConfirmingId(null);
-        setSearch("");
+        close(false);
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close(true);
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open, close]);
 
   const handleSelect = useCallback(
     (sessionId: string) => {
       onSelect(sessionId);
-      setOpen(false);
-      setConfirmingId(null);
-      setSearch("");
+      close(false);
     },
-    [onSelect],
+    [onSelect, close],
   );
 
   const handleDelete = useCallback(
@@ -107,136 +86,144 @@ export function SessionSelector({
   );
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* History toggle */}
-      <div className="relative" ref={panelRef}>
+    <div className="flex min-w-0 items-center gap-0.5">
+      <div className="relative min-w-0" ref={panelRef}>
         <button
+          ref={triggerRef}
           type="button"
-          onClick={() => {
-            setOpen(!open);
-            setConfirmingId(null);
-            setSearch("");
-          }}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          onClick={() => (open ? close(false) : setOpen(true))}
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-label={`历史对话：${activeSession?.title ?? "未选择"}`}
+          className="inline-flex h-8 max-w-full min-w-0 items-center gap-1.5 rounded-[10px] px-2 text-[12.5px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
         >
-          <HistoryIcon className="h-3.5 w-3.5" />
-          <span className="max-w-[140px] truncate">
-            {activeSession?.title ?? "历史对话"}
-          </span>
-          <svg
-            className={`h-3 w-3 opacity-50 transition-transform ${open ? "rotate-180" : ""}`}
-            viewBox="0 0 16 16"
-            fill="currentColor"
-          >
-            <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
-          </svg>
+          <HistoryIcon
+            aria-hidden
+            className="size-3.5 shrink-0"
+            strokeWidth={2}
+          />
+          <span className="truncate">{activeSession?.title ?? "历史对话"}</span>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 opacity-60 transition-transform",
+              open && "rotate-180",
+            )}
+            strokeWidth={2}
+          />
         </button>
 
         {open && (
-          <div className="absolute left-0 top-full mt-1.5 z-50 w-[260px] rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
-            {/* Header */}
+          <div className="glass-strong absolute top-full left-0 z-50 mt-1.5 w-[280px] overflow-hidden rounded-[14px]">
             <div className="px-3 pt-3 pb-2">
-              <p className="text-xs font-medium text-foreground mb-2">历史对话</p>
-              {/* Search */}
+              <p className="mb-2 text-[12px] font-semibold text-fg">历史对话</p>
               <div className="relative">
-                <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
+                <SearchIcon
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-muted"
+                  strokeWidth={2}
+                />
                 <input
-                  type="text"
+                  ref={searchRef}
+                  type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="请输入搜索关键词"
-                  className="w-full rounded-md border border-input bg-muted py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-input-border focus:bg-background transition-colors"
+                  placeholder="搜索对话标题"
+                  aria-label="搜索对话标题"
+                  className="h-8 w-full rounded-[9px] bg-tint/[0.06] pr-2 pl-8 text-[12.5px] text-fg caret-acc placeholder:text-fg-muted outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_var(--acc)]"
                 />
               </div>
             </div>
 
-            {/* Session list */}
-            <div className="max-h-[240px] overflow-y-auto px-1 pb-1">
+            <ul
+              id={listId}
+              aria-label="历史对话"
+              className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5"
+            >
               {filtered.length === 0 && (
-                <p className="px-3 py-4 text-center text-xs text-muted-foreground/70">
-                  {search ? "无匹配结果" : "暂无对话"}
-                </p>
+                <li className="px-3 py-5 text-center text-[12px] text-fg-muted">
+                  {search ? "没有找到匹配的对话" : "还没有对话"}
+                </li>
               )}
-              {filtered.map((s) => (
-                <div
-                  key={s.id}
-                  role="button"
-                  tabIndex={0}
-                  className={`group flex items-center justify-between gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-                    s.id === activeSessionId
-                      ? "bg-muted text-foreground font-medium"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                  onClick={() => {
-                    if (confirmingId !== s.id) handleSelect(s.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && confirmingId !== s.id) {
-                      e.preventDefault();
-                      handleSelect(s.id);
-                    }
-                  }}
-                >
-                  {confirmingId === s.id ? (
-                    /* Inline confirm */
-                    <>
-                      <span className="truncate flex-1">{s.title}</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          className="px-2 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmingId(null);
-                          }}
-                        >
-                          取消
-                        </button>
-                        <button
-                          type="button"
-                          className="px-2 py-0.5 rounded text-xs text-destructive-foreground bg-destructive hover:bg-destructive/90 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(s.id);
-                          }}
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    /* Normal state */
-                    <>
-                      <span className="truncate flex-1">{s.title}</span>
+              {filtered.map((s) => {
+                const active = s.id === activeSessionId;
+                if (confirmingId === s.id) {
+                  return (
+                    <li
+                      key={s.id}
+                      className="flex items-center gap-2 rounded-[9px] bg-alert-wash px-2.5 py-1.5"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">
+                        删除「{s.title}」？
+                      </span>
                       <button
                         type="button"
-                        aria-label={`删除对话 ${s.title}`}
-                        className="hidden group-hover:flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmingId(s.id);
-                        }}
+                        onClick={() => setConfirmingId(null)}
+                        className="h-7 shrink-0 rounded-[7px] px-2 text-[12px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
                       >
-                        <TrashIcon className="h-3 w-3" />
+                        取消
                       </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(s.id)}
+                        className="h-7 shrink-0 rounded-[7px] bg-alert px-2.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acc"
+                      >
+                        删除
+                      </button>
+                    </li>
+                  );
+                }
+                // Select and delete are sibling buttons (no nested controls).
+                return (
+                  <li
+                    key={s.id}
+                    className={cn(
+                      "group flex items-center gap-1 rounded-[9px] transition-colors",
+                      active ? "bg-acc-soft" : "hover:bg-tint/[0.06]",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(s.id)}
+                      aria-current={active ? "true" : undefined}
+                      className={cn(
+                        "min-w-0 flex-1 truncate rounded-[9px] px-2.5 py-2 text-left text-[12.5px] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc",
+                        active
+                          ? "font-semibold text-acc-text"
+                          : "text-fg-soft hover:text-fg",
+                      )}
+                    >
+                      {s.title}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`删除对话 ${s.title}`}
+                      title="删除对话"
+                      onClick={() => setConfirmingId(s.id)}
+                      className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[7px] text-fg-muted opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-alert focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-acc [@media(hover:none)]:opacity-100"
+                    >
+                      <Trash2Icon
+                        aria-hidden
+                        className="size-3.5"
+                        strokeWidth={2}
+                      />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>
 
-      {/* New chat button */}
       <button
         type="button"
         onClick={onNewChat}
-        className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
         title="新对话"
         aria-label="新对话"
       >
-        <NewChatIcon className="h-5 w-5" />
+        <SquarePenIcon aria-hidden className="size-4" strokeWidth={1.9} />
       </button>
     </div>
   );

@@ -1,9 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import React, { useMemo } from "react";
 
 import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
+import { LiveDot } from "./ambient/live-dot";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { MentionPill } from "./chat/mention-pill";
@@ -67,6 +68,13 @@ export const ChatMessage = React.memo(
   },
 );
 
+/** Messages rise into place; with reduced motion they simply appear. */
+const ENTER = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const },
+};
+
 /* ------------------------------------------------------------------ */
 /*  UserMessage                                                        */
 /* ------------------------------------------------------------------ */
@@ -99,15 +107,16 @@ const UserMessage = React.memo(function UserMessage({
     };
   }, [contentBlocks]);
 
+  const reduce = useReducedMotion();
+  // Inked bubble: the user's words read as the strongest ink in the thread.
+  // Pills inside follow currentColor (mention-pill, ImagePill).
   return (
     <motion.div
-      initial={{ opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
+      {...(reduce ? {} : ENTER)}
       className="flex w-full flex-col items-end gap-2 pl-10"
     >
       {text && (
-        <div className="inline-block rounded-xl bg-muted px-3 py-2.5 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-foreground">
+        <div className="inline-block rounded-[16px] rounded-br-[6px] bg-fg px-3.5 py-2.5 text-[14px] leading-[1.65] whitespace-pre-wrap break-words text-ground selection:bg-acc selection:text-acc-ink">
           <span className="cursor-text select-text [word-break:break-word]">
             {text}
           </span>
@@ -120,7 +129,7 @@ const UserMessage = React.memo(function UserMessage({
                   kind={
                     (
                       block as {
-                        mentionType: "image-model" | "brand-kit-asset";
+                        mentionType: "image-model" | "brand-kit-asset" | "skill";
                       }
                     ).mentionType
                   }
@@ -145,7 +154,7 @@ const UserMessage = React.memo(function UserMessage({
         </div>
       )}
       {!text && (imageBlocks.length > 0 || mentionBlocks.length > 0) && (
-        <div className="inline-block rounded-xl bg-muted px-3 py-2.5">
+        <div className="inline-block rounded-[16px] rounded-br-[6px] bg-fg px-3 py-2.5 text-ground">
           {mentionBlocks.map((block, idx) => (
             <MentionPill
               key={`mention-${idx}`}
@@ -153,7 +162,7 @@ const UserMessage = React.memo(function UserMessage({
               kind={
                 (
                   block as {
-                    mentionType: "image-model" | "brand-kit-asset";
+                    mentionType: "image-model" | "brand-kit-asset" | "skill";
                   }
                 ).mentionType
               }
@@ -206,30 +215,18 @@ const AssistantMessage = React.memo(function AssistantMessage({
   );
 
   const showThinking = isStreaming && !hasContent;
+  const reduce = useReducedMotion();
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="flex w-full flex-col gap-2 pr-10"
+      {...(reduce ? {} : ENTER)}
+      className="flex w-full flex-col gap-2.5 pr-6"
     >
       {showThinking && (
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+        <output className="flex items-center gap-2 text-[13px] text-fg-muted">
+          <LiveDot />
           <span>思考中</span>
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
-            style={{ animationDelay: "0ms" }}
-          />
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
-            style={{ animationDelay: "150ms" }}
-          />
-          <span
-            className="inline-block h-1 w-1 rounded-full bg-muted-foreground animate-loading-dot"
-            style={{ animationDelay: "300ms" }}
-          />
-        </div>
+        </output>
       )}
       {contentBlocks.map((block, idx) => {
         if (block.type === "thinking") {
@@ -257,7 +254,11 @@ const AssistantMessage = React.memo(function AssistantMessage({
 
         if (block.type === "tool") {
           return (
-            <ToolBlockView key={block.toolCallId} block={block} />
+            <ToolBlockView
+              key={block.toolCallId}
+              block={block}
+              live={isStreaming}
+            />
           );
         }
 

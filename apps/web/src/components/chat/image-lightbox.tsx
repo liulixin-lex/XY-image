@@ -287,7 +287,7 @@ export const ChatImage = React.memo(function ChatImage({
   if (loadError) {
     return (
       <div
-        className={`${className} flex items-center justify-center bg-muted text-muted-foreground text-xs`}
+        className={`${className} flex items-center justify-center bg-tint/[0.06] text-fg-muted text-xs`}
         title="图片没有加载出来"
       >
         <svg
@@ -363,7 +363,8 @@ export const ImagePill = React.memo(function ImagePill({
         onClick={() => setLightbox(true)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="inline-flex h-[22px] items-center gap-1 rounded-md px-1 mx-0.5 border-[0.5px] border-muted-foreground text-foreground hover:bg-muted cursor-pointer align-middle"
+        // Follows currentColor: it sits inside the inked user bubble.
+        className="mx-0.5 inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-[7px] bg-current/12 px-1 align-middle transition-colors hover:bg-current/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acc"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -381,7 +382,7 @@ export const ImagePill = React.memo(function ImagePill({
             className="h-full w-full object-cover"
           />
         </span>
-        <span className="max-w-[100px] truncate text-[11px] leading-none text-foreground">
+        <span className="max-w-[100px] truncate text-[11px] leading-none">
           {name}
         </span>
       </span>
@@ -405,7 +406,7 @@ export const ImagePill = React.memo(function ImagePill({
             <img
               src={src}
               alt={name}
-              className="max-h-[240px] max-w-[240px] rounded-lg border border-border object-contain bg-card shadow-xl"
+              className="max-h-[240px] max-w-[240px] rounded-[12px] bg-panel object-contain shadow-float"
             />
           </div>,
           document.body,
