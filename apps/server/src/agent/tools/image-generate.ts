@@ -1,4 +1,10 @@
-import { IMAGE_QUALITIES, IMAGE_RESOLUTIONS } from "@loomic/shared";
+import {
+  IMAGE_QUALITIES,
+  IMAGE_RESOLUTIONS,
+  type ImageQuality,
+  type ImageResolution,
+  normalizeImageParams,
+} from "@loomic/shared";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -64,25 +70,29 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .describe(
         "Aspect ratio, one of the model's ratios listed above (e.g. 1:1, 3:4, 16:9). An unsupported ratio is moved to the nearest supported one.",
       ),
+    // Size, effort and format are free strings read by
+    // normalizeToolImageParams: in this agent stack a value outside an enum
+    // fails tool-input parsing, which ends the whole chat run instead of
+    // telling the model. Old or loose values ("standard", "4k") are read.
     resolution: z
-      .enum(IMAGE_RESOLUTIONS)
+      .string()
       .optional()
       .default("2K")
       .describe(
-        "Output size class: 1K, 2K (default) or 4K. Use 4K only when the user asks for print or very large output; it is slower and may cost more. A size the model lacks is moved to its largest smaller one.",
+        `Output size class, one of ${IMAGE_RESOLUTIONS.join(", ")} (default 2K). Use 4K only when the user asks for print or very large output; it is slower. A size the model lacks is moved to its largest smaller one.`,
       ),
     quality: z
-      .enum(IMAGE_QUALITIES)
+      .string()
       .optional()
       .default("auto")
       .describe(
-        "Rendering effort: auto (vendor default, recommended), low (fast drafts), medium, high (most detail, slowest). Ignored by models without this setting.",
+        `Rendering effort, one of ${IMAGE_QUALITIES.join(", ")}: auto (vendor default, recommended), low (fast drafts), medium, high (most detail, slowest). Ignored by models without this setting; any other value is read as auto.`,
       ),
     outputFormat: z
-      .enum(["png", "jpg", "webp"])
+      .string()
       .optional()
       .describe(
-        "Output image format. PNG for transparency, JPG for photos, WebP for web.",
+        "Output image format: png for transparency, jpg for photos, webp for web.",
       ),
     inputImages: z
       .array(z.string())
@@ -179,6 +189,29 @@ export type SubmitImageJobFn = (input: {
   pending?: "storage";
 }>;
 
+/**
+ * Size and effort as a job takes them, from what the model sent. Loose case
+ * ("4k") is accepted; old quality names and unknown values fall back the way
+ * normalizeImageParams reads stored jobs. `adjusted` says what changed.
+ */
+export function normalizeToolImageParams(input: {
+  resolution?: string | undefined;
+  quality?: string | undefined;
+}): { resolution: ImageResolution; quality: ImageQuality; adjusted: string[] } {
+  const resolution = input.resolution?.trim().toUpperCase() || undefined;
+  const quality = input.quality?.trim().toLowerCase() || undefined;
+  const params = normalizeImageParams({ resolution, quality });
+  const adjusted = [
+    resolution !== undefined && resolution !== params.resolution
+      ? `resolution ${input.resolution}→${params.resolution}`
+      : "",
+    quality !== undefined && quality !== params.quality
+      ? `quality ${input.quality}→${params.quality}`
+      : "",
+  ].filter(Boolean);
+  return { ...params, adjusted };
+}
+
 export async function runImageGenerate(
   originalInput: ImageGenerateInput,
   _persistImage?: PersistImageFn,
@@ -233,14 +266,16 @@ export async function runImageGenerate(
   // Job mode: submit to PGMQ and wait for worker to complete
   if (submitImageJob) {
     try {
+      const params = normalizeToolImageParams(input);
+      if (params.adjusted.length) lap("params_adjusted", { adjusted: params.adjusted });
       lap("job_submit", { model: input.model });
       const jobResult = await submitImageJob({
         prompt: input.prompt,
         title: input.title,
         model: input.model,
         aspectRatio: input.aspectRatio ?? "1:1",
-        ...(input.resolution ? { resolution: input.resolution } : {}),
-        ...(input.quality ? { quality: input.quality } : {}),
+        resolution: params.resolution,
+        quality: params.quality,
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       });
 
