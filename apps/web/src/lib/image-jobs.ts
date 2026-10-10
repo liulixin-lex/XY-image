@@ -33,6 +33,11 @@ export type ImageJobView = {
   aspectRatio: string | null;
   inputImages: string[];
   url: string | null;
+  /**
+   * List-sized WebP (768 px long edge) for feeds and rails; null for small
+   * pictures and older jobs. Use `listImage(job)` rather than reading it.
+   */
+  thumbUrl: string | null;
   assetId: string | null;
   width: number | null;
   height: number | null;
@@ -80,6 +85,7 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
       ? payload.input_images.filter((v): v is string => typeof v === "string")
       : [],
     url: str(result.signed_url) ?? str(result.url),
+    thumbUrl: str(result.thumb_url),
     assetId: str(result.asset_id),
     width: num(result.width),
     height: num(result.height),
@@ -94,6 +100,15 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     batchSize: num(payload.batch_size) ?? 1,
     edit: editMode(payload.edit),
   };
+}
+
+/**
+ * The picture to show in a feed, rail or record list: the thumbnail when
+ * there is one (a 4K original decodes to ~64 MB), else the original. Big
+ * views, downloads, references and edits keep using `url`.
+ */
+export function listImage(job: Pick<ImageJobView, "url" | "thumbUrl">) {
+  return job.thumbUrl ?? job.url;
 }
 
 function editMode(value: unknown): ImageEditMode | null {

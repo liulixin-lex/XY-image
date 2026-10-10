@@ -25,6 +25,7 @@ import {
   isFailedJob,
   isUnsentJob,
   jobAspect,
+  listImage,
 } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
@@ -81,8 +82,6 @@ export function BatchFeed({
   usageUrl: string | null;
   actions: FeedActions;
 }) {
-  const ticking = groups.some((group) => group.jobs.some(isActiveJob));
-  const now = useNow(ticking);
   return (
     // Columns follow the feed's own width (it shares the row with two panels).
     <div className="@container flex flex-col gap-14">
@@ -90,7 +89,6 @@ export function BatchFeed({
         <BatchBlock
           key={group.key}
           group={group}
-          now={now}
           selectedId={selectedId}
           justFinished={justFinished}
           modelName={modelName}
@@ -104,7 +102,6 @@ export function BatchFeed({
 
 function BatchBlock({
   group,
-  now,
   selectedId,
   justFinished,
   modelName,
@@ -112,7 +109,6 @@ function BatchBlock({
   actions,
 }: {
   group: JobGroup;
-  now: number;
   selectedId: string | null;
   justFinished: Set<string>;
   modelName: (id: string | null) => string;
@@ -185,7 +181,6 @@ function BatchBlock({
             <PictureCard
               job={job}
               index={group.batchId ? job.batchIndex : 0}
-              now={now}
               selected={job.id === selectedId}
               reveal={justFinished.has(job.id)}
               usageUrl={usageUrl}
@@ -201,7 +196,6 @@ function BatchBlock({
 function PictureCard({
   job,
   index,
-  now,
   selected,
   reveal,
   usageUrl,
@@ -209,7 +203,6 @@ function PictureCard({
 }: {
   job: ImageJobView;
   index: number;
-  now: number;
   selected: boolean;
   reveal: boolean;
   usageUrl: string | null;
@@ -239,12 +232,12 @@ function PictureCard({
               aria-label={`第 ${index + 1} 张${selected ? "（已选中）" : ""}：${job.prompt}`}
               className="absolute inset-0 block focus-visible:outline-none"
             >
-              <RevealImage src={job.url} alt="" reveal={reveal} className="h-full w-full" />
+              <RevealImage src={listImage(job) ?? job.url} alt="" reveal={reveal} className="h-full w-full" />
             </button>
             <Toolbar job={job} selected={selected} actions={actions} />
           </>
         ) : (
-          <Placeholder job={job} outcome={outcome} now={now} usageUrl={usageUrl} actions={actions} />
+          <Placeholder job={job} outcome={outcome} usageUrl={usageUrl} actions={actions} />
         )}
       </div>
       <figcaption className="mt-2.5 flex items-center gap-2">
@@ -360,17 +353,24 @@ function Toolbar({
   );
 }
 
+/**
+ * A running job's timer. It reads the shared one-second clock itself, so a
+ * tick re-renders this text only, not the feed and its pictures.
+ */
+function Elapsed({ since }: { since: string | null }) {
+  const now = useNow(true);
+  return <>{formatElapsed(since, now)}</>;
+}
+
 /** Everything that is not a finished picture: running, waiting, saving, failed, canceled. */
 function Placeholder({
   job,
   outcome,
-  now,
   usageUrl,
   actions,
 }: {
   job: ImageJobView;
   outcome: ReturnType<typeof describeOutcome>;
-  now: number;
   usageUrl: string | null;
   actions: FeedActions;
 }) {
@@ -382,7 +382,7 @@ function Placeholder({
         role="status"
         className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[repeating-linear-gradient(135deg,var(--acc-soft)_0_14px,transparent_14px_28px)] px-4 text-center"
       >
-        <span className="numeral text-[clamp(38px,4.2vw,64px)] text-fg tabular">{formatElapsed(job.startedAt ?? job.createdAt, now)}</span>
+        <span className="numeral text-[clamp(38px,4.2vw,64px)] text-fg tabular"><Elapsed since={job.startedAt ?? job.createdAt} /></span>
         <span className="font-display text-[18px] text-fg">生成中</span>
         <span className="text-[12px] text-fg-soft">已发出，不会自动重发</span>
         <span aria-hidden className="mt-3 h-1 w-[min(70%,180px)] overflow-hidden rounded-full bg-tint/[0.1]">

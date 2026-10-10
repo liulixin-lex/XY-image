@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { motion } from "framer-motion";
 import {
   ArrowRight,
   CheckCircle2,
@@ -114,12 +113,7 @@ export function ImportPanel({
   return (
     <div className="max-w-lg">
       {/* Import card */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="glass rounded-[18px] p-5 sm:p-6"
-      >
+      <div className="animate-enter glass rounded-[18px] p-5 sm:p-6">
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-acc-soft text-acc-text">
@@ -183,23 +177,14 @@ export function ImportPanel({
 
         {/* Error message */}
         {isError && (
-          <motion.p
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-2 text-xs text-alert"
-          >
+          <p className="mt-2 text-xs text-alert animate-in fade-in-0 slide-in-from-top-1 duration-200 motion-reduce:animate-none">
             {importState.message}
-          </motion.p>
+          </p>
         )}
 
         {/* Success state */}
         {isSuccess && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-            className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-ok-wash px-4 py-3"
-          >
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-ok-wash px-4 py-3 animate-in fade-in-0 slide-in-from-top-1 duration-200 motion-reduce:animate-none">
             <div className="flex items-center gap-2">
               <CheckCircle2 aria-hidden className="size-4 text-ok" />
               <span className="text-sm font-medium text-fg">
@@ -221,7 +206,7 @@ export function ImportPanel({
                 继续导入
               </Button>
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Hint examples */}
@@ -238,7 +223,7 @@ export function ImportPanel({
             </p>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

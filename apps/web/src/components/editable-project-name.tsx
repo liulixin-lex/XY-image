@@ -77,7 +77,7 @@ export function EditableProjectName({
         onBlur={() => save(name)}
         onKeyDown={handleKeyDown}
         aria-label="项目名称"
-        className="h-8 w-[min(220px,40vw)] rounded-md glass px-2.5 text-sm font-medium text-fg outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acc"
+        className="h-8 w-[min(220px,40vw)] rounded-md glass-float px-2.5 text-sm font-medium text-fg outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acc"
         maxLength={100}
       />
     );
@@ -87,7 +87,7 @@ export function EditableProjectName({
     <button
       type="button"
       onClick={startEditing}
-      className="glass h-8 max-w-[min(220px,40vw)] cursor-text truncate rounded-md px-2.5 text-sm font-medium text-fg transition-colors hover:border-tint/25 focus-visible:outline-2 focus-visible:outline-acc"
+      className="glass-float h-8 max-w-[min(220px,40vw)] cursor-text truncate rounded-md px-2.5 text-sm font-medium text-fg transition-colors hover:border-tint/25 focus-visible:outline-2 focus-visible:outline-acc"
       title={`${name}（点击重命名）`}
     >
       {name}

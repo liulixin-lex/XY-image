@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -165,12 +164,10 @@ export function ImageLightbox({
   }, []);
 
   return createPortal(
-    <motion.div
+    // biome-ignore lint/a11y/useKeyWithClickEvents: clicking the backdrop closes; the keyboard closes with Escape (window keydown above)
+    <div
       ref={overlayRef}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-[2000] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[2000] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in-0 duration-150 motion-reduce:animate-none"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -263,7 +260,7 @@ export function ImageLightbox({
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
         </LightboxBtn>
       </div>
-    </motion.div>,
+    </div>,
     document.body,
   );
 }

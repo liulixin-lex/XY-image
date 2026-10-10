@@ -119,11 +119,6 @@ export function ModesSection({ samples, signedIn }: { samples: ShowcaseItem[]; s
                       {model.qualities.length > 1 ? `质量 ${model.qualities.length} 档` : "质量自动"}
                     </span>
                   </span>
-                  <span className="sk hidden h-7 items-center rounded-[8px] bg-tint/[0.055] px-2.5 tabular sm:inline-flex">
-                    <span className="sk-in">
-                      {model.maxInputImages > 0 ? `参考图 ${model.maxInputImages} 张` : "无参考图"}
-                    </span>
-                  </span>
                 </span>
               </li>
             ))}

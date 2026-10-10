@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Big_Shoulders, Geist, Geist_Mono, Noto_Sans_SC } from "next/font/google";
+import { Big_Shoulders, Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { BRAND } from "@/lib/brand";
+import { RENDER_TIER_BOOT_SCRIPT } from "@/lib/render-tier";
 import { cn } from "@/lib/utils";
 
 import { Providers } from "../components/providers";
@@ -39,14 +40,13 @@ const bigShoulders = Big_Shoulders({
 // The display face (GGUU Display = 优设标题黑) is self-hosted in
 // unicode-range chunks: see src/app/display-font.css.
 
-// Chinese text. Google serves it in unicode-range slices, so a page only
-// downloads the glyphs it renders. Not preloaded on purpose.
-const notoSc = Noto_Sans_SC({
-  subsets: ["latin"],
-  variable: "--font-noto-sc",
-  display: "swap",
-  preload: false,
-});
+// Chinese body text uses the system's CJK face (苹方 on Apple, 微软雅黑 on
+// Windows, Noto Sans CJK on Android and Linux): see --font-cjk in
+// globals.css. A webfont here cost 0.5-1.1 MB per page and re-laid every
+// paragraph out when its slices landed.
+
+/** Latin plus every character the UI's own copy uses (see split-display-font.py). */
+const DISPLAY_UI_FONT = "/fonts/display/display-ui.woff2";
 
 export const metadata: Metadata = {
   title: {
@@ -84,9 +84,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="zh-CN"
-      className={cn(geist.variable, geistMono.variable, bigShoulders.variable, notoSc.variable)}
+      className={cn(geist.variable, geistMono.variable, bigShoulders.variable)}
       suppressHydrationWarning
     >
+      <head>
+        {/* Headlines paint in the display face on first render, no chunk-by-chunk swap. */}
+        <link rel="preload" href={DISPLAY_UI_FONT} as="font" type="font/woff2" crossOrigin="anonymous" />
+        {/* Machines without a real GPU get the lite tier before first paint (lib/render-tier.ts). */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: constant boot script, no user input */}
+        <script dangerouslySetInnerHTML={{ __html: RENDER_TIER_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-[100dvh] bg-background font-sans antialiased">
         <Providers>{children}</Providers>
       </body>

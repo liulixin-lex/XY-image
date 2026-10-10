@@ -54,7 +54,7 @@ export function ProjectCard({
         type="button"
         onClick={() => onDelete(project.id)}
         aria-label={`删除项目 ${project.name}`}
-        className="glass absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-[10px] text-fg-soft opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-alert focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+        className="glass-float absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-[10px] text-fg-soft opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-alert focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
       >
         <Trash2Icon className="size-4" strokeWidth={1.75} />
       </button>

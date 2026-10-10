@@ -1,6 +1,5 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
 import React, { useMemo } from "react";
 
 import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
@@ -68,12 +67,7 @@ export const ChatMessage = React.memo(
   },
 );
 
-/** Messages rise into place; with reduced motion they simply appear. */
-const ENTER = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const },
-};
+/** Messages rise into place (CSS `.animate-enter`); with reduced motion they simply appear. */
 
 /* ------------------------------------------------------------------ */
 /*  UserMessage                                                        */
@@ -107,14 +101,10 @@ const UserMessage = React.memo(function UserMessage({
     };
   }, [contentBlocks]);
 
-  const reduce = useReducedMotion();
   // Inked bubble: the user's words read as the strongest ink in the thread.
   // Pills inside follow currentColor (mention-pill, ImagePill).
   return (
-    <motion.div
-      {...(reduce ? {} : ENTER)}
-      className="flex w-full flex-col items-end gap-2 pl-10"
-    >
+    <div className="animate-enter flex w-full flex-col items-end gap-2 pl-10">
       {text && (
         <div className="inline-block rounded-[16px] rounded-br-[6px] bg-fg px-3.5 py-2.5 text-[14px] leading-[1.65] whitespace-pre-wrap break-words text-ground selection:bg-acc selection:text-acc-ink">
           <span className="cursor-text select-text [word-break:break-word]">
@@ -179,7 +169,7 @@ const UserMessage = React.memo(function UserMessage({
           ))}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 });
 
@@ -215,13 +205,9 @@ const AssistantMessage = React.memo(function AssistantMessage({
   );
 
   const showThinking = isStreaming && !hasContent;
-  const reduce = useReducedMotion();
 
   return (
-    <motion.div
-      {...(reduce ? {} : ENTER)}
-      className="flex w-full flex-col gap-2.5 pr-6"
-    >
+    <div className="animate-enter flex w-full flex-col gap-2.5 pr-6">
       {showThinking && (
         <output className="flex items-center gap-2 text-[13px] text-fg-muted">
           <LiveDot />
@@ -265,6 +251,6 @@ const AssistantMessage = React.memo(function AssistantMessage({
         // ImageBlock -- skip in assistant messages (user-side only)
         return null;
       })}
-    </motion.div>
+    </div>
   );
 });

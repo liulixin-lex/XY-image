@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { useStudioJobs } from "@/hooks/use-studio-jobs";
 import { useAccount, useImageModels } from "@/lib/account-context";
 import { downloadImage } from "@/lib/download";
-import { type ImageJobView, type JobGroup, downloadName, groupByBatch } from "@/lib/image-jobs";
+import { type ImageJobView, type JobGroup, downloadName, groupByBatch, listImage } from "@/lib/image-jobs";
 import { findModelMeta } from "@/lib/image-model-meta";
 import { type PendingDraft, takePendingDraft } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
@@ -73,7 +73,8 @@ export default function StudioPage() {
 
   // The room takes the colour of the selected picture.
   useAmbientImage(
-    studio.loading ? undefined : (selected?.url ?? SAMPLE.large),
+    // Sampled for colour only: the thumbnail is plenty and far cheaper.
+    studio.loading ? undefined : ((selected && listImage(selected)) ?? SAMPLE.large),
     selected ? undefined : { amb: SAMPLE.amb, amb2: SAMPLE.amb2 },
   );
 

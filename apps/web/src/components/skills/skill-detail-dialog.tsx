@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { motion } from "framer-motion";
 import {
   Calendar,
   ChevronRight,
@@ -205,11 +204,7 @@ export function SkillDetailDialog({
           {isUserSkill && onDelete && (
             <>
               {confirmDelete ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="mr-auto flex items-center gap-2"
-                >
+                <div className="mr-auto flex items-center gap-2 animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none">
                   <span className="text-xs text-destructive">确认删除?</span>
                   <Button
                     variant="destructive"
@@ -231,7 +226,7 @@ export function SkillDetailDialog({
                   >
                     取消
                   </Button>
-                </motion.div>
+                </div>
               ) : (
                 <Button
                   variant="ghost"

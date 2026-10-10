@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadServerEnv } from "../../config/env.js";
 import {
@@ -6,7 +7,7 @@ import {
   registerImageProvider,
 } from "../../generation/providers/registry.js";
 import { GatewayError, mapGatewayError } from "./errors.js";
-import { executeImageJob } from "./image-runner.js";
+import { THUMB_EDGE, executeImageJob, thumbnailPath } from "./image-runner.js";
 import {
   MAX_DELIVERY_ATTEMPTS,
   type PendingDeliveryStore,
@@ -373,5 +374,65 @@ describe("image billing lifecycle", () => {
     if (row) row.payload = payload;
     await expect(fixture.execute()).rejects.toThrow();
     expect(fixture.generate).not.toHaveBeenCalled();
+  });
+});
+
+describe("list thumbnails", () => {
+  async function largeImage() {
+    const bytes = await sharp({
+      create: { width: 1600, height: 1000, channels: 3, background: { r: 200, g: 90, b: 70 } },
+    })
+      .png()
+      .toBuffer();
+    return {
+      url: `data:image/png;base64,${bytes.toString("base64")}`,
+      mimeType: "image/png",
+      width: 1600,
+      height: 1000,
+      requestId: "request-1",
+    };
+  }
+
+  it("names the thumbnail after the picture", () => {
+    expect(thumbnailPath("ws/generated/job.png")).toBe("ws/generated/job.thumb.webp");
+    expect(thumbnailPath("ws/generated/job.jpg")).toBe("ws/generated/job.thumb.webp");
+  });
+
+  it("stores a WebP thumbnail next to a large picture and returns its URL", async () => {
+    const fixture = setup();
+    fixture.generate.mockResolvedValueOnce(await largeImage());
+    const result = await fixture.execute();
+    expect(result).toMatchObject({
+      object_path: "workspace-1/generated/job-1.png",
+      thumb_path: "workspace-1/generated/job-1.thumb.webp",
+      thumb_url: "https://storage.example.com/workspace-1/generated/job-1.thumb.webp",
+    });
+    const call = fixture.uploads.mock.calls.find(
+      (args: unknown[]) => args[0] === "workspace-1/generated/job-1.thumb.webp",
+    ) as unknown[] | undefined;
+    expect(call?.[2]).toMatchObject({ contentType: "image/webp", upsert: true });
+    const meta = await sharp(call?.[1] as Buffer).metadata();
+    expect(meta).toMatchObject({ format: "webp", width: THUMB_EDGE, height: 480 });
+  });
+
+  it("skips the thumbnail for a picture that is already small", async () => {
+    const fixture = setup();
+    const result = await fixture.execute();
+    expect(result.thumb_url).toBeUndefined();
+    expect(fixture.uploads).toHaveBeenCalledTimes(1);
+  });
+
+  it("still delivers the picture when the thumbnail upload fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fixture = setup();
+    fixture.generate.mockResolvedValueOnce(await largeImage());
+    fixture.uploads.mockImplementation(async (...args: unknown[]) =>
+      String(args[0]).endsWith(".thumb.webp") ? { error: { message: "thumb refused" } } : { error: null },
+    );
+    const result = await fixture.execute();
+    expect(result.object_path).toBe("workspace-1/generated/job-1.png");
+    expect(result.thumb_url).toBeUndefined();
+    expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe("charged");
+    expect(fixture.generate).toHaveBeenCalledTimes(1);
   });
 });

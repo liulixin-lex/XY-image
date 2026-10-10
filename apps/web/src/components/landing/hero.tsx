@@ -2,15 +2,14 @@
 
 import { forwardRef } from "react";
 
+import { type AmbientPreset, AmbientWash } from "@/components/ambient/ambient-provider";
 import type { AspectRatio, ImageResolution } from "@/lib/image-model-meta";
 import { cn } from "@/lib/utils";
 
 import { PosterStage, type StageImage } from "./poster-stage";
 import { PromptBox, type PromptBoxHandle } from "./prompt-box";
+import { SampleStrip } from "./sample-strip";
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
-
-/** How many samples the floor strip offers (the gallery has them all). */
-const STRIP = 6;
 
 /**
  * First viewport: the poster room. The headline and the working prompt box
@@ -56,7 +55,7 @@ export const Hero = forwardRef<
       <span className="absolute top-[5.3%] left-[64%] z-[2] -rotate-6 rounded-[10px] bg-acc px-3.5 py-2 font-display text-[17px] leading-none text-acc-ink shadow-acc">
         {SAMPLE_ALT}
       </span>
-      <figure className="glass absolute top-[84%] left-[38%] z-[2] m-0 w-[min(46%,330px)] rotate-[1.5deg] rounded-[16px] px-4 py-3">
+      <figure className="glass-float absolute top-[84%] left-[38%] z-[2] m-0 w-[min(46%,330px)] rotate-[1.5deg] rounded-[16px] px-4 py-3">
         <figcaption>
           <span className="data-label block text-fg-muted tabular">
             {current.ratio} · 2K
@@ -113,8 +112,7 @@ export const Hero = forwardRef<
         <div className="relative z-[1] mx-auto grid max-w-[1600px] grid-cols-1 gap-10 px-5 pt-8 pb-14 sm:px-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-x-6 lg:px-[clamp(24px,3.6vw,64px)] lg:pt-[clamp(28px,5dvh,52px)] lg:pb-[clamp(24px,4dvh,44px)]">
           <Facts className="order-2 lg:order-1" />
           <Strip
-            items={items.slice(0, STRIP)}
-            total={items.length}
+            items={items}
             selected={selected}
             onSelect={onSelect}
             className="order-1 lg:order-2"
@@ -124,6 +122,10 @@ export const Hero = forwardRef<
     </section>
   );
 });
+
+// The picture's colour spilling onto the floor; cross-fades with the room.
+const paintFloorSpill = ({ amb }: AmbientPreset) =>
+  `radial-gradient(36% 60% at 72% 0%, rgb(${amb} / calc(var(--haze) * 0.6)), transparent 70%)`;
 
 /**
  * The floor: a slightly deeper tone below a soft horizon, faint lines
@@ -139,7 +141,7 @@ function Floor() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute inset-0 bg-[linear-gradient(var(--floor),var(--floor-2)_55%,transparent)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(36%_60%_at_72%_0%,rgb(var(--amb)/calc(var(--haze)*0.6)),transparent_70%)]" />
+      <AmbientWash paint={paintFloorSpill} />
       <svg
         viewBox="0 0 1440 258"
         preserveAspectRatio="xMidYMin slice"
@@ -185,16 +187,14 @@ function Facts({ className }: { className?: string }) {
   );
 }
 
-/** Sample strip on the floor: pick one and the poster and the room take it. */
+/** Sample strip on the floor with the poster-numeral counter. */
 function Strip({
   items,
-  total,
   selected,
   onSelect,
   className,
 }: {
   items: ShowcaseItem[];
-  total: number;
   selected: number;
   onSelect: (index: number) => void;
   className?: string;
@@ -202,46 +202,10 @@ function Strip({
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex items-end gap-4">
-        <div
-          role="radiogroup"
-          aria-label="换一张示例作品"
-          className="-my-2 flex min-w-0 items-end gap-2.5 overflow-x-auto px-2 py-2 scrollbar-hidden"
-        >
-          {items.map((entry, index) => {
-            const active = index === selected;
-            return (
-              <button
-                key={entry.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                aria-label={`换成示例：${entry.prompt}`}
-                onClick={() => onSelect(index)}
-                className={cn(
-                  "group sk shrink-0 rounded-[14px] transition-[width,height,box-shadow] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc",
-                  active
-                    ? "ring-picked h-[clamp(96px,12dvh,120px)] w-[clamp(77px,9.6dvh,96px)]"
-                    : "h-[clamp(78px,9.6dvh,96px)] w-[clamp(62px,7.8dvh,78px)] shadow-[0_10px_20px_-12px_var(--shadow-2)]",
-                )}
-              >
-                <span className="block h-full w-full overflow-hidden rounded-[14px]">
-                  {/* biome-ignore lint/performance/noImgElement: static export */}
-                  <img
-                    src={entry.src}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-[124%] max-w-none -translate-x-[10%] skew-x-[10deg] object-cover transition-[filter] duration-300 group-hover:brightness-105"
-                    style={{ objectPosition: entry.focus }}
-                  />
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <SampleStrip items={items} selected={selected} onSelect={onSelect} />
         <p aria-live="polite" className="numeral ml-auto shrink-0 text-[clamp(44px,6dvh,60px)] text-fg max-sm:hidden">
           {String(selected + 1).padStart(2, "0")}
-          <span className="text-[0.4em] text-fg-muted">/{total}</span>
+          <span className="text-[0.4em] text-fg-muted">/{items.length}</span>
         </p>
       </div>
       <p className="mt-3 text-[13px] text-fg-muted">点一张，海报和整个房间都换成它的颜色</p>

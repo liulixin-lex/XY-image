@@ -5,6 +5,7 @@ import gsap from "gsap";
 import { ArrowLeftIcon, ArrowRightIcon, WandSparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
+import { useDragScroll } from "@/hooks/use-drag-scroll";
 import { cn } from "@/lib/utils";
 
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
@@ -46,52 +47,7 @@ export function GallerySection({
   );
 
   // Drag to scroll with a mouse; touch and trackpads scroll natively.
-  useEffect(() => {
-    const el = rail.current;
-    if (!el) return;
-    let startX = 0;
-    let startScroll = 0;
-    let dragging = false;
-    let moved = false;
-    const down = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse" || event.button !== 0) return;
-      dragging = true;
-      moved = false;
-      startX = event.clientX;
-      startScroll = el.scrollLeft;
-    };
-    const move = (event: PointerEvent) => {
-      if (!dragging) return;
-      const dx = event.clientX - startX;
-      if (Math.abs(dx) > 4) moved = true;
-      if (moved) {
-        el.scrollLeft = startScroll - dx;
-        el.dataset.dragging = "true";
-      }
-    };
-    const up = () => {
-      dragging = false;
-      delete el.dataset.dragging;
-    };
-    // Swallow the click that ends a drag so it does not trigger a card.
-    const click = (event: MouseEvent) => {
-      if (moved) {
-        event.preventDefault();
-        event.stopPropagation();
-        moved = false;
-      }
-    };
-    el.addEventListener("pointerdown", down);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    el.addEventListener("click", click, true);
-    return () => {
-      el.removeEventListener("pointerdown", down);
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      el.removeEventListener("click", click, true);
-    };
-  }, []);
+  useDragScroll(rail);
 
   const scrollBy = (direction: 1 | -1) => {
     const el = rail.current;

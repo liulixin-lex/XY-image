@@ -1,6 +1,5 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowUpRightIcon,
   BrushIcon,
@@ -402,17 +401,16 @@ function downloadExtension(mimeType?: string): string {
  * reloads) and with reduced motion.
  */
 function CanvasStamp({ stamp }: { stamp: boolean }) {
-  const reduce = useReducedMotion();
-  const animate = stamp && !reduce;
+  // CSS `.animate-stamp` (globals.css): a springy drop, off under reduced motion.
   return (
-    <motion.span
-      initial={animate ? { opacity: 0, scale: 1.7, rotate: -14 } : false}
-      animate={{ opacity: 1, scale: 1, rotate: -6 }}
-      transition={{ type: "spring", stiffness: 480, damping: 20, delay: 0.3 }}
-      className="pointer-events-none absolute bottom-3 left-3 rounded-[8px] bg-acc px-2.5 py-1.5 font-display text-[13px] leading-none text-acc-ink shadow-acc"
+    <span
+      className={cn(
+        "pointer-events-none absolute bottom-3 left-3 -rotate-6 rounded-[8px] bg-acc px-2.5 py-1.5 font-display text-[13px] leading-none text-acc-ink shadow-acc",
+        stamp && "animate-stamp",
+      )}
     >
       已放到画布
-    </motion.span>
+    </span>
   );
 }
 
@@ -558,26 +556,18 @@ function ToolDetailPanel({
   }, []);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.15 }}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: clicking the backdrop closes; the keyboard closes with Escape (window keydown above)
+    <div
       // Centred mode covers the chat on phones; dim it so the panel reads as on top.
-      className={`fixed inset-0 z-[1000] ${rightOffset === null ? "bg-ground/50" : ""}`}
+      className={`fixed inset-0 z-[1000] animate-in fade-in-0 duration-150 motion-reduce:animate-none ${rightOffset === null ? "bg-ground/50" : ""}`}
       onClick={onClose}
     >
-      <motion.div
-        initial={{ opacity: 0, x: 24, scale: 0.97 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        transition={{
-          duration: 0.25,
-          ease: [0.25, 0.46, 0.45, 0.94],
-        }}
-        // biome-ignore lint/a11y/useSemanticElements: framer-motion panel in a portal overlay; native <dialog> top-layer would bypass the motion transforms
+      {/* biome-ignore lint/a11y/useSemanticElements lint/a11y/useKeyWithClickEvents: panel in a portal overlay positioned beside the chat (a native <dialog> top layer would ignore that placement); its onClick only stops the backdrop's close-on-click */}
+      <div
         role="dialog"
         aria-modal="true"
         aria-label={config.label}
-        className="glass-strong fixed top-1/2 flex max-h-[min(640px,calc(100dvh-32px))] min-h-[240px] -translate-y-1/2 flex-col overflow-hidden rounded-[18px]"
+        className="glass-strong fixed top-1/2 flex max-h-[min(640px,calc(100dvh-32px))] min-h-[240px] -translate-y-1/2 flex-col overflow-hidden rounded-[18px] animate-in fade-in-0 slide-in-from-right-6 zoom-in-97 duration-250 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] motion-reduce:animate-none"
         style={
           rightOffset === null
             ? { left: 8, right: 8 }
@@ -688,8 +678,8 @@ function ToolDetailPanel({
             </div>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 

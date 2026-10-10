@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRightIcon } from "lucide-react";
 import React, { useState } from "react";
 
@@ -26,20 +25,15 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
   isStreaming,
 }: ThinkingBlockViewProps) {
   const [expanded, setExpanded] = useState(false);
+  const open = expanded || isStreaming;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="overflow-hidden"
-    >
+    <div className="animate-enter">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className="inline-flex items-center gap-1.5 rounded-[6px] text-[12px] font-medium text-fg-muted transition-colors hover:text-fg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
-        aria-expanded={expanded || isStreaming}
+        aria-expanded={open}
         aria-label={isStreaming ? "助手正在思考" : "展开或收起思考过程"}
       >
         {isStreaming ? (
@@ -62,21 +56,22 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
         )}
       </button>
 
-      <AnimatePresence>
-        {(expanded || isStreaming) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="mt-1.5 overflow-hidden"
-          >
-            <div className="ml-[6px] border-l border-line-strong pl-3 text-[12px] leading-relaxed whitespace-pre-wrap text-fg-muted">
-              {thinking || "\u2014"}
-            </div>
-          </motion.div>
+      {/* Expands with the grid-rows 0fr → 1fr transition: real height
+          animation in CSS, no measuring. Collapsed text stays out of the
+          accessibility tree and tab order. */}
+      <div
+        inert={!open}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none",
+          open ? "mt-1.5 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         )}
-      </AnimatePresence>
-    </motion.div>
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="ml-[6px] border-l border-line-strong pl-3 text-[12px] leading-relaxed whitespace-pre-wrap text-fg-muted">
+            {thinking || "\u2014"}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 });

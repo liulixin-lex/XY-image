@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownToLine,
   Download,
@@ -43,20 +43,6 @@ interface MarketplacePanelProps {
 }
 
 // ---------------------------------------------------------------------------
-// Animation variants
-// ---------------------------------------------------------------------------
-
-const containerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.04 } },
-};
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0 },
-};
-
-// ---------------------------------------------------------------------------
 // Debounce hook
 // ---------------------------------------------------------------------------
 
@@ -77,9 +63,12 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 function MarketplaceSkillCard({
   skill,
+  index,
   onClick,
 }: {
   skill: MarketplaceSkill;
+  /** Position in the grid, for the staggered entrance. */
+  index: number;
   onClick: (skill: MarketplaceSkill) => void;
 }) {
   const formattedDownloads =
@@ -88,13 +77,11 @@ function MarketplaceSkillCard({
       : String(skill.downloads);
 
   return (
-    <motion.button
+    <button
       type="button"
-      variants={cardVariants}
-      layout
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={() => onClick(skill)}
-      className="group block w-full cursor-pointer rounded-[16px] bg-panel p-4 text-left shadow-card transition-[translate,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:shadow-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+      style={{ "--stagger": Math.min(index, 12) } as CSSProperties}
+      className="animate-enter group block w-full cursor-pointer rounded-[16px] bg-panel p-4 text-left shadow-card transition-[translate,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:shadow-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
     >
       {/* Header */}
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -130,7 +117,7 @@ function MarketplaceSkillCard({
           <span className="numeral">{formattedDownloads}</span>
         </span>
       </div>
-    </motion.button>
+    </button>
   );
 }
 
@@ -415,12 +402,7 @@ export function MarketplacePanel({
 
       {/* Empty state - not yet searched */}
       {!searched && !loading && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-          className="flex flex-col items-center justify-center py-20 text-center"
-        >
+        <div className="animate-enter flex flex-col items-center justify-center py-20 text-center">
           <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
             <Package className="size-5 text-fg-muted" />
           </div>
@@ -430,17 +412,12 @@ export function MarketplacePanel({
           <p className="mt-1.5 text-[13px] text-fg-soft">
             输入关键词搜索 skills.sh 上的社区技能包
           </p>
-        </motion.div>
+        </div>
       )}
 
       {/* Empty state - no results */}
       {searched && skills.length === 0 && !loading && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-          className="flex flex-col items-center justify-center py-20 text-center"
-        >
+        <div className="animate-enter flex flex-col items-center justify-center py-20 text-center">
           <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
             <Search className="size-5 text-fg-muted" />
           </div>
@@ -450,7 +427,7 @@ export function MarketplacePanel({
           <p className="mt-1.5 text-[13px] text-fg-soft">
             换个关键词再搜
           </p>
-        </motion.div>
+        </div>
       )}
 
       {/* Results count */}
@@ -462,22 +439,16 @@ export function MarketplacePanel({
 
       {/* Results grid */}
       {skills.length > 0 && (
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2"
-        >
-          <AnimatePresence mode="popLayout">
-            {skills.map((skill) => (
-              <MarketplaceSkillCard
-                key={skill.packageName}
-                skill={skill}
-                onClick={handleCardClick}
-              />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
+          {skills.map((skill, index) => (
+            <MarketplaceSkillCard
+              key={skill.packageName}
+              index={index}
+              skill={skill}
+              onClick={handleCardClick}
+            />
+          ))}
+        </div>
       )}
 
       {/* Detail dialog */}

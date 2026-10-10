@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAmbientImage } from "@/components/ambient/ambient-provider";
 import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
-import { type ImageJobView, toImageJobView } from "@/lib/image-jobs";
+import { type ImageJobView, listImage, toImageJobView } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -52,7 +52,8 @@ export function RecentPrints() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user.id]);
 
-  const latest = prints?.[0]?.url ?? null;
+  // Sampled for colour only: the thumbnail is plenty and far cheaper.
+  const latest = prints?.[0] ? listImage(prints[0]) : null;
   useAmbientImage(
     prints === null && !failed ? undefined : (latest ?? SAMPLE.large),
     latest ? undefined : { amb: SAMPLE.amb, amb2: SAMPLE.amb2 },
@@ -112,7 +113,7 @@ export function RecentPrints() {
                 >
                   {/* biome-ignore lint/performance/noImgElement: public storage URL */}
                   <img
-                    src={job.url!}
+                    src={listImage(job) ?? ""}
                     alt={job.prompt || "生成结果"}
                     loading="lazy"
                     className="size-full object-cover"

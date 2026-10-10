@@ -16,7 +16,7 @@ import { useNodeCanvas } from "./context";
 import { RESIZER_PROPS } from "./image-node";
 import { NodeHandles, fillColor, inkColor, labelInk } from "./node-parts";
 
-const FONT_STACK = 'var(--font-noto-sc), "PingFang SC", system-ui, sans-serif';
+const FONT_STACK = 'var(--font-cjk), system-ui, sans-serif';
 
 /** New text nodes open in edit mode once. */
 const editOnMount = new Set<string>();

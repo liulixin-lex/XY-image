@@ -46,18 +46,18 @@ colors:
   glass-strong-dark: "rgb(37 34 44 / 0.9)"
 typography:
   display:
-    fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
+    fontFamily: "GGUU Display, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "clamp(88px, min(14vw, 19.5dvh), 212px)"
     fontWeight: 400
     lineHeight: 1
     letterSpacing: "-0.01em"
   headline:
-    fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
+    fontFamily: "GGUU Display, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "clamp(36px, 4.2vw, 56px)"
     fontWeight: 400
     lineHeight: 1.02
   section-label:
-    fontFamily: "GGUU Display, Noto Sans SC, PingFang SC, system-ui, sans-serif"
+    fontFamily: "GGUU Display, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "17px"
     fontWeight: 400
     lineHeight: 1
@@ -70,22 +70,22 @@ typography:
     letterSpacing: "0.005em"
     fontFeature: "tnum, lnum"
   title:
-    fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Geist, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "17px"
     fontWeight: 600
     lineHeight: 1.4
   body:
-    fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Geist, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.8
   body-sm:
-    fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Geist, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.6
   label:
-    fontFamily: "Geist, Noto Sans SC, PingFang SC, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Geist, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 600
     lineHeight: 1.4
@@ -201,7 +201,7 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 
 **Key Characteristics:**
 - 房间而不是平面：墙到地面的过渡、地平线、接触阴影和倒影给出空间感。
-- 环境色来自图片：`--amb` / `--amb-2` 在运行时从当前图片取样，GSAP 补间写到 `<html>`。
+- 环境色来自图片：`--amb` / `--amb-2` 在运行时从当前图片取样写到 `<html>`；房间染色换图时是新一层渐变淡入盖住旧的一层（只动 opacity），不逐帧补间变量。
 - 一种强调色：珊瑚，只给每屏最要紧的那个动作和被选中的那张图。
 - 斜切加小圆角（-10°）是选择和行动的形状；卡片和面板保持正放。
 - 状态永远配文字，颜色只是辅助。
@@ -240,12 +240,12 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 
 ## Typography
 
-**Display Font:** GGUU Display（优设标题黑的子集，按 unicode-range 分片自托管；回退 Noto Sans SC、苹方）
+**Display Font:** GGUU Display（优设标题黑的子集，按 unicode-range 分片自托管，界面用字那一片预加载；回退系统中文字体）
 **Numeral Font:** Big Shoulders Display（只用拉丁数字）
-**Body Font:** Geist + Noto Sans SC（回退苹方、微软雅黑）
+**Body Font:** Geist + 系统中文字体（`--font-cjk`：苹方、冬青黑、微软雅黑、思源黑体；不再下载网络中文字体）
 **Label/Mono Font:** Geist Mono
 
-**Character:** 优设标题黑是海报上的大字，粗、略带倾斜感，说主张和名字；Big Shoulders 是海报上的大号数字，窄而高；Geist 和思源黑体负责安静、好读的正文。
+**Character:** 优设标题黑是海报上的大字，粗、略带倾斜感，说主张和名字；Big Shoulders 是海报上的大号数字，窄而高；Geist 和系统黑体（苹方、雅黑）负责安静、好读的正文。
 
 ### Hierarchy
 - **Display**（400，clamp(88px, min(14vw, 19.5dvh), 212px)，行高 1）：只在落地页首屏，「一句话」；第二行「生成你想要的图」约 96px，「想要的图」用珊瑚。
@@ -275,7 +275,7 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 
 ## Elevation & Depth
 
-深度来自光：带偏移的柔和阴影，颜色压向房间的暖石墨色（亮色 rgb(84 52 60)，暗色用黑），从不用纯黑硬投影。面板静止时只有很轻的阴影，悬停时加深；漂浮的控件用磨砂玻璃，顶边一条高光代替描边。
+深度来自光：带偏移的柔和阴影，颜色压向房间的暖石墨色（亮色 rgb(84 52 60)，暗色用黑），从不用纯黑硬投影。面板静止时只有很轻的阴影，悬停时加深；贴在页面里的半透明面板不做背景模糊（`glass`），压在画面或图片上的小控件才用磨砂玻璃（`glass-float`），顶边一条高光代替描边。没有显卡加速的机器上（渲染档位 lite，`<html data-render="lite">`）磨砂整体换成同色实底，层次靠阴影和高光保留。
 
 ### Shadow Vocabulary
 - **Subtle**（`0 1px 2px var(--shadow)`）：小控件。
@@ -347,6 +347,7 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 - **Do** 把斜切留给按钮、页签、分段选项、贴纸和落地页的大图，文字放在 `sk-in` 里摆正。
 - **Do** 状态写成文字再配颜色：「待核对」（橙）、「未发出」（灰）、「没生成出来」（深红）。
 - **Do** 每个动效在 `prefers-reduced-motion` 下直接显示最终状态；磨砂玻璃在 `prefers-reduced-transparency` 下退回实色。
+- **Do** 动效只动 transform、opacity、filter；展开收起用 grid 行 `0fr → 1fr`，依次进场用 `--stagger`。
 - **Do** 文案直白：「生成」「图片」「余额」「改成什么」。
 
 ### Don't:
@@ -357,3 +358,4 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 - **Don't** 只靠颜色表达状态，也不给成功的图贴「已扣费」一类标签。
 - **Don't** 在工作界面放付费说明；计费说明只在落地页一节。
 - **Don't** 把环境色用在按钮、文字或边框上。
+- **Don't** 逐帧补间 `<html>` 上的 CSS 变量，或动画 width / height / backdrop-filter：整页每帧重算样式和重绘，就是 v0.0.2 卡顿的来源。

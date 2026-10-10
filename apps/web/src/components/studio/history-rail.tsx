@@ -2,7 +2,7 @@
 
 import { CircleAlertIcon, ImageOffIcon } from "lucide-react";
 
-import { type JobGroup, describeOutcome, isActiveJob } from "@/lib/image-jobs";
+import { type JobGroup, describeOutcome, isActiveJob, listImage } from "@/lib/image-jobs";
 import { cn } from "@/lib/utils";
 
 import { groupAnchor } from "./batch-feed";
@@ -48,7 +48,7 @@ export function HistoryRail({
               >
                 {picture?.url ? (
                   // biome-ignore lint/performance/noImgElement: signed storage URL
-                  <img src={picture.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                  <img src={listImage(picture) ?? ""} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 ) : (
                   <span
                     className={cn(
