@@ -250,6 +250,22 @@ function imageSize(src: string): Promise<{ width: number; height: number }> {
   });
 }
 
+/**
+ * Where Delete and Backspace mean something else: text fields, and pickers,
+ * menus and dialogs (a focused picker inside a node must not delete it).
+ */
+function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    Boolean(
+      target.closest(
+        "input, textarea, select, [role=combobox], [role=listbox], [role=menu], [role=dialog]",
+      ),
+    )
+  );
+}
+
 /** Keys typed into a field, a menu or a dialog are not canvas shortcuts. */
 function isEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -959,7 +975,7 @@ function EditorInner({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditingTarget(event.target)) return;
+      if (event.defaultPrevented) return;
       const active = document.activeElement;
       // Only when the canvas (or nothing) has focus, not the chat or a menu.
       if (
@@ -968,6 +984,21 @@ function EditorInner({
         !wrapperRef.current?.contains(active)
       )
         return;
+      // Delete goes through the store's own selection (React Flow's delete
+      // key is off): a selection made a moment ago (⌘A) may not have reached
+      // React Flow's internal state yet. Buttons on the board don't use it.
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isTextTarget(event.target)
+      ) {
+        event.preventDefault();
+        store.deleteSelection();
+        return;
+      }
+      if (isEditingTarget(event.target)) return;
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (mod && key === "z") {
@@ -1110,7 +1141,7 @@ function EditorInner({
           fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
           minZoom={ZOOM_LIMITS.min}
           maxZoom={ZOOM_LIMITS.max}
-          deleteKeyCode={["Backspace", "Delete"]}
+          deleteKeyCode={null}
           selectionOnDrag={tool === "select"}
           panOnDrag={tool === "hand" ? true : [1, 2]}
           panOnScroll

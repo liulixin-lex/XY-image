@@ -656,7 +656,59 @@ export class NodeCanvasStore {
       console.info(
         `[node-canvas] merged server copy: ${merged.added.length} added, ${merged.updated.length} updated`,
       );
+    if (merged.added.length) this.linkRunPictures(new Set(merged.added));
     return merged;
+  }
+
+  /**
+   * Edges from a generator to pictures of its run that just arrived. The
+   * worker adds one as it places a picture, unless the generator was not on
+   * the server yet (made and run inside the save debounce); the page adds
+   * those, as a saved change outside the undo history. Only pictures that
+   * just arrived: an edge the user deleted later is not brought back.
+   */
+  private linkRunPictures(arrived: ReadonlySet<string>) {
+    const { scene } = this.state;
+    const pictures = new Map<string, string>();
+    for (const node of scene.nodes) {
+      if (node.type !== "image" || !arrived.has(node.id)) continue;
+      const jobId = jobIdOf(node.data.el);
+      if (jobId) pictures.set(jobId, node.id);
+    }
+    if (pictures.size === 0) return;
+    const linked = new Set(scene.edges.map((e) => `${e.source}>${e.target}`));
+    const els = new Map(this.liveElements().map((el) => [el.id, el]));
+    const added: SceneEdge[] = [];
+    for (const node of scene.nodes) {
+      if (node.type !== "generator") continue;
+      for (const job of readGenerator(node.data.el).run?.jobs ?? []) {
+        const imageId = pictures.get(job.jobId);
+        const from = els.get(node.id);
+        const to = imageId ? els.get(imageId) : undefined;
+        if (!imageId || !from || !to || linked.has(`${node.id}>${imageId}`))
+          continue;
+        const geometry = edgeGeometry(from, to);
+        const arrow = createElement("arrow", geometry, {
+          ...geometry,
+          startArrowhead: null,
+          endArrowhead: "arrow",
+          customData: { edge: "output", jobId: job.jobId },
+        });
+        added.push({
+          id: arrow.id,
+          source: node.id,
+          target: imageId,
+          type: "flow",
+          data: { el: arrow },
+        });
+        linked.add(`${node.id}>${imageId}`);
+      }
+    }
+    if (added.length === 0) return;
+    this.change({ ...scene, edges: [...scene.edges, ...added] }, null);
+    console.info(
+      `[node-canvas] linked ${added.length} arrived picture(s) to their generator`,
+    );
   }
 
   // ── files ───────────────────────────────────────────────────────────

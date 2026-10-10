@@ -64,6 +64,92 @@ function makeStore(
 }
 
 describe("node canvas store", () => {
+  it("links a picture that arrived to its generator when the worker could not", () => {
+    const running = el("gen1", "generator", {
+      width: 296,
+      height: 360,
+      customData: {
+        generator: {
+          model: "gpt-image-2",
+          aspectRatio: "1:1",
+          count: 1,
+          prompt: "猫",
+          run: {
+            batchId: "b1",
+            startedAt: 1,
+            jobs: [
+              {
+                jobId: "job-1",
+                slot: { x: 400, y: 0, width: 280, height: 280 },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const store = makeStore([running]);
+    const picture = el("img1", "image", {
+      x: 400,
+      width: 280,
+      height: 280,
+      fileId: "f9",
+      customData: { jobId: "job-1" },
+    });
+    // The worker placed it without an edge (the generator was not saved yet).
+    store.mergeRemote([running, picture]);
+    const edge = store.scene.edges.find(
+      (e) => e.source === "gen1" && e.target === "img1",
+    );
+    expect(edge?.data?.el.customData).toMatchObject({
+      edge: "output",
+      jobId: "job-1",
+    });
+    expect(store.getState()).toMatchObject({
+      saveStatus: "dirty",
+      canUndo: false,
+    });
+
+    // An edge the user deletes later is not brought back by the next merge.
+    store.removeElements([edge?.id ?? ""]);
+    store.mergeRemote([running, picture]);
+    expect(
+      store.scene.edges.some((e) => e.source === "gen1" && e.target === "img1"),
+    ).toBe(false);
+  });
+
+  it("does not add a second edge when the worker linked the picture", () => {
+    const running = el("gen1", "generator", {
+      customData: {
+        generator: {
+          count: 1,
+          run: {
+            batchId: "b1",
+            startedAt: 1,
+            jobs: [
+              {
+                jobId: "job-1",
+                slot: { x: 400, y: 0, width: 280, height: 280 },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const store = makeStore([running]);
+    const picture = el("img1", "image", {
+      x: 400,
+      fileId: "f9",
+      customData: { jobId: "job-1" },
+    });
+    store.mergeRemote([running, picture, link("a1", "gen1", "img1")]);
+    expect(
+      store.scene.edges.filter(
+        (e) => e.source === "gen1" && e.target === "img1",
+      ),
+    ).toHaveLength(1);
+    expect(store.getState().saveStatus).toBe("saved");
+  });
+
   it("counts every fetched server copy, without making the page dirty", () => {
     const store = makeStore([prompt]);
     store.mergeRemote([prompt]);
