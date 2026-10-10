@@ -473,10 +473,33 @@ function EditorInner({
     }
   }, [store, projectId]);
 
+  // A save that failed is retried early once the network is evidently back:
+  // the browser reports it online, or a fetch of the server's copy merged in.
+  const retryFailedSave = useCallback(
+    (why: string) => {
+      if (store.getState().saveStatus !== "error" || !mounted.current) return;
+      console.info(`[node-canvas] retrying the failed save (${why})`);
+      saveFailures.current = 0;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => void saveNow(), SAVE_DEBOUNCE_MS);
+    },
+    [store, saveNow],
+  );
+  useEffect(() => {
+    const onOnline = () => retryFailedSave("back online");
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [retryFailedSave]);
+
+  const seenSyncs = useRef(0);
   useEffect(
     () =>
       store.subscribe(() => {
-        const { revision } = store.getState();
+        const { revision, remoteSyncs } = store.getState();
+        if (remoteSyncs !== seenSyncs.current) {
+          seenSyncs.current = remoteSyncs;
+          retryFailedSave("server copy fetched");
+        }
         if (revision === seenRevision.current) return;
         seenRevision.current = revision;
         if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -487,7 +510,7 @@ function EditorInner({
           THUMBNAIL_DEBOUNCE_MS,
         );
       }),
-    [store, saveNow, uploadThumb],
+    [store, saveNow, uploadThumb, retryFailedSave],
   );
 
   // Unsaved changes go out on tab close (keepalive) and on unmount.

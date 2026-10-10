@@ -64,6 +64,23 @@ function makeStore(
 }
 
 describe("node canvas store", () => {
+  it("counts every fetched server copy, without making the page dirty", () => {
+    const store = makeStore([prompt]);
+    store.mergeRemote([prompt]);
+    expect(store.getState()).toMatchObject({
+      remoteSyncs: 1,
+      revision: 0,
+      saveStatus: "saved",
+    });
+    store.mergeRemote([prompt, { ...reference, version: 1 }]);
+    expect(store.getState()).toMatchObject({
+      remoteSyncs: 2,
+      revision: 0,
+      saveStatus: "saved",
+    });
+    expect(store.element("ref1")).toBeDefined();
+  });
+
   it("a locked node can't be dragged or deleted, and unlocking is undoable", () => {
     const store = makeStore([prompt, reference]);
     store.setLocked("ref1", true);

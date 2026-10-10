@@ -49,6 +49,8 @@ export type StoreState = {
   canRedo: boolean;
   /** Bumped on every change the server has not seen. */
   revision: number;
+  /** Bumped each time a fetched server copy is merged in (changed or not). */
+  remoteSyncs: number;
 };
 
 export type CanvasContent = {
@@ -152,6 +154,7 @@ export class NodeCanvasStore {
       canUndo: false,
       canRedo: false,
       revision: 0,
+      remoteSyncs: 0,
     };
   }
 
@@ -630,7 +633,11 @@ export class NodeCanvasStore {
     const incoming = toSceneFiles(files);
     const absent = Object.keys(incoming).filter((id) => !this.state.files[id]);
     const merged = mergeRemoteElements(this.state.scene, elements);
-    if (absent.length === 0 && merged.scene === this.state.scene) return merged;
+    const remoteSyncs = this.state.remoteSyncs + 1;
+    if (absent.length === 0 && merged.scene === this.state.scene) {
+      this.set({ remoteSyncs });
+      return merged;
+    }
     const nextFiles = absent.length
       ? {
           ...this.state.files,
@@ -644,7 +651,7 @@ export class NodeCanvasStore {
       files: nextFiles,
       scene: withPending(merged.scene),
     };
-    this.set({});
+    this.set({ remoteSyncs });
     if (merged.added.length || merged.updated.length)
       console.info(
         `[node-canvas] merged server copy: ${merged.added.length} added, ${merged.updated.length} updated`,

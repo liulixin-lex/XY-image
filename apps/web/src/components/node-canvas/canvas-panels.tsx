@@ -104,14 +104,14 @@ function layerIcon(node: SceneNode): LucideIcon {
   }
 }
 
-/** Pictures the generator, the assistant or the studio made. */
+/**
+ * Pictures the generator, the assistant or the studio made. Uploads carry a
+ * title too (the file name), so they are told apart by their source.
+ */
 export function isGeneratedPicture(el: SceneElement): boolean {
   if (el.type !== "image") return false;
-  return (
-    Boolean(jobIdOf(el)) ||
-    el.customData?.source === "generated" ||
-    Boolean(titleOf(el))
-  );
+  if (jobIdOf(el) || el.customData?.source === "generated") return true;
+  return el.customData?.source !== "uploaded" && Boolean(titleOf(el));
 }
 
 function Thumb({ src, icon: Icon }: { src: string | null; icon: LucideIcon }) {

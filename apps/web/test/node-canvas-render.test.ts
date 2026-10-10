@@ -248,5 +248,8 @@ describe("canvas panels", () => {
     expect(isGeneratedPicture(image({ jobId: "job-1" }))).toBe(true);
     expect(isGeneratedPicture(image({ source: "generated" }))).toBe(true);
     expect(isGeneratedPicture(image({}))).toBe(false);
+    expect(
+      isGeneratedPicture(image({ title: "cat.png", source: "uploaded" })),
+    ).toBe(false);
   });
 });
