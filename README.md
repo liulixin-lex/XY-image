@@ -2,13 +2,13 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-09，v0.0.1）：功能开发完成。** 整套服务（自建 Supabase、API、Worker、前端、TLS 边缘）已在实验环境里跑通，上游用模拟服务，不产生费用；浏览器端到端、双用户隔离、计费、重启和故障、手机和容量演练都已通过。**还没有和真实主站联调，也没有部署到生产。** 本版的最终报告和上线前要做的事见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-10，v0.0.2）：功能开发完成。** 本版换成 F2 海报·柔和版视觉（亮暗两套主题），加了节点式画布、一次多张、提示词优化、1K/2K/4K 画质和局部重绘 / 扩图。整套服务（自建 Supabase、API、Worker、前端、TLS 边缘）已在实验环境里跑通，上游用模拟服务，不产生费用；浏览器端到端、双用户隔离、计费、重启和故障、手机和容量演练都已通过。**还没有和真实主站联调，也没有部署到生产。** 本版的最终报告和上线前要做的事见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
 - **登录**：主站邮箱密码、TOTP 和 Turnstile；本站只建影子账号，不保存主站密码和令牌。
 - **账户**：主站余额（美元）、Key 同步与选择、默认模型、生成记录（计费核对）。
-- **生图室**：OpenAI Images、Gemini、xAI 三种协议，参考图；画质 1K/2K/4K、质量 自动/低/中/高，按模型能力开放；一次最多 4 张，每张单独请求；提示词优化；按次扣费，发出后不自动重试。
+- **生图室**：OpenAI Images、Gemini、xAI 三种协议，参考图；画质 1K/2K/4K、质量 自动/低/中/高，按模型能力开放；一次最多 4 张，每张单独请求；提示词优化；局部重绘（在图上涂抹要改的地方）和扩图（OpenAI、Gemini 模型）；按次扣费，发出后不自动重试。
 - **画布**：节点式无限画布（React Flow）：提示词卡片和图片连到生成节点出图，另有文字、形状、画框；图片存到 Storage，画布里只留标记；出的图由 Worker 放到画布上，关掉页面也不丢。
 - **设计助手**：画布里的 Agent 对话，能拆解需求、生图并放到画布上；运行中可以停止；断线、服务重启时不丢消息、不重复扣费。
 - **自定义对话模型服务商**：用户自己的 OpenAI 兼容服务，只用于对话，Key 加密保存，只允许 https 公网地址。
@@ -42,9 +42,9 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 444 项
-pnpm --filter @loomic/web test    # 154 项
-pnpm --filter @loomic/shared test # 45 项
+pnpm --filter @loomic/server test # 532 项
+pnpm --filter @loomic/web test    # 225 项
+pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
 pnpm test:selfhost                # 16 项通过，1 项跳过
 pnpm --filter @loomic/server dev  # 同时启动 API 和 Worker，需要 Supabase 和集成配置
