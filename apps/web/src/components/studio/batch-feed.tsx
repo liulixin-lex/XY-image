@@ -2,8 +2,10 @@
 
 import {
   ArrowUpRightIcon,
+  BrushIcon,
   CircleAlertIcon,
   DownloadIcon,
+  ExpandIcon,
   ImagePlusIcon,
   Maximize2Icon,
   PencilLineIcon,
@@ -25,6 +27,7 @@ import {
   jobAspect,
 } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
+import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
 import { cn } from "@/lib/utils";
 
 import { RevealImage } from "../ambient/reveal-image";
@@ -42,6 +45,11 @@ export type FeedActions = {
   onReuse: (job: ImageJobView) => void;
   onCancelJob: (job: ImageJobView) => void;
   onCancelBatch: (batchId: string) => void;
+  /**
+   * 局部重绘 / 扩图: opens the editor (nothing is sent until it is
+   * submitted). Absent when no model on the key can do it.
+   */
+  onEdit?: (job: ImageJobView, mode: ImageEditMode) => void;
 };
 
 /** Anchor id of a group, for the 记录 rail. */
@@ -54,9 +62,9 @@ export function groupAnchor(key: string) {
  * newest first. Each picture is numbered, carries its billing state in
  * words and its request id; the selected one gets the toolbar.
  *
- * TODO(agent01): 局部重绘 / 扩图 (mask editor, M-G) and 放到画布 (node
- * canvas, M-D) join the toolbar when they ship; the landing copy already
- * promises them (landing/models.tsx).
+ * 局部重绘 / 扩图 (M-G) open the editor from the toolbar.
+ * TODO(agent01): 放到画布 (send a picture to a node canvas) could join the
+ * toolbar later.
  */
 export function BatchFeed({
   groups,
@@ -118,11 +126,14 @@ function BatchBlock({
   const active = jobs.some(isActiveJob);
   const titleId = `${groupAnchor(group.key)}-title`;
   const meta = [
+    lead.edit ? IMAGE_EDIT_LABEL[lead.edit] : null,
     lead.aspectRatio ?? "默认比例",
     describeImageParams({ resolution: lead.resolution, quality: lead.quality }),
     `${group.size} 张`,
     modelName(lead.model),
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <section id={groupAnchor(group.key)} aria-labelledby={titleId} className="scroll-mt-28">
@@ -304,6 +315,28 @@ function Toolbar({
         </button>
       ) : null}
       <span className="ml-auto flex items-center gap-0.5">
+        {actions.onEdit && job.assetId ? (
+          <>
+            <button
+              type="button"
+              onClick={() => actions.onEdit?.(job, "inpaint")}
+              aria-label="局部重绘"
+              title="局部重绘：涂出要改的地方"
+              className={cn(toolClass, "w-8 justify-center px-0 hover:bg-white/15")}
+            >
+              <BrushIcon strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => actions.onEdit?.(job, "outpaint")}
+              aria-label="扩图"
+              title="扩图：把画面往外扩"
+              className={cn(toolClass, "w-8 justify-center px-0 hover:bg-white/15")}
+            >
+              <ExpandIcon strokeWidth={1.8} />
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           onClick={() => actions.onOpen(job)}

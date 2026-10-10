@@ -1,4 +1,8 @@
-import type { ImageQuality, ImageResolution } from "@loomic/shared";
+import type {
+  ImageEdit,
+  ImageQuality,
+  ImageResolution,
+} from "@loomic/shared";
 
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
@@ -28,6 +32,7 @@ export type { ImageQuality, ImageResolution } from "@loomic/shared";
 export type OutputFormat = "png" | "jpg" | "webp";
 
 export interface ImageGenerateParams {
+  /** The user's words; mask edits wrap them (generation/mask-edit.ts). */
   prompt: string;
   model: string;
   aspectRatio?: string;
@@ -39,6 +44,8 @@ export interface ImageGenerateParams {
   /** Output format preference */
   outputFormat?: OutputFormat;
   metadata?: Record<string, unknown>;
+  /** 局部重绘 / 扩图 on inputImages[0]. */
+  edit?: ImageEdit;
 }
 
 export type ImageCallContext = {

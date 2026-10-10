@@ -19,6 +19,14 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
+import {
+  editPrompt,
+  frameFor,
+  openaiMaskPng,
+  orientSource,
+  outpaintImages,
+  readPaintedMask,
+} from "../mask-edit.js";
 import { fetchReferenceImage } from "./xy2api-reference.js";
 
 // Image API size rules for flexible-size models (gpt-image-2 and later):
@@ -151,22 +159,32 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
           ? { output_compression: this.env.imageOutputCompression }
           : {}),
       };
-      const references = await Promise.all(
-        (params.inputImages ?? []).map(async (url, index) => {
-          const image = await fetchReferenceImage(url, ctx);
-          return toFile(
-            image.bytes,
-            `reference-${index}.${image.mimeType === "image/jpeg" ? "jpg" : image.mimeType.split("/")[1]}`,
-            { type: image.mimeType },
-          );
-        }),
-      );
-      const result = await (references.length
+      const result = await (params.edit
         ? client.images.edit(
-            { ...request, image: references },
+            {
+              ...request,
+              ...(await maskEditInputs(params, resolved.aspectRatio, ctx)),
+            },
             { signal: ctx.signal },
           )
-        : client.images.generate(request, { signal: ctx.signal })
+        : params.inputImages?.length
+          ? client.images.edit(
+              {
+                ...request,
+                image: await Promise.all(
+                  params.inputImages.map(async (url, index) => {
+                    const image = await fetchReferenceImage(url, ctx);
+                    return toFile(
+                      image.bytes,
+                      `reference-${index}.${extension(image.mimeType)}`,
+                      { type: image.mimeType },
+                    );
+                  }),
+                ),
+              },
+              { signal: ctx.signal },
+            )
+          : client.images.generate(request, { signal: ctx.signal })
       ).withResponse();
       const output = result.data.data?.[0];
       let bytes: Buffer;
@@ -210,4 +228,57 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       throw withRequestId(error, requestId);
     }
   }
+}
+
+function extension(mimeType: string) {
+  return mimeType === "image/jpeg" ? "jpg" : (mimeType.split("/")[1] ?? "png");
+}
+
+/**
+ * 局部重绘 / 扩图: the source (or, for 扩图, the source on a transparent
+ * frame), its mask and the wrapped prompt. All built before the call, so a
+ * refusal here sends nothing.
+ */
+async function maskEditInputs(
+  params: ImageGenerateParams,
+  aspectRatio: string | undefined,
+  ctx: ImageCallContext,
+) {
+  const edit = params.edit;
+  const sourceUrl = params.inputImages?.[0];
+  if (!edit || !sourceUrl || params.inputImages?.length !== 1)
+    throw new BillingGuardError("invalid_input");
+  const fetched = await fetchReferenceImage(sourceUrl, ctx);
+  const source = await orientSource(fetched.bytes, fetched.mimeType);
+  let image: { bytes: Buffer; mimeType: string };
+  let mask: Buffer;
+  if (edit.mode === "inpaint") {
+    const painted = await readPaintedMask(
+      (await fetchReferenceImage(edit.mask, ctx)).bytes,
+      source.width,
+      source.height,
+    );
+    image = source;
+    mask = await openaiMaskPng(painted);
+    console.info(
+      `[xy2api-openai] inpaint ${source.width}x${source.height}, ${(painted.coverage * 100).toFixed(1)}% painted`,
+    );
+  } else {
+    const frame = frameFor(source, aspectRatio, edit);
+    const framed = await outpaintImages(source, frame);
+    image = { bytes: framed.image, mimeType: "image/png" };
+    mask = framed.mask;
+    console.info(
+      `[xy2api-openai] outpaint ${source.width}x${source.height} -> ${frame.width}x${frame.height} (${edit.anchor}, x${edit.scale})`,
+    );
+  }
+  return {
+    prompt: editPrompt(edit, params.prompt, "openai"),
+    image: [
+      await toFile(image.bytes, `source.${extension(image.mimeType)}`, {
+        type: image.mimeType,
+      }),
+    ],
+    mask: await toFile(mask, "mask.png", { type: "image/png" }),
+  };
 }

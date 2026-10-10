@@ -273,6 +273,20 @@ export function loadImageCatalog(json?: string): ImageModel[] {
   }
 }
 
+/**
+ * 局部重绘 / 扩图 (generation/mask-edit.ts): OpenAI takes the source and a
+ * mask; Gemini takes the source plus a highlighted copy, so it needs room
+ * for two images. xAI edits are off (see the Grok entry).
+ */
+export function supportsMaskEdit(
+  model: Pick<ImageModel, "protocol" | "supportsEdit" | "maxInputImages">,
+): boolean {
+  if (!model.supportsEdit) return false;
+  if (model.protocol === "openai-images") return model.maxInputImages >= 1;
+  if (model.protocol === "gemini") return model.maxInputImages >= 2;
+  return false;
+}
+
 export function findImageModel(
   catalog: ImageModel[],
   id: string,

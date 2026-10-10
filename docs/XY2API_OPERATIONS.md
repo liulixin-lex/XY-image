@@ -91,6 +91,7 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
 - 主站改密码/撤销会话后按配置间隔要求重新登录；新 HTTP 请求和已有 WebSocket 都验证。
 - 前端 F1–F8 完成并验收；浏览器网络、Local Storage、日志、任务表无主站明文 Key/JWT。
 - Supabase 真实表权限、Storage 上传、Realtime 读取及 PGMQ 心跳续期验证。只有上述全部完成后开放生产入口。
+- 局部重绘 / 扩图（M-G）：OpenAI 走 `images.edit`，带 `image` 和 `mask` 两个文件（遮罩透明处 = 要改），xy2api 0.2.5 在 API Key、Codex 直连和 Responses（`input_image_mask`）三条路上都会转发 `mask`，带遮罩时强制走 Native 能力；Gemini 没有遮罩参数，服务端改发「原图 + 洋红高亮副本」或「灰框图」加说明文字。哪些模型能用由 `catalog.ts` 的 `supportsMaskEdit` 决定（Grok 不开）。真实环境要各试一次 OpenAI 的局部重绘和扩图，确认只改了涂抹 / 新增的区域、主站只记一次用量；Gemini 的效果靠提示词，验收时看是否残留洋红或灰边。实验室用 `~/xy-lab/e2e/mask.sh` 检查上游收到的 `fileFields` 含 `mask`。
 
 查询当天任务：
 

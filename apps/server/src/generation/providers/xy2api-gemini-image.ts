@@ -21,6 +21,15 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
+import {
+  editPrompt,
+  frameFor,
+  geminiSource,
+  highlightedCopy,
+  orientSource,
+  outpaintImages,
+  readPaintedMask,
+} from "../mask-edit.js";
 import { fetchReferenceImage } from "./xy2api-reference.js";
 
 const THINKING_LEVELS = new Set<string>(Object.values(ThinkingLevel));
@@ -82,16 +91,14 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
         headers: { "User-Agent": "LoomicServer/1.0" },
       },
     });
-    const parts: Part[] = [{ text: params.prompt }];
-    for (const source of params.inputImages ?? []) {
-      const image = await fetchReferenceImage(source, ctx);
-      parts.push({
-        inlineData: {
-          data: image.bytes.toString("base64"),
-          mimeType: image.mimeType,
-        },
-      });
-    }
+    const parts: Part[] = params.edit
+      ? await maskEditParts(params, resolved.aspectRatio, ctx)
+      : [{ text: params.prompt }];
+    if (!params.edit)
+      for (const source of params.inputImages ?? []) {
+        const image = await fetchReferenceImage(source, ctx);
+        parts.push(inline(image));
+      }
     // xy2api's id for this call, kept on every failure after it answered so a
     // 待核对 job can be matched to its usage row.
     let requestId: string | undefined;
@@ -159,4 +166,54 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
       );
     }
   }
+}
+
+function inline(image: { bytes: Buffer; mimeType: string }): Part {
+  return {
+    inlineData: {
+      data: image.bytes.toString("base64"),
+      mimeType: image.mimeType,
+    },
+  };
+}
+
+/**
+ * 局部重绘 / 扩图 for Gemini, which has no mask parameter: inpaint sends the
+ * source and a copy with the area highlighted, outpaint the picture on a
+ * flat gray frame of the request's aspect ratio; the prompt explains which
+ * is which. All built before the call, so a refusal here sends nothing.
+ */
+async function maskEditParts(
+  params: ImageGenerateParams,
+  aspectRatio: string | undefined,
+  ctx: ImageCallContext,
+): Promise<Part[]> {
+  const edit = params.edit;
+  const sourceUrl = params.inputImages?.[0];
+  if (!edit || !sourceUrl || params.inputImages?.length !== 1)
+    throw new BillingGuardError("invalid_input");
+  const fetched = await fetchReferenceImage(sourceUrl, ctx);
+  const source = await orientSource(fetched.bytes, fetched.mimeType);
+  const text = { text: editPrompt(edit, params.prompt, "gemini") };
+  if (edit.mode === "inpaint") {
+    const painted = await readPaintedMask(
+      (await fetchReferenceImage(edit.mask, ctx)).bytes,
+      source.width,
+      source.height,
+    );
+    console.info(
+      `[xy2api-gemini] inpaint ${source.width}x${source.height}, ${(painted.coverage * 100).toFixed(1)}% painted`,
+    );
+    return [
+      text,
+      inline(await geminiSource(source)),
+      inline(await highlightedCopy(source, painted)),
+    ];
+  }
+  const frame = frameFor(source, aspectRatio, edit);
+  const { framed } = await outpaintImages(source, frame);
+  console.info(
+    `[xy2api-gemini] outpaint ${source.width}x${source.height} -> ${frame.width}x${frame.height} (${edit.anchor}, x${edit.scale})`,
+  );
+  return [text, inline({ bytes: framed, mimeType: "image/jpeg" })];
 }

@@ -80,7 +80,7 @@ xy2api 0.2.x 要求管理员先接受部署合规承诺，否则管理接口一�
 | `[[mock:delay=1500]]` | 延迟指定毫秒后再回复 |
 | `[[mock:imagedelay=20000]]` | 写在对话消息里：模拟模型发起的 `generate_image` 生图请求延迟指定毫秒，对话回复本身不延迟（用来在生图途中停止对话） |
 
-`GET /__mock/requests` 返回最近 200 条请求摘要（只有方法、路径、模型、状态码，不含密钥），`DELETE` 清空。
+`GET /__mock/requests` 返回最近 200 条请求摘要（只有方法、路径、模型、状态码，不含密钥），`DELETE` 清空。图片编辑请求另带 `inputFiles`、`fileFields`（multipart 文件字段名，局部重绘和扩图应有 `mask`），图片和 Gemini 请求带 `promptHead`（提示词前 48 个字符，用来确认服务端加的编辑说明已经送到）。
 
 ## 脱敏
 

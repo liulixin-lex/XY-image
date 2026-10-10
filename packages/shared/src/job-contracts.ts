@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { imageEditSchema } from "./image-edit.js";
 import {
   IMAGE_QUALITIES,
   LEGACY_IMAGE_QUALITIES,
@@ -154,6 +155,11 @@ export const createImageJobRequestSchema = z.object({
   canvas_source_id: canvasElementIdSchema.optional(),
   /** Node canvas (needs `canvas_id`): one spot per picture, in batch order. */
   canvas_slots: z.array(canvasSlotSchema).min(1).max(IMAGE_BATCH_MAX).optional(),
+  /**
+   * 局部重绘 / 扩图 on `input_images[0]` (exactly one source). Models without
+   * mask edits are refused before anything is queued.
+   */
+  edit: imageEditSchema.optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 

@@ -2,8 +2,10 @@
 
 import {
   ArrowUpRightIcon,
+  BrushIcon,
   CopyIcon,
   DownloadIcon,
+  ExpandIcon,
   ImagePlusIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -12,6 +14,7 @@ import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
 import { type ImageJobView, isActiveJob, isFailedJob, jobStatusLabel } from "@/lib/image-jobs";
 import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
+import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
 
 import { BillingBadge, needsReconcile } from "../billing/billing-badge";
 import { useToast } from "../toast";
@@ -29,6 +32,7 @@ export function LoupeDialog({
   onReuse,
   onUseAsReference,
   onDownload,
+  onEdit,
 }: {
   job: ImageJobView | null;
   modelName: string;
@@ -36,6 +40,8 @@ export function LoupeDialog({
   onReuse: (job: ImageJobView) => void;
   onUseAsReference: (job: ImageJobView) => void;
   onDownload: (job: ImageJobView) => void;
+  /** 局部重绘 / 扩图; absent when no model on the key can do it. */
+  onEdit?: (job: ImageJobView, mode: ImageEditMode) => void;
 }) {
   const { account } = useAccount();
   const { success } = useToast();
@@ -122,7 +128,12 @@ export function LoupeDialog({
                       <dd className="text-fg">{QUALITY_LABEL[job.quality]}</dd>
                     </>
                   ) : null}
-                  {job.inputImages.length ? (
+                  {job.edit ? (
+                    <>
+                      <dt className="text-fg-muted">修改方式</dt>
+                      <dd className="text-fg">{IMAGE_EDIT_LABEL[job.edit]}</dd>
+                    </>
+                  ) : job.inputImages.length ? (
                     <>
                       <dt className="text-fg-muted">参考图</dt>
                       <dd className="text-fg">{job.inputImages.length} 张</dd>
@@ -172,6 +183,18 @@ export function LoupeDialog({
                     <ImagePlusIcon strokeWidth={1.75} />
                     用作参考图
                   </Button>
+                ) : null}
+                {onEdit && job.url && job.assetId ? (
+                  <>
+                    <Button variant="outline" onClick={() => onEdit(job, "inpaint")}>
+                      <BrushIcon strokeWidth={1.75} />
+                      局部重绘
+                    </Button>
+                    <Button variant="outline" onClick={() => onEdit(job, "outpaint")}>
+                      <ExpandIcon strokeWidth={1.75} />
+                      扩图
+                    </Button>
+                  </>
                 ) : null}
                 {job.url ? (
                   <Button variant="accent" className="ml-auto" onClick={() => onDownload(job)}>

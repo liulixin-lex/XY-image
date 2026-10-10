@@ -5,6 +5,7 @@ export * from "./errors.js";
 export * from "./events.js";
 export * from "./http.js";
 export * from "./image-params.js";
+export * from "./image-edit.js";
 export * from "./supabase/database.js";
 export * from "./brand-kit-contracts.js";
 export * from "./job-contracts.js";

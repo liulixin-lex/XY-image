@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { checkMaskEdit, imagePayloadSchema } from "./billing-guard.js";
 import {
   findImageModel,
   loadImageCatalog,
   matchImageModels,
   resolveImageParams,
+  supportsMaskEdit,
 } from "./catalog.js";
+import { BillingGuardError } from "./errors.js";
 
 describe("image catalog", () => {
   const catalog = loadImageCatalog();
@@ -156,3 +159,62 @@ function entry(id: string) {
     maxInputImages: 0,
   };
 }
+
+describe("局部重绘 / 扩图 support", () => {
+  const catalog = loadImageCatalog();
+  const model = (id: string) => {
+    const found = findImageModel(catalog, id);
+    if (!found) throw new Error(`no ${id}`);
+    return found;
+  };
+  it("is on for OpenAI and Gemini editors and off for Grok", () => {
+    expect(supportsMaskEdit(model("gpt-image-2"))).toBe(true);
+    expect(supportsMaskEdit(model("nano-banana-pro"))).toBe(true);
+    expect(supportsMaskEdit(model("grok-imagine-image-2.0"))).toBe(false);
+  });
+  it("needs room for two images on Gemini (source + highlighted copy)", () => {
+    expect(
+      supportsMaskEdit({ ...model("nano-banana-pro"), maxInputImages: 1 }),
+    ).toBe(false);
+    expect(
+      supportsMaskEdit({ ...model("gpt-image-2"), supportsEdit: false }),
+    ).toBe(false);
+  });
+  it("refuses an unsupported model or anything but one source", () => {
+    expect(() => checkMaskEdit(model("grok-imagine-image-2.0"), 1)).toThrow(
+      "不支持局部重绘和扩图",
+    );
+    expect(() => checkMaskEdit(model("gpt-image-2"), 2)).toThrow(
+      "一次只改一张图",
+    );
+    expect(() => checkMaskEdit(model("gpt-image-2"), 0)).toThrow(
+      BillingGuardError,
+    );
+    expect(() => checkMaskEdit(model("gpt-image-2"), 1)).not.toThrow();
+  });
+  it("stores the edit with the job payload and rejects a bad one", () => {
+    const base = {
+      prompt: "x",
+      model: "gpt-image-2",
+      resolution: "2K",
+      quality: "auto",
+      input_images: ["https://example.test/a.png"],
+    };
+    expect(
+      imagePayloadSchema.parse({
+        ...base,
+        edit: { mode: "outpaint", scale: 1.5, anchor: "top-left" },
+      }).edit,
+    ).toEqual({ mode: "outpaint", scale: 1.5, anchor: "top-left" });
+    expect(
+      imagePayloadSchema.safeParse({
+        ...base,
+        edit: { mode: "outpaint", scale: 3, anchor: "center" },
+      }).success,
+    ).toBe(false);
+    expect(
+      imagePayloadSchema.safeParse({ ...base, edit: { mode: "inpaint" } })
+        .success,
+    ).toBe(false);
+  });
+});

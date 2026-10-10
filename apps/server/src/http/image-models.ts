@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   IMAGE_PROVIDER_BY_PROTOCOL,
   findImageModel,
+  supportsMaskEdit,
 } from "../features/xy2api/catalog.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { KeyService } from "../features/xy2api/key-service.js";
@@ -39,6 +40,8 @@ export function registerImageModelRoutes(
                   maxRatio: model.maxRatio,
                   supportsEdit: model.supportsEdit,
                   maxInputImages: model.supportsEdit ? model.maxInputImages : 0,
+                  // 局部重绘 / 扩图 in the studio.
+                  maskEdit: supportsMaskEdit(model),
                 },
               ]
             : [];

@@ -7,6 +7,7 @@ import { useAmbientImage } from "@/components/ambient/ambient-provider";
 import { SAMPLE_ALT, SHOWCASE_ITEMS, type ShowcaseItem } from "@/components/landing/showcase";
 import { BatchFeed, type FeedActions, groupAnchor } from "@/components/studio/batch-feed";
 import { type ComposerHandle, Composer } from "@/components/studio/composer";
+import { EditDialog, type EditTarget } from "@/components/studio/edit-dialog";
 import { HistoryRail } from "@/components/studio/history-rail";
 import { LoupeDialog } from "@/components/studio/loupe-dialog";
 import { useToast } from "@/components/toast";
@@ -44,6 +45,9 @@ export default function StudioPage() {
   const [loupe, setLoupe] = useState<ImageJobView | null>(null);
   const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditTarget | null>(null);
+  // 局部重绘 / 扩图 only when a model on the key can do it.
+  const canEdit = useMemo(() => Boolean(models.data?.some((m) => m.maskEdit)), [models.data]);
 
   // A prompt typed on the landing page before login lands here, unsent.
   useEffect(() => {
@@ -162,6 +166,12 @@ export default function StudioPage() {
     [studio, success, toast],
   );
 
+  const openEditor = useCallback((job: ImageJobView, mode: EditTarget["mode"]) => {
+    setLoupe(null);
+    setSelectedId(job.id);
+    setEditing({ job, mode });
+  }, []);
+
   const actions = useMemo<FeedActions>(
     () => ({
       onSelect: (job) => setSelectedId(job.id),
@@ -172,8 +182,9 @@ export default function StudioPage() {
       onReuse: reuse,
       onCancelJob: (job) => void studio.cancel(job.id),
       onCancelBatch: (batchId) => void cancelBatch(batchId),
+      ...(canEdit ? { onEdit: openEditor } : {}),
     }),
-    [addAsReference, cancelBatch, download, reuse, studio, variant],
+    [addAsReference, canEdit, cancelBatch, download, openEditor, reuse, studio, variant],
   );
 
   const jump = useCallback((group: JobGroup) => {
@@ -270,6 +281,16 @@ export default function StudioPage() {
         onReuse={reuse}
         onUseAsReference={addAsReference}
         onDownload={download}
+        {...(canEdit ? { onEdit: openEditor } : {})}
+      />
+
+      <EditDialog
+        target={editing}
+        models={models.data ?? []}
+        pendingCount={studio.busyCount}
+        submitting={studio.submitting}
+        onSubmit={studio.submit}
+        onClose={() => setEditing(null)}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import type {
   AssetSignedUrlResponse,
   BackgroundJob,
+  ImageEdit,
   CancelImageBatchResponse,
   ImageBatchResponse,
   OptimizePromptResponse,
@@ -372,6 +373,8 @@ export type ImageModelInfo = {
   maxRatio?: Partial<Record<ImageResolution, number>>;
   supportsEdit?: boolean;
   maxInputImages?: number;
+  /** 局部重绘 / 扩图 in the studio (absent on older servers: treated as no). */
+  maskEdit?: boolean;
   /** Sent by older servers instead: `standard` = 1K only, `hd` = 1K and 2K. */
   maxQuality?: "standard" | "hd";
   accessible?: boolean;
@@ -607,6 +610,8 @@ export type CreateImageJobInput = {
   canvas_source_id?: string;
   /** Node canvas: where each picture goes, in batch order (with canvas_id). */
   canvas_slots?: { x: number; y: number; width: number; height: number }[];
+  /** 局部重绘 / 扩图 on input_images[0] (exactly one). */
+  edit?: ImageEdit;
   session_id?: string;
   thread_id?: string;
 };

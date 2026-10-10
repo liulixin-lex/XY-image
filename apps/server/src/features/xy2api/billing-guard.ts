@@ -2,6 +2,9 @@ import {
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
   LEGACY_IMAGE_PARAMS,
+  type ImageEdit,
+  OUTPAINT_ANCHORS,
+  OUTPAINT_MAX_SCALE,
   isLegacyImageQuality,
   normalizeImageParams,
 } from "@loomic/shared";
@@ -9,11 +12,31 @@ import { z } from "zod";
 import type { ServerEnv } from "../../config/env.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { AuthenticatedUser } from "../../supabase/user.js";
-import { findImageModel, resolveImageParams } from "./catalog.js";
+import {
+  findImageModel,
+  resolveImageParams,
+  supportsMaskEdit,
+} from "./catalog.js";
 import type { Xy2apiClient } from "./client.js";
 import { BillingGuardError } from "./errors.js";
 import type { KeyService } from "./key-service.js";
 import { checkStoreError } from "./store.js";
+
+/**
+ * 局部重绘 / 扩图, as stored (the shared imageEditSchema is zod 3; this
+ * package validates with zod 4, so the rule is repeated from its constants).
+ */
+const imageEditPayloadSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("inpaint"),
+    mask: z.string().min(1).max(15000000),
+  }),
+  z.object({
+    mode: z.literal("outpaint"),
+    scale: z.number().min(1).max(OUTPAINT_MAX_SCALE),
+    anchor: z.enum(OUTPAINT_ANCHORS),
+  }),
+]);
 
 /**
  * An image job's stored payload. `resolution` / `quality` hold what
@@ -43,6 +66,7 @@ export const imagePayloadSchema = z.preprocess(
       .regex(/^\d{1,2}(\.\d)?:\d{1,2}(\.\d)?$/)
       .optional(),
     input_images: z.array(z.string().max(15000000)).max(14).optional(),
+    edit: imageEditPayloadSchema.optional(),
   }),
 );
 export type ImagePayload = z.output<typeof imagePayloadSchema>;
@@ -87,6 +111,7 @@ export class BillingGuard {
       quality?: string | undefined;
       aspect_ratio?: string | undefined;
       input_images?: string[] | undefined;
+      edit?: ImageEdit | undefined;
     },
     options: { count?: number; sendsNow?: boolean } = {},
   ) {
@@ -114,6 +139,7 @@ export class BillingGuard {
         400,
         `${entry.displayName} 最多使用 ${entry.maxInputImages} 张参考图`,
       );
+    if (input.edit) checkMaskEdit(entry, references);
     const requested = normalizeImageParams(input);
     const resolved = resolveImageParams(entry, {
       resolution: requested.resolution,
@@ -153,4 +179,26 @@ export class BillingGuard {
       aspect_ratio: resolved.aspectRatio,
     };
   }
+}
+
+/**
+ * 局部重绘 / 扩图: one source picture, and a model that can take it (see
+ * supportsMaskEdit). Checked when queueing and again by the worker.
+ */
+export function checkMaskEdit(
+  model: Parameters<typeof supportsMaskEdit>[0] & { displayName: string },
+  references: number,
+) {
+  if (!supportsMaskEdit(model))
+    throw new BillingGuardError(
+      "invalid_input",
+      400,
+      `${model.displayName} 不支持局部重绘和扩图，请换一个模型`,
+    );
+  if (references !== 1)
+    throw new BillingGuardError(
+      "invalid_input",
+      400,
+      "局部重绘和扩图一次只改一张图",
+    );
 }
