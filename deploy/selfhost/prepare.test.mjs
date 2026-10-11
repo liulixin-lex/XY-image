@@ -79,6 +79,8 @@ test("offline preparation creates isolated credentials and a closed default netw
     assert.deepEqual(compose.services.supavisor.ports, []);
     assert.deepEqual(compose.services["xy-api"].profiles, ["app"]);
     assert.deepEqual(compose.services["xy-api"].ports, ["127.0.0.1:3101:3101"]);
+    assert.equal(server.XY2API_BASE_URL, "https://gguuai.com");
+    assert.equal(browser.NEXT_PUBLIC_XY2API_WEB_URL, "https://gguuai.com");
     assert.equal(compose.services["xy-api"].deploy.replicas, 1);
     assert.ok(
       compose.services.realtime.networks.default.aliases.includes(
@@ -264,6 +266,78 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("a second deployment on the same host gets its own project, ports and main site", async () => {
+  const root = await createTestDirectory("prepare-second-");
+  try {
+    const dir = path.join(root, "deployment");
+    await prepare({
+      dir,
+      origin: "https://image.example.com",
+      ssoDomain: "sso.example.com",
+      project: "xy-image-prod",
+      apiPort: "3201",
+      gatewayPort: "18100",
+      xy2apiUrl: "https://main.example.com",
+    });
+    const env = parseEnv(await readFile(path.join(dir, ".env"), "utf8"));
+    const server = parseEnv(
+      await readFile(path.join(dir, "server.env"), "utf8"),
+    );
+    const browser = parseEnv(await readFile(path.join(dir, "web.env"), "utf8"));
+    assert.equal(env.COMPOSE_PROJECT_NAME, "xy-image-prod");
+    // Inside the container the API still listens on 3101.
+    assert.equal(server.LOOMIC_SERVER_PORT, "3101");
+    assert.equal(server.XY2API_BASE_URL, "https://main.example.com");
+    assert.equal(server.XY2API_WEB_URL, "https://main.example.com");
+    assert.equal(
+      browser.NEXT_PUBLIC_XY2API_WEB_URL,
+      "https://main.example.com",
+    );
+    const compose = JSON.parse(
+      await readFile(path.join(dir, "compose.json"), "utf8"),
+    );
+    assert.equal(compose.name, "xy-image-prod");
+    assert.deepEqual(compose.services["api-gw"].ports, [
+      "127.0.0.1:18100:8000",
+    ]);
+    assert.deepEqual(compose.services["xy-api"].ports, ["127.0.0.1:3201:3101"]);
+    assert.equal(
+      compose.services["xy-api"].image,
+      "xy-image-prod-backend:local",
+    );
+    for (const file of ["nginx.conf", "Caddyfile"]) {
+      const text = await readFile(path.join(dir, file), "utf8");
+      assert.ok(!text.includes(":3101"), `${file} still points at 3101`);
+      assert.ok(!text.includes(":18000"), `${file} still points at 18000`);
+      assert.ok(text.includes("127.0.0.1:3201"), file);
+      assert.ok(text.includes("127.0.0.1:18100"), file);
+    }
+    const deployment = JSON.parse(
+      await readFile(path.join(dir, "deployment.json"), "utf8"),
+    );
+    assert.deepEqual(deployment.ports, { api: 3201, gateway: 18100 });
+    assert.equal(deployment.xy2api, "https://main.example.com");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  const dir = path.resolve(repository, "../invalid-ports-test");
+  for (const [extra, message] of [
+    [{ apiPort: "80" }, /api-port must be a port/],
+    [{ gatewayPort: "70000" }, /gateway-port must be a port/],
+    [{ apiPort: "3101.5" }, /api-port must be a port/],
+    [{ apiPort: "18000" }, /must differ/],
+    [
+      { xy2apiUrl: "http://main.example.com" },
+      /xy2api-url must be an HTTPS origin/,
+    ],
+    [
+      { xy2apiUrl: "https://main.example.com/api" },
+      /xy2api-url must be an HTTPS origin/,
+    ],
+  ])
+    await assert.rejects(prepare({ ...options, dir, ...extra }), message);
 });
 
 test("--origin and the three origins are exclusive, and web-root must be a plain absolute path", async () => {
