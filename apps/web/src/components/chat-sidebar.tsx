@@ -19,7 +19,10 @@ import {
   INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
 } from "../hooks/use-create-project";
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
-import { useImageAttachments } from "../hooks/use-image-attachments";
+import {
+  canvasSelectionAttachments,
+  useImageAttachments,
+} from "../hooks/use-image-attachments";
 import {
   resolveImagePreference,
   useImageModelPreference,
@@ -409,22 +412,11 @@ export function ChatSidebar({
 
       // Merge explicitly-attached images with auto-sensed canvas selection images
       let currentAttachments = attachmentsOverride ?? readyAttachments;
-      const selectedEls = selectedCanvasElementsRef.current ?? [];
-      const selectedImageEls = selectedEls.filter(
-        (el) =>
-          el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
-      );
-      if (selectedImageEls.length > 0 && !attachmentsOverride) {
-        const existingIds = new Set(currentAttachments.map((a) => a.assetId));
-        const selectionAttachments: ReadyAttachment[] = selectedImageEls
-          .filter((el) => !existingIds.has(el.id))
-          .map((el) => ({
-            assetId: el.id,
-            url: el.storageUrl ?? el.dataUrl!,
-            mimeType: "image/png",
-            source: "canvas-ref" as const,
-            name: `Canvas selection ${el.id.slice(0, 6)}`,
-          }));
+      if (!attachmentsOverride) {
+        const selectionAttachments = canvasSelectionAttachments(
+          selectedCanvasElementsRef.current ?? [],
+          new Set(currentAttachments.map((a) => a.assetId)),
+        );
         if (selectionAttachments.length > 0) {
           currentAttachments = [...currentAttachments, ...selectionAttachments];
         }
