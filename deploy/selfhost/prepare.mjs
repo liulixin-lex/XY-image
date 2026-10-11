@@ -325,6 +325,10 @@ export async function prepare(options) {
       LOOMIC_MAX_PENDING_IMAGE_JOBS: "8",
       LOOMIC_MAX_IMAGES_PER_RUN: "6",
       LOOMIC_SKILLS_ROOT: "/opt/loomic/skills",
+      // Single domain: the edge asks /api/media/authorize before serving a
+      // project-assets image (FINDINGS S2). Separate origins cannot share
+      // the cookie, so their images stay public.
+      LOOMIC_MEDIA_ACCESS: mode === "single" ? "cookie" : "open",
     };
     base.name = project;
     for (const service of Object.values(base.services)) {

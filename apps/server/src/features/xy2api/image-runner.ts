@@ -244,6 +244,12 @@ export async function executeImageJob(
 
 export type ImageJobResult = {
   asset_id: string;
+  /**
+   * Not signed, despite the name (kept: it is stored in job results, chat
+   * history and canvases): the stable project-assets object URL. Readable
+   * only by members of the workspace with the media cookie when
+   * LOOMIC_MEDIA_ACCESS=cookie (features/media/media-access.ts, FINDINGS S2).
+   */
   signed_url: string;
   object_path: string;
   width: number;

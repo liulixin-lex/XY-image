@@ -17,6 +17,10 @@ import {
   createCanvasFilesSweeper,
   createSweepStore,
 } from "./features/canvas/canvas-files-sweeper.js";
+import {
+  createProjectPurger,
+  createPurgeStore,
+} from "./features/projects/project-purge.js";
 import { createDispatchGate } from "./features/jobs/dispatch-gate.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
@@ -100,6 +104,19 @@ async function main() {
         });
   sweeper?.start();
 
+  // Deletes projects the user deleted a day ago, with their uploads
+  // (project-purge.ts, FINDINGS S2).
+  const purger =
+    env.projectPurge === "off"
+      ? undefined
+      : createProjectPurger({
+          store: createPurgeStore(env.supabaseDbUrl),
+          remove: (paths) =>
+            getAdminClient().storage.from("project-assets").remove(paths),
+          dryRun: env.projectPurge === "dry-run",
+        });
+  purger?.start();
+
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
@@ -165,6 +182,7 @@ async function main() {
     }
     await reconciler?.stop();
     await sweeper?.stop();
+    await purger?.stop();
     await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
     await deliveries.close();

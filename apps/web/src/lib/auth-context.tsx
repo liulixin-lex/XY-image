@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { clearMediaSession, ensureMediaSession } from "./media-session";
 import { AUTH_EXPIRED_EVENT } from "./server-api";
 import { getSupabaseBrowserClient } from "./supabase-browser";
 import { logoutXy2api } from "./xy2api-api";
@@ -56,23 +57,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+    // A session is published only once the media cookie is in place (or
+    // the attempt gave up), so the first images of a page do not get a 401
+    // from the edge (FINDINGS S2, lib/media-session.ts). The counter keeps a
+    // slow cookie request from publishing an older session over a newer one.
+    let latest = 0;
+    const publish = (next: Session | null) => {
+      const ticket = ++latest;
+      const apply = () => {
+        if (ticket !== latest) return;
+        setSession(next);
+        setUser(next?.user ?? null);
+        setLoading(false);
+        if (next) {
+          signingOutRef.current = false;
+          setSignedOutOnPurpose(false);
+        }
+      };
+      if (next) void ensureMediaSession(next.access_token).then(apply);
+      else apply();
+    };
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
+    supabase.auth.getSession().then(({ data }) => publish(data.session));
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      setLoading(false);
-      if (newSession) {
-        signingOutRef.current = false;
-        setSignedOutOnPurpose(false);
-      }
+      publish(newSession);
     });
 
     return () => subscription.unsubscribe();
@@ -87,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signingOutRef.current = true;
       console.warn("[auth] session expired, returning to login");
       const supabase = getSupabaseBrowserClient();
+      void clearMediaSession();
       void Promise.resolve(supabase.auth.signOut({ scope: "local" }))
         .catch((error: unknown) => {
           console.warn("[auth] local sign-out failed", error);
@@ -109,7 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set before the session clears, so guards see it on the same render.
     setSignedOutOnPurpose(true);
     const token = sessionRef.current?.access_token;
-    if (token) await logoutXy2api(token);
+    // The logout route clears the media cookie too; this covers a token the
+    // server no longer accepts.
+    await Promise.all([token ? logoutXy2api(token) : null, clearMediaSession()]);
     const supabase = getSupabaseBrowserClient();
     try {
       await supabase.auth.signOut();

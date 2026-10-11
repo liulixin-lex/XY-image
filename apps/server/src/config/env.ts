@@ -88,6 +88,19 @@ export type ServerEnv = {
    * "dry-run" only logs them). features/canvas/canvas-files-sweeper.ts
    */
   canvasFilesSweep?: "on" | "dry-run" | "off";
+  /**
+   * LOOMIC_MEDIA_ACCESS: "cookie" makes project-assets public URLs readable
+   * only by members of the workspace in the path, via a signed HttpOnly
+   * cookie checked by the edge (forward_auth / auth_request) and by
+   * /api/proxy-image. "open" (default, local dev) keeps them public.
+   * features/media/media-access.ts, FINDINGS S2.
+   */
+  mediaAccess?: "cookie" | "open";
+  /**
+   * PROJECT_PURGE: deletes projects 24 h after the user deleted them, with
+   * their uploads ("dry-run" only logs). features/projects/project-purge.ts
+   */
+  projectPurge?: "on" | "dry-run" | "off";
 };
 
 export function loadServerEnv(
@@ -241,6 +254,11 @@ export function loadServerEnv(
       source.CANVAS_FILES_SWEEP === "off" ||
       source.CANVAS_FILES_SWEEP === "dry-run"
         ? source.CANVAS_FILES_SWEEP
+        : "on",
+    mediaAccess: source.LOOMIC_MEDIA_ACCESS === "cookie" ? "cookie" : "open",
+    projectPurge:
+      source.PROJECT_PURGE === "off" || source.PROJECT_PURGE === "dry-run"
+        ? source.PROJECT_PURGE
         : "on",
     ...overrides,
   };

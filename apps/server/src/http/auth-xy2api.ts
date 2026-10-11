@@ -8,6 +8,7 @@ import { BillingGuardError, Xy2apiError } from "../features/xy2api/errors.js";
 import type { SecretBox } from "../features/xy2api/secret-box.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
+import { clearMediaCookies } from "./media-access.js";
 
 const loginSchema = z.object({
   email: z
@@ -239,6 +240,8 @@ export function registerXy2apiAuthRoutes(
     }
   });
   app.post("/api/auth/xy2api/logout", async (request, reply) => {
+    // Signing out also ends image access in this browser (FINDINGS S2).
+    clearMediaCookies(request, reply);
     const user = await options.auth.authenticate(request);
     if (!user)
       return reply.code(401).send({

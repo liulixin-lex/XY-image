@@ -88,7 +88,37 @@ server {
     # step with `storage.buckets.public`) and signed URLs, whose token is
     # checked by Storage. Matching runs on the normalised $uri, so encoded
     # "../" cannot climb out of the allowed prefix.
-    location ~ ^/supabase/storage/v1/object/(public/project-assets|sign/[a-z0-9-]+)/. {
+    # Generated and uploaded images: only members of the workspace in the
+    # path, by the media cookie the API checks (FINDINGS S2,
+    # apps/server/src/features/media/media-access.ts). Private responses so
+    # no shared cache keeps one.
+    location ~ ^/supabase/storage/v1/object/public/project-assets/. {
+        if ($request_method !~ ^(GET|HEAD)$) { return 404; }
+        auth_request /_xy_media_authorize;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Cache-Control "private, max-age=604800" always;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Cache-Control;
+        rewrite ^/supabase(/.*)$ $1 break;
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 60s;
+        proxy_next_upstream off;
+    }
+    location = /_xy_media_authorize {
+        internal;
+        proxy_pass http://127.0.0.1:3101/api/media/authorize;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 10s;
+    }
+    location ~ ^/supabase/storage/v1/object/sign/[a-z0-9-]+/. {
         if ($request_method !~ ^(GET|HEAD)$) { return 404; }
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options "nosniff" always;

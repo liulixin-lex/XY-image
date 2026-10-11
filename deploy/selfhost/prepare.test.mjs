@@ -234,6 +234,8 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.equal(server.SUPABASE_URL, "https://image.example.com/supabase");
     assert.equal(server.SUPABASE_JWT_ISSUER, env.API_EXTERNAL_URL);
     assert.equal(server.LOOMIC_WEB_ORIGIN, "https://image.example.com");
+    // FINDINGS S2: images only for workspace members, checked at the edge.
+    assert.equal(server.LOOMIC_MEDIA_ACCESS, "cookie");
     assert.equal(browser.NEXT_PUBLIC_SUPABASE_URL, server.SUPABASE_URL);
     assert.equal(
       browser.NEXT_PUBLIC_SERVER_BASE_URL,
@@ -249,6 +251,8 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.match(nginx, /live\/image\.example\.com\/fullchain\.pem/);
     assert.ok(!nginx.includes("set_real_ip_from"), "No CDN trusted by default");
     assert.equal((nginx.match(/^\s*server \{$/gm) ?? []).length, 1);
+    assert.match(nginx, /auth_request \/_xy_media_authorize;/);
+    assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3101\/api\/media\/authorize;/);
 
     const caddy = await readFile(path.join(dir, "Caddyfile"), "utf8");
     assert.ok(!caddy.includes("__"));
@@ -256,6 +260,7 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.match(caddy, /root \* \/srv\/xy-image\/site$/m);
     assert.match(caddy, /handle_path \/supabase\/\* \{/);
     assert.match(caddy, /@private_ready path \/api\/ready/);
+    assert.match(caddy, /forward_auth 127\.0\.0\.1:3101 \{\n\s+uri \/api\/media\/authorize/);
 
     const deployment = JSON.parse(
       await readFile(path.join(dir, "deployment.json"), "utf8"),

@@ -73,6 +73,8 @@ import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
+import { registerMediaAccessRoutes } from "./http/media-access.js";
+import { createMemberCheck } from "./features/media/media-access.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
@@ -311,7 +313,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   );
   void registerCspReportRoute(app);
   void registerFontsRoutes(app, { env });
-  void registerImageProxyRoute(app, { env });
+  // FINDINGS S2: who may read project-assets images (media-access.ts).
+  const isMember = createMemberCheck(getAdminClient);
+  void registerMediaAccessRoutes(app, { env, auth, isMember });
+  void registerImageProxyRoute(app, {
+    env,
+    ...(env.mediaAccess === "cookie"
+      ? { media: { secret: env.secretKey, isMember } }
+      : {}),
+  });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,

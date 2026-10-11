@@ -2,7 +2,8 @@
 # pre-launch server has run since 2026-10-11. Same policy as
 # nginx.single.conf.template: /api/* to XY API (/api/ready private),
 # /supabase/* to the Supabase gateway with the prefix removed and only
-# restricted Auth and object reads allowed, the static site for the rest.
+# restricted Auth and object reads allowed (project-assets images only for
+# members, asked of /api/media/authorize), the static site for the rest.
 # Caddy gets the certificate itself. Behind a CDN, set trusted_proxies in the
 # global options first, or the login limiter sees the CDN's addresses.
 __HOST__ {
@@ -37,11 +38,28 @@ __HOST__ {
 		handle @allowed_auth {
 			reverse_proxy 127.0.0.1:18000
 		}
-		@allowed_objects {
+		# Generated and uploaded images: only members of the workspace in
+		# the path, by the media cookie the API checks (FINDINGS S2,
+		# apps/server/src/features/media/media-access.ts). A refusal is the
+		# API's 401/403. Responses are private so no shared cache keeps one.
+		@public_objects {
 			method GET HEAD
-			path_regexp ^/storage/v1/object/(public/project-assets|sign/[a-z0-9-]+)/.+$
+			path_regexp ^/storage/v1/object/public/project-assets/.+$
 		}
-		handle @allowed_objects {
+		handle @public_objects {
+			forward_auth 127.0.0.1:3101 {
+				uri /api/media/authorize
+			}
+			reverse_proxy 127.0.0.1:18000 {
+				header_down Cache-Control "private, max-age=604800"
+			}
+		}
+		# Signed URLs: Storage checks their token.
+		@signed_objects {
+			method GET HEAD
+			path_regexp ^/storage/v1/object/sign/[a-z0-9-]+/.+$
+		}
+		handle @signed_objects {
 			reverse_proxy 127.0.0.1:18000
 		}
 		respond 404
