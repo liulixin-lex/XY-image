@@ -37,6 +37,18 @@ export type DispatchGate = {
 
 /** Seconds a waiting job stays invisible before the worker checks it again. */
 export const DISPATCH_RETRY_SECONDS = 3;
+const DISPATCH_RETRY_MAX_SECONDS = 10;
+
+/**
+ * Back-off for a job still waiting after `reads` checks (FINDINGS L2): every
+ * 3 s for the first 15 s, then 6 s, then 10 s. A picture takes 30-120 s, so
+ * a slot that frees up is noticed within a few seconds, without picking the
+ * job up 20 times a minute.
+ */
+export function dispatchRetrySeconds(reads: number): number {
+  const step = Math.max(0, Math.floor((Math.max(1, reads) - 1) / 5));
+  return Math.min(DISPATCH_RETRY_SECONDS * 2 ** step, DISPATCH_RETRY_MAX_SECONDS);
+}
 
 /**
  * A running job older than this is not in flight at the main site any more
