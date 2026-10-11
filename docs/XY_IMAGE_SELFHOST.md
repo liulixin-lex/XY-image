@@ -122,6 +122,27 @@ node deploy/selfhost/prepare.mjs \
 
 已有的部署目录不会被重新生成（`prepare.mjs` 拒绝覆盖，以免轮换密钥）。预上线服务器是 10-11 手工改成单域名的，它的变量和上表一致。
 
+### 同一台机器再跑一套（10-11 agent01）
+
+默认生成的是项目 `xy-image`、本机端口 API 3101、Supabase 网关 18000、主站 `https://gguuai.com`。同一台机器上已经有一套时，第二套要换项目名和两个本机端口；连别的主站时给 `--xy2api-url`：
+
+```sh
+node deploy/selfhost/prepare.mjs \
+  --dir /image/deploy/xy-image-prod \
+  --origin https://image.gguuai.com \
+  --web-root /var/www/xy-image-prod \
+  --sso-domain sso.image.gguuai.com \
+  --project xy-image-prod \
+  --api-port 3201 \
+  --gateway-port 18100 \
+  --xy2api-url https://gguuai.com
+```
+
+- 项目名决定容器、网络和镜像名（`xy-image-prod-backend:local`），两套的数据库、Storage、密钥完全分开。
+- 端口只改宿主机这一侧：compose 的端口映射、`nginx.conf` 和 `Caddyfile` 里的上游一起改。容器里 API 仍然监听 3101。
+- `--xy2api-url` 同时写进 `XY2API_BASE_URL`、`XY2API_WEB_URL` 和前端的 `NEXT_PUBLIC_XY2API_WEB_URL`，必须是 https 根地址。
+- `deployment.json` 记下 `ports` 和 `xy2api`。运维脚本的 `readyUrl` 要改成对应的 API 端口。
+
 ## 备份与恢复
 
 `backup.mjs` 是停写的一致性备份，**会造成维护窗口**，仅在部署运维需要时执行；本轮没有运行真实备份。它停止正在运行的写入服务（保留DB），等待应用优雅停止；保存 postgres 和 `_supabase` 的自定义格式dump、角色SQL、Storage文件、DB自定义密钥配置、应用和Supabase环境文件、部署版本及恢复服务清单，另含 `deployment-config.tar.gz`（实际使用的Envoy脱敏配置、functions、pooler与DB顶层初始化SQL，不含DB数据目录）。手动和调度共享锁，停写失败标记阻止下一轮误报成功。全部成功生成SHA-256清单后才恢复原来运行的服务。失败保留部分结果和停机状态，人工检查 `resume.json` 后恢复，不把部分备份当成功。

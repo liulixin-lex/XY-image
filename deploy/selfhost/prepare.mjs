@@ -135,10 +135,45 @@ function webRootPath(value = "/var/www/xy-image") {
     throw new Error("web-root must be an absolute path without spaces or ..");
   return value.replace(/\/+$/, "") || "/";
 }
+/**
+ * Loopback ports on the host for XY API and the Supabase gateway. The defaults
+ * (3101, 18000) are what the templates and the first deployments use; give
+ * other ports to run a second deployment on the same host (the pre-launch
+ * server runs the test site and the production site side by side).
+ */
+export function hostPorts(options = {}) {
+  const port = (value, fallback, label) => {
+    const n = Number(value ?? fallback);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535)
+      throw new Error(`${label} must be a port between 1024 and 65535`);
+    return n;
+  };
+  const api = port(options.apiPort, 3101, "api-port");
+  const gateway = port(options.gatewayPort, 18000, "gateway-port");
+  if (api === gateway) throw new Error("api-port and gateway-port must differ");
+  return { api, gateway };
+}
+/** Points the edge templates at the deployment's loopback ports. */
+const withPorts = (text, ports) =>
+  text
+    .replaceAll("127.0.0.1:3101", `127.0.0.1:${ports.api}`)
+    .replaceAll("127.0.0.1:18000", `127.0.0.1:${ports.gateway}`);
+/** The xy2api main site this deployment signs in against and bills through. */
+function xy2apiOrigin(value = "https://gguuai.com") {
+  return origin(value, "xy2api-url");
+}
 /** Host configs for a single-domain deployment: Nginx and Caddy. */
-export async function singleDomainConfigs({ host, webRoot, realIp }) {
+export async function singleDomainConfigs({
+  host,
+  webRoot,
+  realIp,
+  ports = hostPorts(),
+}) {
   const fill = (text) =>
-    text.replaceAll("__HOST__", host).replaceAll("__WEB_ROOT__", webRoot);
+    withPorts(
+      text.replaceAll("__HOST__", host).replaceAll("__WEB_ROOT__", webRoot),
+      ports,
+    );
   return {
     nginx: fill(
       await readFile(path.join(here, "nginx.single.conf.template"), "utf8"),
@@ -166,6 +201,8 @@ export async function prepare(options) {
   const { mode, web, api, supabase } = publicOrigins(options);
   const webRoot = mode === "single" ? webRootPath(options.webRoot) : null;
   const realIp = realIpBlock(options.cdn);
+  const ports = hostPorts(options);
+  const xy2api = xy2apiOrigin(options.xy2apiUrl);
   if (
     !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(
       options.ssoDomain,
@@ -277,8 +314,8 @@ export async function prepare(options) {
       SUPABASE_DB_URL: `postgresql://postgres:${password}@db:5432/postgres`,
       LOOMIC_SECRET_KEY: randomBytes(32).toString("base64"),
       SSO_EMAIL_DOMAIN: options.ssoDomain,
-      XY2API_BASE_URL: "https://gguuai.com",
-      XY2API_WEB_URL: "https://gguuai.com",
+      XY2API_BASE_URL: xy2api,
+      XY2API_WEB_URL: xy2api,
       LOOMIC_CHAT_PROVIDER_ALLOW_HTTP: "false",
       LOOMIC_CHAT_PROVIDER_ALLOWED_HOSTS: "",
       WORKER_IMAGE_CONCURRENCY: "3",
@@ -308,7 +345,7 @@ export async function prepare(options) {
         "realtime-dev.supabase-realtime",
       ]),
     ];
-    base.services["api-gw"].ports = ["127.0.0.1:18000:8000"];
+    base.services["api-gw"].ports = [`127.0.0.1:${ports.gateway}:8000`];
     base.services.supavisor.ports = [];
     base.services.supavisor.profiles = ["pooler"];
     base.services.auth.environment.GOTRUE_EXTERNAL_GOOGLE_ENABLED = "false";
@@ -342,7 +379,7 @@ export async function prepare(options) {
     base.services["xy-api"] = {
       ...app,
       profiles: ["app"],
-      ports: ["127.0.0.1:3101:3101"],
+      ports: [`127.0.0.1:${ports.api}:3101`],
       environment: { SERVICE_MODE: "api" },
       deploy: { replicas: 1 },
       healthcheck: {
@@ -407,7 +444,7 @@ export async function prepare(options) {
         NEXT_PUBLIC_SUPABASE_URL: supabase,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: values.ANON_KEY,
         NEXT_PUBLIC_SERVER_BASE_URL: api,
-        NEXT_PUBLIC_XY2API_WEB_URL: "https://gguuai.com",
+        NEXT_PUBLIC_XY2API_WEB_URL: xy2api,
       }),
       { mode: 0o600, flag: "wx" },
     );
@@ -430,6 +467,8 @@ export async function prepare(options) {
           supabase,
           webRoot,
           cdn: options.cdn ?? null,
+          ports,
+          xy2api,
         },
         null,
         2,
@@ -449,6 +488,7 @@ export async function prepare(options) {
         host: new URL(web).hostname,
         webRoot,
         realIp,
+        ports,
       });
       await writeFile(path.join(target, "nginx.conf"), configs.nginx, {
         mode: 0o600,
@@ -458,8 +498,9 @@ export async function prepare(options) {
       });
       files.push("Caddyfile");
     } else {
-      const nginx = (
-        await readFile(path.join(here, "nginx.conf.template"), "utf8")
+      const nginx = withPorts(
+        await readFile(path.join(here, "nginx.conf.template"), "utf8"),
+        ports,
       )
         .replaceAll("__API_HOST__", new URL(api).hostname)
         .replaceAll("__SUPABASE_HOST__", new URL(supabase).hostname)
@@ -491,6 +532,9 @@ if (
         "sso-domain": { type: "string" },
         project: { type: "string" },
         cdn: { type: "string" },
+        "api-port": { type: "string" },
+        "gateway-port": { type: "string" },
+        "xy2api-url": { type: "string" },
       },
     });
     // Origins are checked by publicOrigins: --origin, or all three.
@@ -508,6 +552,9 @@ if (
           ssoDomain: values["sso-domain"],
           project: values.project,
           cdn: values.cdn,
+          apiPort: values["api-port"],
+          gatewayPort: values["gateway-port"],
+          xy2apiUrl: values["xy2api-url"],
         }),
       ),
     );
