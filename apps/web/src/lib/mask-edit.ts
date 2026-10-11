@@ -23,6 +23,18 @@ export type MaskStroke = {
 };
 
 /** Long edge of the painted mask; the server scales it to the picture. */
+/**
+ * A line under the model picker in 局部重绘, or null. xAI takes the mask as a
+ * hint and redraws the whole picture (pre-launch site, 2026-10-11: a hat
+ * painted near the top came out on a cat at the bottom), so say so before
+ * the user pays for it.
+ */
+export function inpaintModelNote(model: { vendor?: string } | null): string | null {
+  return model?.vendor === "xai"
+    ? "Grok 会参照涂抹的地方重画整张图，没涂的地方也可能变化。只想改一小块时，换其他模型更稳。"
+    : null;
+}
+
 export const MASK_MAX_EDGE = 2048;
 /** Same floor as the server: less than this is not a real selection. */
 export const MASK_MIN_COVERAGE = 0.002;

@@ -166,7 +166,7 @@ export async function searchMarketplace(
         author?: { name?: string } | string;
         links?: { npm?: string; homepage?: string; repository?: string };
       };
-      score?: { detail?: { popularity?: number } };
+      downloads?: { monthly?: number; weekly?: number };
     }>;
     total: number;
   };
@@ -183,7 +183,9 @@ export async function searchMarketplace(
       description: pkg.description ?? "",
       author: authorName,
       version: pkg.version,
-      downloads: Math.round((obj.score?.detail?.popularity ?? 0) * 20000),
+      // The registry's real monthly count. This used to be popularity × 20000,
+      // which showed every package as "20.0k".
+      downloads: obj.downloads?.monthly ?? 0,
       keywords: pkg.keywords ?? [],
     };
     if (pkg.links?.homepage) result.homepage = pkg.links.homepage;

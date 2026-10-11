@@ -5,15 +5,24 @@ import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDownToLine,
+  Check,
+  ChevronDown,
   Download,
   ExternalLink,
   Loader2,
   Package,
   Search,
+  Sparkles,
   User,
+  Users,
 } from "lucide-react";
 
-import type { MarketplaceDetail, MarketplaceSkill } from "@loomic/shared";
+import type {
+  MarketplaceDetail,
+  MarketplaceSkill,
+  SkillCategory,
+  SkillListItem,
+} from "@loomic/shared";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +41,8 @@ import {
   searchMarketplace,
 } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
+import { SKILL_CATEGORY_LABELS } from "./categories";
+import { curatedCategories, curatedTags, filterCurated } from "./curated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,7 +50,14 @@ import { cn } from "@/lib/utils";
 
 interface MarketplacePanelProps {
   accessToken: () => string | undefined;
+  /** After a community install: reload the page's skill list. */
   onInstalled: () => Promise<void>;
+  /** The page's catalogue (with install state); curated rows are picked here. */
+  skills: SkillListItem[];
+  loading: boolean;
+  /** Opens the page's skill detail dialog (SKILL.md, 安装 / 卸载). */
+  onOpenSkill: (skill: SkillListItem) => void;
+  onInstallSkill: (skillId: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,9 +130,12 @@ function MarketplaceSkillCard({
           <User className="size-3" />
           {skill.author}
         </span>
-        <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
+        <span
+          className="inline-flex items-center gap-1 text-[11px] text-fg-muted"
+          title="npm 上最近一个月的下载量"
+        >
           <Download className="size-3" />
-          <span className="numeral">{formattedDownloads}</span>
+          月下载 <span className="numeral">{formattedDownloads}</span>
         </span>
       </div>
     </button>
@@ -249,13 +270,231 @@ function MarketplaceDetailDialog({
 }
 
 // ---------------------------------------------------------------------------
+// CuratedSkillCard
+// ---------------------------------------------------------------------------
+
+function CuratedSkillCard({
+  skill,
+  index,
+  onOpen,
+  onInstall,
+}: {
+  skill: SkillListItem;
+  index: number;
+  onOpen: (skill: SkillListItem) => void;
+  onInstall: (skillId: string) => Promise<void>;
+}) {
+  const [installing, setInstalling] = useState(false);
+  const tags = curatedTags(skill).slice(0, 3);
+
+  return (
+    // Same pattern as SkillCard: the name's ::after covers the card, the
+    // install button sits above it.
+    <div
+      style={{ "--stagger": Math.min(index, 12) } as CSSProperties}
+      className="animate-enter group relative flex flex-col rounded-[16px] bg-panel p-4 shadow-card transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-card-hover"
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <span className="shrink-0 rounded-[6px] bg-tint/[0.07] px-1.5 py-0.5 text-[11px] font-medium text-fg-soft">
+          {SKILL_CATEGORY_LABELS[skill.category] ?? skill.category}
+        </span>
+        <button
+          type="button"
+          onClick={() => onOpen(skill)}
+          className="min-w-0 cursor-pointer truncate text-left text-[15px] font-semibold text-fg outline-none after:absolute after:inset-0 after:rounded-[16px] focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-acc"
+        >
+          {skill.name}
+        </button>
+        {skill.isFeatured && (
+          <Sparkles aria-label="推荐" className="size-3.5 shrink-0 text-acc-text" />
+        )}
+      </div>
+
+      <p className="mb-3 line-clamp-2 flex-1 text-[13px] leading-relaxed text-fg-soft">
+        {skill.description}
+      </p>
+
+      <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-[6px] bg-tint/[0.05] px-1.5 py-0.5 text-[11px] text-fg-muted"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+        {skill.installed ? (
+          <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-fg-soft">
+            <Check aria-hidden className="size-3.5" />
+            已安装
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="accent"
+            disabled={installing}
+            className="relative z-10 shrink-0"
+            aria-label={`安装「${skill.name}」`}
+            onClick={async () => {
+              setInstalling(true);
+              try {
+                await onInstall(skill.id);
+              } finally {
+                setInstalling(false);
+              }
+            }}
+          >
+            {installing ? (
+              <Loader2 aria-hidden className="size-3.5 animate-spin" />
+            ) : (
+              <ArrowDownToLine aria-hidden className="size-3.5" />
+            )}
+            安装
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // MarketplacePanel
 // ---------------------------------------------------------------------------
 
+/**
+ * 市场: the curated skills first (written for this product's agent, Chinese,
+ * installed into the workspace like the official one). The npm / skills.sh
+ * search is kept below, folded, and labelled unreviewed: what it finds is
+ * mostly English coding helpers.
+ */
 export function MarketplacePanel({
   accessToken,
   onInstalled,
+  skills,
+  loading,
+  onOpenSkill,
+  onInstallSkill,
 }: MarketplacePanelProps) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<SkillCategory | null>(null);
+  const [communityOpen, setCommunityOpen] = useState(false);
+  const categories = curatedCategories(skills);
+  const shown = filterCurated(skills, { query, category });
+  const total = filterCurated(skills, { query: "", category: null }).length;
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap items-center gap-2 sm:mb-6">
+        <fieldset className="flex flex-wrap gap-1.5">
+          <legend className="sr-only">按分类筛选</legend>
+          {[{ value: null, label: "全部" }, ...categories].map((c) => (
+            <Button
+              key={c.value ?? "all"}
+              variant="secondary"
+              size="sm"
+              aria-pressed={category === c.value}
+              className={cn(
+                "min-h-[36px] sm:min-h-0",
+                category === c.value &&
+                  "bg-acc-soft text-acc-text hover:bg-acc-soft hover:text-acc-text",
+              )}
+              onClick={() => setCategory(c.value)}
+            >
+              {c.label}
+            </Button>
+          ))}
+        </fieldset>
+        <div className="relative order-last w-full sm:order-none sm:ml-auto sm:max-w-xs sm:flex-1">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-muted"
+          />
+          <input
+            type="search"
+            placeholder="搜索精选技能，如 小红书、主图"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="搜索精选技能"
+            className="h-11 w-full rounded-[10px] bg-tint/[0.06] pr-3 pl-8.5 text-sm text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted focus:shadow-[inset_0_0_0_1px_var(--acc)] sm:h-9"
+          />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 aria-label="正在加载" className="size-5 animate-spin text-fg-muted" />
+        </div>
+      ) : shown.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          {shown.map((skill, index) => (
+            <CuratedSkillCard
+              key={skill.id}
+              index={index}
+              skill={skill}
+              onOpen={onOpenSkill}
+              onInstall={onInstallSkill}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="animate-enter flex flex-col items-center justify-center py-16 text-center">
+          <p className="font-display text-[20px] text-fg">
+            {total === 0 ? "精选技能还没有上架" : "没有找到匹配的技能"}
+          </p>
+          <p className="mt-1.5 text-[13px] text-fg-soft">
+            {total === 0
+              ? "服务器还没有更新到带精选技能的版本，可以先在下方搜索社区技能"
+              : "换个关键词，或者看看「全部」"}
+          </p>
+        </div>
+      )}
+
+      <section className="mt-10 border-t border-line pt-6" aria-labelledby="community-skills">
+        <button
+          type="button"
+          aria-expanded={communityOpen}
+          onClick={() => setCommunityOpen((open) => !open)}
+          className="flex w-full cursor-pointer items-start gap-3 rounded-[12px] text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-tint/[0.07]">
+            <Users aria-hidden className="size-4 text-fg-soft" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span id="community-skills" className="block text-[15px] font-semibold text-fg">
+              社区技能
+            </span>
+            <span className="mt-0.5 block text-[13px] text-fg-soft">
+              来自 skills.sh / npm 社区，没有经过审核，大多是英文的编程类技能。安装前先点开看看内容。
+            </span>
+          </span>
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "mt-2 size-4 shrink-0 text-fg-muted transition-transform",
+              communityOpen && "rotate-180",
+            )}
+          />
+        </button>
+        {communityOpen && (
+          <div className="mt-5">
+            <CommunitySearch accessToken={accessToken} onInstalled={onInstalled} />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CommunitySearch
+// ---------------------------------------------------------------------------
+
+function CommunitySearch({
+  accessToken,
+  onInstalled,
+}: Pick<MarketplacePanelProps, "accessToken" | "onInstalled">) {
   const { success, error: showError } = useToast();
 
   // Search state
@@ -267,6 +506,8 @@ export function MarketplacePanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  // A failed search is not "no results": say the community is unreachable.
+  const [failed, setFailed] = useState(false);
 
   // Detail dialog state
   const [detailOpen, setDetailOpen] = useState(false);
@@ -305,6 +546,7 @@ export function MarketplacePanel({
           setSkills(result.skills);
           setTotal(result.total);
           setSearched(true);
+          setFailed(false);
         }
       } catch (err) {
         console.error("[marketplace] search failed:", err);
@@ -312,6 +554,7 @@ export function MarketplacePanel({
           setSkills([]);
           setTotal(0);
           setSearched(true);
+          setFailed(true);
         }
       } finally {
         if (seq === searchSeqRef.current) {
@@ -364,7 +607,7 @@ export function MarketplacePanel({
       try {
         await installMarketplaceSkill(token, packageName);
         setDetailOpen(false);
-        success("技能已安装");
+        success("已安装，可以在「已安装」里停用或删除");
         await onInstalled();
       } catch (err) {
         const msg =
@@ -389,10 +632,10 @@ export function MarketplacePanel({
         <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-muted" />
         <input
           type="search"
-          placeholder="搜索 skills.sh 市场"
+          placeholder="搜索社区技能（英文关键词更容易搜到）"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="搜索市场技能"
+          aria-label="搜索社区技能"
           className="h-11 w-full rounded-[10px] bg-tint/[0.06] pr-9 pl-8.5 text-sm text-fg caret-acc outline-none transition-shadow placeholder:text-fg-muted focus:shadow-[inset_0_0_0_1px_var(--acc)] sm:h-9"
         />
         {loading && (
@@ -402,7 +645,7 @@ export function MarketplacePanel({
 
       {/* Empty state - not yet searched */}
       {!searched && !loading && (
-        <div className="animate-enter flex flex-col items-center justify-center py-20 text-center">
+        <div className="animate-enter flex flex-col items-center justify-center py-10 text-center">
           <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
             <Package className="size-5 text-fg-muted" />
           </div>
@@ -410,22 +653,22 @@ export function MarketplacePanel({
             搜索社区技能
           </p>
           <p className="mt-1.5 text-[13px] text-fg-soft">
-            输入关键词搜索 skills.sh 上的社区技能包
+            输入关键词，例如 design、image、poster
           </p>
         </div>
       )}
 
       {/* Empty state - no results */}
       {searched && skills.length === 0 && !loading && (
-        <div className="animate-enter flex flex-col items-center justify-center py-20 text-center">
+        <div className="animate-enter flex flex-col items-center justify-center py-10 text-center">
           <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] bg-tint/[0.07]">
             <Search className="size-5 text-fg-muted" />
           </div>
           <p className="font-display text-[20px] text-fg">
-            没有找到匹配的技能
+            {failed ? "社区市场暂时连不上" : "没有找到匹配的技能"}
           </p>
           <p className="mt-1.5 text-[13px] text-fg-soft">
-            换个关键词再搜
+            {failed ? "稍后再试，或用「导入」粘贴 GitHub 地址" : "换个关键词再搜"}
           </p>
         </div>
       )}

@@ -2,13 +2,13 @@
 
 import { useCallback, useState } from "react";
 import {
+  BadgeCheck,
   Calendar,
   ChevronRight,
   Pen,
   ShieldCheck,
   Trash2,
   UserPen,
-  Users,
 } from "lucide-react";
 
 import type { SkillDetail, SkillFileEntry, SkillSource } from "@loomic/shared";
@@ -33,7 +33,8 @@ const SOURCE_CONFIG: Record<
   { label: string; icon: typeof ShieldCheck }
 > = {
   system: { label: "官方", icon: ShieldCheck },
-  community: { label: "社区", icon: Users },
+  // Only the curated 市场 skills are community rows; imports are "user".
+  community: { label: "精选", icon: BadgeCheck },
   user: { label: "自定义", icon: UserPen },
 };
 

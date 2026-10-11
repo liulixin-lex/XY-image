@@ -13,6 +13,7 @@ import {
 } from "@loomic/shared";
 
 import { importSkillFromUrl, SkillImportError } from "../features/skills/skill-import-service.js";
+import { SKILL_IMPORT_MESSAGES, skillSlug } from "../features/skills/slug.js";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
@@ -153,7 +154,7 @@ export async function registerSkillRoutes(
       if (!user) return sendUnauthenticated(reply);
 
       const payload = skillCreateRequestSchema.parse(request.body);
-      const slug = generateSlug(payload.name);
+      const slug = skillSlug(payload.name);
       const client = options.createUserClient(user.accessToken);
 
       const { data, error } = await untypedFrom(client, "skills")
@@ -177,7 +178,7 @@ export async function registerSkillRoutes(
           return sendSkillError(
             reply,
             "skill_create_failed",
-            "A skill with a similar name already exists. Please choose a different name.",
+            "技能标识冲突了，请再点一次创建",
             409,
           );
         }
@@ -237,7 +238,23 @@ export async function registerSkillRoutes(
       // Import skill from external URL (downloads SKILL.md + associated files)
       const imported = await importSkillFromUrl(url);
 
-      const slug = generateSlug(imported.manifest.name);
+      // The slug no longer collides on the name, so look for the same source
+      // explicitly: importing a link twice gave the agent two copies.
+      const { data: existing } = await untypedFrom(client, "skills")
+        .select("id")
+        .eq("created_by", user.id)
+        .eq("metadata->>source_url", imported.sourceUrl)
+        .limit(1);
+      if (existing?.length) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          "这个地址的技能已经导入过了。要更新，先在「已安装」里删除旧的再导入",
+          409,
+        );
+      }
+
+      const slug = skillSlug(imported.manifest.name);
 
       // Persist skill to DB (source = "community" for externally imported skills)
       const { data: skillData, error: skillError } = await untypedFrom(client, "skills")
@@ -263,9 +280,9 @@ export async function registerSkillRoutes(
       if (skillError) {
         request.log.error({ err: skillError }, "skill import DB insert failed");
         if (skillError.code === "23505") {
-          return sendSkillError(reply, "skill_import_failed", "A skill with this name already exists.", 409);
+          return sendSkillError(reply, "skill_import_failed", "技能标识冲突了，请再导入一次", 409);
         }
-        return sendSkillError(reply, "skill_import_failed", "Failed to save imported skill.");
+        return sendSkillError(reply, "skill_import_failed", "技能没有保存成功，请稍后再试");
       }
 
       // Insert associated files (scripts/, references/, assets/)
@@ -309,11 +326,12 @@ export async function registerSkillRoutes(
         return reply.code(400).send({ issues: (error as { issues: unknown[] }).issues, message: "Invalid request body" });
       }
       if (error instanceof SkillImportError) {
+        // The English detail (status, path, YAML error) stays in the log.
         request.log.warn({ code: error.code, message: error.message }, "skill import rejected");
-        return sendSkillError(reply, "skill_import_failed", error.message, 400);
+        return sendSkillError(reply, "skill_import_failed", SKILL_IMPORT_MESSAGES[error.code], 400);
       }
       request.log.error({ err: error }, "skill import error");
-      return sendSkillError(reply, "skill_import_failed", "Failed to import skill.");
+      return sendSkillError(reply, "skill_import_failed", "导入失败，请稍后再试");
     }
   });
 
@@ -330,8 +348,8 @@ export async function registerSkillRoutes(
       // Build the update object with only provided fields
       const updates: Record<string, unknown> = {};
       if (payload.name !== undefined) {
+        // The slug is the agent's path; a rename keeps it (see skillSlug).
         updates.name = payload.name;
-        updates.slug = generateSlug(payload.name);
       }
       if (payload.description !== undefined) updates.description = payload.description;
       if (payload.category !== undefined) updates.category = payload.category;
@@ -738,14 +756,6 @@ function mapSkillDetailRow(row: SkillRow) {
   };
 }
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 100);
-}
 
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
