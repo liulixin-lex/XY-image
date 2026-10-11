@@ -1,4 +1,5 @@
 import type { LoomicError } from "@loomic/shared";
+import { findCause } from "../../utils/error-chain.js";
 import {
   GENERIC_CLIENT_ERROR,
   sanitizeErrorForClient,
@@ -31,9 +32,9 @@ export function chatRunError(error: unknown, custom = false): LoomicError {
 }
 
 function findBillingGuardError(error: unknown): BillingGuardError | undefined {
-  let current = error;
-  for (let i = 0; i < 8 && current && typeof current === "object"; i++) {
-    if (current instanceof BillingGuardError) return current;
-    current = "cause" in current ? current.cause : undefined;
-  }
+  return findCause(
+    error,
+    (candidate): candidate is BillingGuardError =>
+      candidate instanceof BillingGuardError,
+  );
 }
