@@ -1,0 +1,28 @@
+{
+  "scenario": "gateway.responses.moderation_blocked",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-5.4",
+      "stream": true,
+      "input": "fixture xylabblockedword"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "75535390-015a-4268-abe9-d36e30e2afc8",
+      "x-request-id": "b76ce2c3-8c86-4b79-a8f0-6bfeb066c27a"
+    },
+    "json": {
+      "error": {
+        "message": "内容审计命中风险规则，请调整输入后重试",
+        "type": "content_policy_violation"
+      }
+    }
+  }
+}

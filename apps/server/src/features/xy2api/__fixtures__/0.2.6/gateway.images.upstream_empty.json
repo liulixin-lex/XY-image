@@ -1,0 +1,27 @@
+{
+  "scenario": "gateway.images.upstream_empty",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture [[mock:empty]]"
+    }
+  },
+  "response": {
+    "status": 502,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "f05f8d7c-7003-4b8c-9e3a-97918dcfeec6",
+      "x-request-id": "df33b68e-c468-48a6-961c-47b6fedee7b1"
+    },
+    "json": {
+      "error": {
+        "message": "Upstream service temporarily unavailable",
+        "type": "upstream_error"
+      }
+    }
+  }
+}

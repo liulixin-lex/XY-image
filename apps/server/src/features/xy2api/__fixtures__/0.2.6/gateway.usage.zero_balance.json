@@ -1,0 +1,51 @@
+{
+  "scenario": "gateway.usage.zero_balance",
+  "tier": "C",
+  "request": {
+    "method": "GET",
+    "path": "/v1/usage",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "c4e3c5ef-e46a-460c-a94f-3d6d6e16aa13",
+      "x-request-id": "3c23f0f3-203c-4095-8061-ad1d4dd14a22"
+    },
+    "json": {
+      "balance": 0,
+      "daily_usage": [],
+      "isValid": true,
+      "mode": "unrestricted",
+      "planName": "钱包余额",
+      "remaining": 0,
+      "unit": "USD",
+      "usage": {
+        "average_duration_ms": 0,
+        "rpm": 0,
+        "today": {
+          "actual_cost": 0,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "requests": 0,
+          "total_tokens": 0
+        },
+        "total": {
+          "actual_cost": 0,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "requests": 0,
+          "total_tokens": 0
+        },
+        "tpm": 0
+      }
+    }
+  }
+}
