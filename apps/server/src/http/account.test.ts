@@ -105,6 +105,88 @@ describe("public account metadata", () => {
       await app.close();
     }
   });
+  it("reads past the balance cache on ?fresh=1, at most every 2 s", async () => {
+    // Pre-launch site: a batch's second picture left the header one charge
+    // behind for ~16 s because the refresh after it hit the 15 s cache.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const env = loadServerEnv(
+      {},
+      {
+        XY2API_BASE_URL: "https://example.com",
+        LOOMIC_SECRET_KEY: randomBytes(32).toString("base64"),
+        SSO_EMAIL_DOMAIN: "sso.example.com",
+      },
+    );
+    const db = memoryDatabase({
+      xy2api_accounts: [
+        {
+          user_id: "user-1",
+          xy2api_user_id: 7,
+          email: "real@example.com",
+          session_state: "active",
+          access_token_enc: "access-ciphertext",
+          refresh_token_enc: "refresh-ciphertext",
+        },
+      ],
+    });
+    const services = createXy2apiServices(env, () => db.admin);
+    vi.spyOn(services.accounts, "getAccessToken").mockResolvedValue("token");
+    vi.spyOn(services.client, "listKeys").mockResolvedValue([
+      {
+        id: 7,
+        key: "synthetic-key-0000",
+        name: "Image",
+        status: "active",
+        quota: 0,
+        quota_used: 0,
+        group: {
+          id: 1,
+          name: "Image",
+          platform: "openai",
+          status: "active",
+          allow_image_generation: true,
+        },
+      },
+    ]);
+    vi.spyOn(services.client, "listModels").mockResolvedValue(["gpt-image-2"]);
+    const usage = vi
+      .spyOn(services.client, "getUsage")
+      .mockResolvedValueOnce({ balance: 4.37, mode: "wallet" })
+      .mockResolvedValueOnce({ balance: 4.32, mode: "wallet" })
+      .mockResolvedValue({ balance: 4.27, mode: "wallet" });
+    await services.keys.syncKeys("user-1");
+    const app = Fastify();
+    registerAccountRoutes(app, {
+      ...services,
+      env,
+      auth: {
+        authenticate: async () => ({
+          id: "user-1",
+          accessToken: "synthetic-supabase-token",
+          email: "u7@sso.example.com",
+          userMetadata: {},
+        }),
+      },
+    });
+    const amount = async (url: string) =>
+      (await app.inject({ method: "GET", url })).json().balance.amount;
+    try {
+      expect(await amount("/api/account")).toBe(4.37);
+      vi.setSystemTime(Date.now() + 5000);
+      expect(await amount("/api/account")).toBe(4.37);
+      expect(await amount("/api/account?fresh=1")).toBe(4.32);
+      // Within the floor: served from the fetch just made.
+      vi.setSystemTime(Date.now() + 1000);
+      expect(await amount("/api/account?fresh=1")).toBe(4.32);
+      vi.setSystemTime(Date.now() + 1500);
+      expect(await amount("/api/account?fresh=1")).toBe(4.27);
+      expect(await amount("/api/account")).toBe(4.27);
+      expect(usage).toHaveBeenCalledTimes(3);
+    } finally {
+      await app.close();
+      vi.useRealTimers();
+    }
+  });
   it("shows a $0 balance and picks up chat models after a recharge", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const env = loadServerEnv(
