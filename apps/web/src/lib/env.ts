@@ -20,14 +20,17 @@ export function getXy2apiWebUrl(): string | null {
 }
 
 /**
- * Origin of the configured Supabase project (self-hosted or supabase.co), or
- * null when unset or malformed. Used to recognise our own storage URLs.
+ * Origin and path of the configured Supabase project (self-hosted or
+ * supabase.co), or null when unset or malformed. The path is "" normally and
+ * e.g. "/supabase" when the site serves Supabase on its own domain. Used to
+ * recognise our own storage URLs.
  */
-export function getSupabaseOrigin(): string | null {
+export function getSupabaseBase(): { origin: string; path: string } | null {
   const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   if (!configuredUrl) return null;
   try {
-    return new URL(configuredUrl).origin;
+    const url = new URL(configuredUrl);
+    return { origin: url.origin, path: url.pathname.replace(/\/+$/, "") };
   } catch {
     return null;
   }

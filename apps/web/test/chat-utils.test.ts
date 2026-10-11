@@ -26,6 +26,18 @@ describe("isImageUrl", () => {
     ).toBe(true);
   });
 
+  it("recognises storage served under a path on the site's own domain", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://site.example.test/supabase");
+    expect(
+      isImageUrl(
+        "https://site.example.test/supabase/storage/v1/object/public/project-assets/u/1/out",
+      ),
+    ).toBe(true);
+    expect(
+      isImageUrl("https://site.example.test/storage/v1/object/public/a/b"),
+    ).toBe(false);
+  });
+
   it("ignores other hosts and non-storage paths", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://db.example.test");
     expect(
