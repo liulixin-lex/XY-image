@@ -66,6 +66,7 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
+import { registerCspReportRoute } from "./http/csp-report.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
@@ -302,6 +303,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       ? Promise.resolve({ ok: false, checks: { accepting: false } })
       : readiness.check(),
   );
+  void registerCspReportRoute(app);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app, { env });
   void registerRunRoutes(app, agentRuns, {

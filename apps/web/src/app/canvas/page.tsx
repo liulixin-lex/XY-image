@@ -28,7 +28,7 @@ import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { imageSourceOf } from "../../lib/node-canvas/render";
 import { useAccount } from "../../lib/account-context";
-import { BRAND } from "../../lib/brand";
+import { BRAND, pageTitle } from "../../lib/brand";
 import { cn } from "../../lib/utils";
 import {
   ApiApplicationError,
@@ -46,7 +46,9 @@ function CanvasPageContent() {
   // Capture prompt once — router.replace will strip it from URL, but the
   // value must survive for the auto-send effect in ChatSidebar.
   const [initialPrompt] = useState(() => searchParams.get("prompt") ?? undefined);
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading, signedOutOnPurpose } = useAuth();
+  const signedOutOnPurposeRef = useRef(signedOutOnPurpose);
+  signedOutOnPurposeRef.current = signedOutOnPurpose;
   const router = useRouter();
 
   const [canvasData, setCanvasData] = useState<{
@@ -68,6 +70,10 @@ function CanvasPageContent() {
   });
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("未命名项目");
+  // The tab shows which project this is (FINDINGS W1).
+  useEffect(() => {
+    document.title = pageTitle(projectName);
+  }, [projectName]);
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
 
   // The node canvas editor's handle (null until it mounts).
@@ -230,6 +236,10 @@ function CanvasPageContent() {
   useEffect(() => {
     if (authLoading) return;
     if (!userId) {
+      if (signedOutOnPurposeRef.current) {
+        routerRef.current.replace("/login");
+        return;
+      }
       const next = encodeURIComponent(window.location.pathname + window.location.search);
       routerRef.current.replace(`/login?next=${next}`);
       return;

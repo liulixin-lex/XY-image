@@ -15,15 +15,19 @@ import { useAuth } from "@/lib/auth-context";
  * useAmbientImage(); pages that don't keep the last picture's colour.
  */
 export default function WorkspaceLayout({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOutOnPurpose } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
+      if (signedOutOnPurpose) {
+        router.replace("/login");
+        return;
+      }
       const next = encodeURIComponent(window.location.pathname + window.location.search);
       router.replace(`/login?next=${next}`);
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, signedOutOnPurpose]);
 
   if (loading) return <LoadingScreen />;
   if (!user) return null;

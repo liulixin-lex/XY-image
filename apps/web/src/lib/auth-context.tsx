@@ -29,6 +29,13 @@ interface AuthContextValue {
   loading: boolean;
   /** Revoke the main-site integration session (best effort), then sign out locally. */
   signOut: () => Promise<void>;
+  /**
+   * True after signOut() until the next sign-in. Guards send such a user to
+   * a plain /login, not /login?next=<this page> (FINDINGS U4): the next
+   * person to sign in on this device should not land in the last one's
+   * settings.
+   */
+  signedOutOnPurpose: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -40,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signedOutOnPurpose, setSignedOutOnPurpose] = useState(false);
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
   // Guards against the expiry handler and an explicit sign-out racing, and
@@ -61,7 +69,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       setLoading(false);
-      if (newSession) signingOutRef.current = false;
+      if (newSession) {
+        signingOutRef.current = false;
+        setSignedOutOnPurpose(false);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -95,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (signingOutRef.current) return;
     signingOutRef.current = true;
+    // Set before the session clears, so guards see it on the same render.
+    setSignedOutOnPurpose(true);
     const token = sessionRef.current?.access_token;
     if (token) await logoutXy2api(token);
     const supabase = getSupabaseBrowserClient();
@@ -108,8 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, session, loading, signOut }),
-    [user, session, loading, signOut],
+    () => ({ user, session, loading, signOut, signedOutOnPurpose }),
+    [user, session, loading, signOut, signedOutOnPurpose],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

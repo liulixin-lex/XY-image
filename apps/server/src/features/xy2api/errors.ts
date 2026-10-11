@@ -126,7 +126,7 @@ export const gatewayMessages = {
   key_quota_exhausted: "当前 Key 额度已用完，请切换 Key 或去主站调整",
   rate_limited: "请求过于频繁，请稍后再试",
   invalid_input: "生成参数无效，请检查输入",
-  safety_filter: "内容审核没通过，可以改一下提示词再试",
+  safety_filter: "内容未通过审核，有时是误判，可以改一下提示词再试",
   request_rejected: "主站拒绝了这次请求，请到主站查看账号和 Key 状态",
   upstream_busy: "主站暂时繁忙，请稍后再试",
   upstream_too_large: "图片响应过大，请降低画质后重试",

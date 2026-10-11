@@ -121,8 +121,10 @@ const CATALOG: Record<string, IssueSpec> = {
     maybeCharged: false,
   },
   safety_filter: {
-    title: "内容审核没通过",
-    message: "主站的内容审核拦下了这次请求，有时是误判。改一下提示词或参考图再试。",
+    title: "内容未通过审核",
+    // Upstream moderation misjudges now and then (FINDINGS G1: 2 of 4 equal
+    // requests refused): say so, so a rewording looks worth trying.
+    message: "有时是误判，改一下提示词或参考图再试。",
     action: "none",
     weight: "toast",
     maybeCharged: false,

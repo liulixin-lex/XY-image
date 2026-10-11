@@ -3,7 +3,11 @@ import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createDeepAgent } from "deepagents";
 import { describe, expect, it } from "vitest";
 import { loomicAgentMiddleware } from "../../agent/deep-agent.js";
-import { GatewayError, mapGatewayError } from "../xy2api/errors.js";
+import {
+  GatewayError,
+  gatewayMessages,
+  mapGatewayError,
+} from "../xy2api/errors.js";
 import { ChatProviderError } from "./errors.js";
 import { chatRunError } from "./run-error.js";
 
@@ -26,7 +30,7 @@ describe("chatRunError", () => {
     });
     expect(chatRunError(error)).toEqual({
       code: "run_failed",
-      message: "内容未通过审核，请修改提示词",
+      message: gatewayMessages.safety_filter,
       details: { gatewayCode: "safety_filter" },
     });
   });
@@ -97,7 +101,7 @@ describe("chatRunError", () => {
       }),
     );
     expect(chatRunError(refusal)).toMatchObject({
-      message: "内容未通过审核，请修改提示词",
+      message: gatewayMessages.safety_filter,
     });
     const provider = await runWith(
       Object.assign(new Error("Connection error."), {

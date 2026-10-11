@@ -94,7 +94,7 @@ describe("ToolBlockView", () => {
 
     expect(screen.getAllByText("没生成出来")).toHaveLength(1);
     expect(
-      screen.getByText("内容未通过审核。修改提示词或参考图后再试。"),
+      screen.getByText("内容未通过审核。有时是误判，改一下提示词或参考图再试。"),
     ).toBeInTheDocument();
     // The generic "生成图片 / error: …" card does not duplicate it.
     expect(screen.queryByText("生成图片")).not.toBeInTheDocument();

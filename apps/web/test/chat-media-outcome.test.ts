@@ -21,7 +21,7 @@ describe("describeMediaOutcome", () => {
     ).toEqual({
       tone: "failed",
       title: "没生成出来",
-      message: "内容未通过审核。修改提示词或参考图后再试。",
+      message: "内容未通过审核。有时是误判，改一下提示词或参考图再试。",
     });
     // Refused before anything was sent (billing guard).
     expect(

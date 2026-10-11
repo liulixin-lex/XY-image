@@ -117,11 +117,16 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header X-Frame-Options "DENY" always;
-        # No script-src yet: the Next static export has inline scripts;
-        # tightening it needs nonces or hashes first.
+        # No enforced script-src yet: the Next static export has inline
+        # scripts. The full policy runs as Report-Only first (FINDINGS W2);
+        # violations go to /api/csp-report and the API log ("[csp]").
         add_header Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" always;
+        add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'; report-uri /api/csp-report" always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     }
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+    # publish-web.mjs writes .gz copies next to the build files (and .br,
+    # used by Caddy; nginx needs the brotli module for those).
+    gzip_static on;
 }
