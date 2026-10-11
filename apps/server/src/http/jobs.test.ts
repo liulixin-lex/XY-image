@@ -54,6 +54,8 @@ async function route() {
     cancelUnsentInBatch: vi.fn(async () => [
       "00000000-0000-4000-8000-000000000002",
     ]),
+    listJobs: vi.fn(async () => [] as ReturnType<typeof job>[]),
+    getJob: vi.fn(async () => job(0, {})),
   };
   const billing = {
     withUserLock: (_id: string, fn: () => Promise<unknown>) => fn(),
@@ -229,5 +231,35 @@ describe("studio batch routes", () => {
       url: "/api/jobs/image-batches/not-a-uuid/cancel",
     });
     expect(bad.statusCode).toBe(400);
+  });
+});
+
+describe("job responses", () => {
+  it("cut inline reference images to their header; URLs pass through", async () => {
+    const { app, jobService } = await route();
+    const url =
+      "https://site.example.test/supabase/storage/v1/object/public/project-assets/u/a.png";
+    const inline = `data:image/jpeg;base64,${"A".repeat(400_000)}`;
+    // An agent job from before the fix kept its reference inline.
+    const stored = job(1, { prompt: "夜景海报", input_images: [inline, url] });
+    jobService.listJobs.mockResolvedValue([stored]);
+    jobService.getJob.mockResolvedValue(stored);
+    for (const path of ["/api/jobs", `/api/jobs/${stored.id}`]) {
+      const response = await app.inject({ method: "GET", url: path });
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      const sent = body.jobs?.[0] ?? body.job;
+      // The studio shows the count (查看大图: 参考图 2 张); the bytes stay home.
+      expect(sent.payload.input_images).toEqual([
+        "data:image/jpeg;base64,",
+        url,
+      ]);
+      expect(sent.payload.prompt).toBe("夜景海报");
+      expect(response.body.length).toBeLessThan(4000);
+    }
+    expect(stored.payload).toEqual({
+      prompt: "夜景海报",
+      input_images: [inline, url],
+    });
   });
 });

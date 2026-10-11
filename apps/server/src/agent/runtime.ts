@@ -248,15 +248,27 @@ function escapeXmlAttribute(value: string): string {
 }
 
 /**
- * Build a lookup map from assetId to base64 data URI.
+ * Build a lookup map from assetId to the image reference tools pass on.
  * Stored in configurable so tools can resolve assetId references.
+ *
+ * An attachment read from Storage keeps its URL: the worker fetches it again
+ * when the job runs. Only an attachment that arrived inline stays a data URI.
+ * A data URI is the whole image (about 3 MB for a 2K poster); it would be
+ * stored in the job payload and sent with every /api/jobs poll.
  */
-export function buildAttachmentDataMap(
-  downloaded: Array<{ assetId: string; mimeType: string; base64: string }>,
+export function buildAttachmentRefMap(
+  downloaded: Array<{
+    assetId: string;
+    url: string;
+    mimeType: string;
+    base64: string;
+  }>,
 ): Record<string, string> {
   const map: Record<string, string> = {};
   for (const d of downloaded) {
-    map[d.assetId] = `data:${d.mimeType};base64,${d.base64}`;
+    map[d.assetId] = /^https?:\/\//i.test(d.url)
+      ? d.url
+      : `data:${d.mimeType};base64,${d.base64}`;
   }
   return map;
 }
@@ -1043,14 +1055,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const hasAttachments = run.attachments && run.attachments.length > 0;
           let userMessage: HumanMessage;
-          let attachmentDataMap: Record<string, string> = {};
+          let attachmentRefMap: Record<string, string> = {};
 
           if (hasAttachments) {
             // Download images and build parallel data structures:
             // 1. imageBlocks: base64 content parts for LLM vision
-            // 2. downloaded: assetId → base64 mapping for tool resolution
+            // 2. downloaded: assetId → URL or base64 for tool resolution
             const downloaded: Array<{
               assetId: string;
+              url: string;
               mimeType: string;
               base64: string;
             }> = [];
@@ -1072,6 +1085,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
                   downloaded.push({
                     assetId: a.assetId,
+                    url: a.url,
                     mimeType: mime,
                     base64: b64,
                   });
@@ -1103,8 +1117,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               canvasSummary,
             );
 
-            // Build assetId → data URI map for tool-level resolution
-            attachmentDataMap = buildAttachmentDataMap(downloaded);
+            // Build assetId → image reference map for tool-level resolution
+            attachmentRefMap = buildAttachmentRefMap(downloaded);
 
             userMessage = new HumanMessage({
               content: [
@@ -1134,7 +1148,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.canvasId ||
               run.accessToken ||
               run.userId ||
-              Object.keys(attachmentDataMap).length > 0
+              Object.keys(attachmentRefMap).length > 0
                 ? {
                     configurable: {
                       ...(run.threadId ? { thread_id: run.threadId } : {}),
@@ -1143,8 +1157,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         ? { access_token: run.accessToken }
                         : {}),
                       ...(run.userId ? { user_id: run.userId } : {}),
-                      ...(Object.keys(attachmentDataMap).length > 0
-                        ? { user_attachment_map: attachmentDataMap }
+                      ...(Object.keys(attachmentRefMap).length > 0
+                        ? { user_attachment_map: attachmentRefMap }
                         : {}),
                     },
                   }
