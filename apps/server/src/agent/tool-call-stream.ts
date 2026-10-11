@@ -10,7 +10,14 @@
  * own index. Streams that already number their calls pass through byte for
  * byte; anything that is not JSON with `choices[].delta.tool_calls` is left
  * alone (the Responses API stream has no `choices`).
+ *
+ * It also turns an error the gateway reports inside a 200 stream into a
+ * thrown error. LangChain's Responses converter ignores `error` and
+ * `response.failed` events, so production (2026-10-11, gpt-6-luna, an
+ * upstream 503 on the second turn) saw the turn end empty and the run
+ * reported "completed" with nothing on screen (FINDINGS A2).
  */
+import { GatewayError, mapGatewayError, record } from "../features/xy2api/errors.js";
 
 type ToolCallDelta = { index?: unknown; id?: unknown };
 type ChoiceState = {
@@ -67,6 +74,33 @@ export function createToolCallIndexer() {
   };
 }
 
+/**
+ * The error a stream event reports, if it is one: Responses API `error` /
+ * `response.failed`, or a chat-completions chunk carrying `error`.
+ */
+export function streamEventError(payload: unknown): GatewayError | null {
+  const event = record(payload);
+  const error =
+    event.type === "error"
+      ? record(event.error ?? event)
+      : event.type === "response.failed"
+        ? record(record(event.response).error)
+        : !("choices" in event) && event.error && typeof event.error === "object"
+          ? record(event.error)
+          : null;
+  if (!error) return null;
+  const code = String(error.code ?? error.type ?? "");
+  // No HTTP status mid-stream: an overload reads as 503, anything else 502.
+  const status = /unavailable|overload|capacity|busy|503/i.test(code) ? 503 : 502;
+  return new GatewayError(
+    mapGatewayError({
+      status,
+      body: { error: { ...error, type: error.type ?? code } },
+      answeredByXy2api: true,
+    }),
+  );
+}
+
 /** Wraps a fetch Response; only `text/event-stream` bodies are rewritten. */
 export function separateToolCallIndexes(response: Response): Response {
   const type = response.headers.get("content-type") ?? "";
@@ -76,6 +110,7 @@ export function separateToolCallIndexes(response: Response): Response {
   const encoder = new TextEncoder();
   let buffer = "";
   let warned = false;
+  let failed: GatewayError | null = null;
   const rewrite = (line: string) => {
     if (!line.startsWith("data:")) return line;
     const data = line.slice(5).trim();
@@ -84,6 +119,14 @@ export function separateToolCallIndexes(response: Response): Response {
     try {
       payload = JSON.parse(data);
     } catch {
+      return line;
+    }
+    const streamError = streamEventError(payload);
+    if (streamError) {
+      failed ??= streamError;
+      console.warn(
+        `[chat-stream] the provider reported an error inside the stream: ${streamError.code}`,
+      );
       return line;
     }
     if (!renumber(payload)) return line;
@@ -101,14 +144,17 @@ export function separateToolCallIndexes(response: Response): Response {
         buffer += decoder.decode(chunk, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        if (lines.length)
-          controller.enqueue(
-            encoder.encode(`${lines.map(rewrite).join("\n")}\n`),
-          );
+        if (lines.length) {
+          const text = `${lines.map(rewrite).join("\n")}\n`;
+          if (failed) return controller.error(failed);
+          controller.enqueue(encoder.encode(text));
+        }
       },
       flush(controller) {
         buffer += decoder.decode();
-        if (buffer) controller.enqueue(encoder.encode(rewrite(buffer)));
+        const text = buffer ? rewrite(buffer) : "";
+        if (failed) return controller.error(failed);
+        if (text) controller.enqueue(encoder.encode(text));
       },
     }),
   );

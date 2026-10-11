@@ -14,6 +14,7 @@ import { adaptDeepAgentStream } from "./stream-adapter.js";
 import {
   createToolCallIndexer,
   separateToolCallIndexes,
+  streamEventError,
 } from "./tool-call-stream.js";
 
 // What o10.top sent for gemini-3.1-pro on 2026-10-11: two parallel read_file
@@ -362,5 +363,83 @@ describe("a run with no output", () => {
       "message.delta",
       "run.completed",
     ]);
+  });
+});
+
+// FINDINGS A2 (production 2026-10-11): runs that read a skill and the
+// canvas, then lost the last turn, ended "completed" with nothing on screen.
+describe("a run that only read things", () => {
+  async function run(events: unknown[]) {
+    const out = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "c1",
+      runId: "run_1",
+      sessionId: "s1",
+      stream: (async function* () {
+        yield* events;
+      })(),
+    }))
+      out.push(event);
+    warn.mockRestore();
+    info.mockRestore();
+    return out;
+  }
+  const tool = (name: string, id: string, output: unknown) => [
+    { event: "on_tool_start", name, run_id: id, data: { input: {} } },
+    { event: "on_tool_end", name, run_id: id, data: { output } },
+  ];
+  it("fails when no text, picture or canvas change came out", async () => {
+    const out = await run([
+      ...tool("read_file", "t1", "skill text"),
+      ...tool("inspect_canvas", "t2", { elements: [] }),
+    ]);
+    expect(out.at(-1)).toMatchObject({
+      type: "run.failed",
+      error: { message: "这次没有得到回复，可以重试，或换一个对话模型" },
+    });
+  });
+  it("completes after a canvas change without text", async () => {
+    const out = await run([...tool("manipulate_canvas", "t1", { ok: true })]);
+    expect(out.at(-1)).toMatchObject({ type: "run.completed" });
+  });
+});
+
+// FINDINGS A2: an upstream 503 on the second turn arrived inside a 200
+// Responses stream; LangChain ignored it and the turn ended empty.
+describe("errors reported inside a stream", () => {
+  it("recognises Responses and chat-completions error events", () => {
+    expect(
+      streamEventError({
+        type: "error",
+        code: "service_unavailable_error",
+        message: "Upstream service unavailable",
+      }),
+    ).toMatchObject({ code: "upstream_busy" });
+    expect(
+      streamEventError({
+        type: "response.failed",
+        response: { error: { code: "server_error", message: "boom" } },
+      }),
+    ).toMatchObject({ code: "upstream_busy" });
+    expect(
+      streamEventError({
+        error: { message: "内容审计命中风险规则，请调整输入后重试", type: "content_policy_violation" },
+      }),
+    ).toMatchObject({ code: "safety_filter" });
+    expect(streamEventError({ type: "response.output_text.delta", delta: "hi" })).toBeNull();
+    expect(streamEventError({ choices: [], error: null })).toBeNull();
+  });
+  it("turns the stream into a thrown error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const response = separateToolCallIndexes(
+      sse([
+        { type: "response.created", response: { id: "r1" } },
+        { type: "error", code: "service_unavailable_error", message: "unavailable" },
+      ]),
+    );
+    await expect(response.text()).rejects.toMatchObject({ code: "upstream_busy" });
+    warn.mockRestore();
   });
 });

@@ -53,7 +53,16 @@ describe("image catalog", () => {
   it("falls back by platform only when no image model is advertised", () => {
     expect(matchImageModels(catalog, "grok", ["gpt-4.1"])).toEqual([
       "grok-imagine-image-2.0",
+      "grok-imagine-image-quality",
+      "grok-imagine-image",
     ]);
+    // FINDINGS K1: what the Grok-image group's /v1/models returns.
+    expect(
+      matchImageModels(catalog, "grok", [
+        "grok-imagine-image-quality",
+        "grok-imagine-image-2.0",
+      ]),
+    ).toEqual(["grok-imagine-image-2.0", "grok-imagine-image-quality"]);
     expect(
       matchImageModels(catalog, "openai", ["gpt-image-2.5-flare", "gpt-5.5"]),
     ).toEqual(["gpt-image-2.5-flare"]);
@@ -83,6 +92,8 @@ describe("image catalog", () => {
       "nano-banana-2.1",
       "nano-banana-pro",
       "grok-imagine-image-2.0",
+      "grok-imagine-image-quality",
+      "grok-imagine-image",
       "gemini-3.1-flash-image",
     ]);
     expect(pick("gpt-image-2.5-flare")).toMatchObject({

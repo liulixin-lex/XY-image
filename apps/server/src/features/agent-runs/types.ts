@@ -2,7 +2,9 @@ export type PersistedAgentRunStatus =
   | "accepted"
   | "running"
   | "completed"
-  | "failed";
+  | "failed"
+  /** stopped by the user (migration 20261011000005) */
+  | "canceled";
 
 export type CreateAcceptedAgentRunInput = {
   model?: string;

@@ -102,6 +102,44 @@ describe("user key synchronization", () => {
       expect(fixture.tables.xy2api_api_keys?.[0]?.image_capable).toBe(false);
     },
   );
+  it("does not offer a Gemini group with image generation off for images", async () => {
+    // FINDINGS K3: groups 26/27 list Gemini image models, but the main site
+    // refuses them because the group has image generation off.
+    const fixture = setup();
+    vi.spyOn(fixture.client, "listModels").mockResolvedValue([
+      "gemini-3.1-flash-image",
+      "gemini-3.8-flash",
+    ]);
+    fixture.list.mockResolvedValue([
+      {
+        ...fixture.remote,
+        group: {
+          ...fixture.remote.group,
+          platform: "gemini",
+          allow_image_generation: false,
+        },
+      },
+    ]);
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      image_capable: false,
+      chat_models: ["gemini-3.8-flash"],
+    });
+  });
+  it("remembers the group id of a key whose group was deleted", async () => {
+    // FINDINGS K5: the main site returns group_id with group null.
+    const fixture = setup();
+    fixture.list.mockResolvedValue([
+      { ...fixture.remote, group_id: 31, group: null },
+    ]);
+    await fixture.keys.syncKeys("user-1");
+    expect(fixture.tables.xy2api_api_keys?.[0]).toMatchObject({
+      group_id: 31,
+      group_name: null,
+      image_capable: false,
+      chat_models: [],
+    });
+  });
   it("keeps a $0 key selectable and points to recharge", async () => {
     const fixture = setup();
     // xy2api refuses /v1/models before it looks at the key when the balance is 0.

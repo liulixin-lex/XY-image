@@ -77,6 +77,8 @@ export type RemoteKey = {
   expires_at?: string | null | undefined;
   ip_whitelist?: string[] | undefined;
   ip_blacklist?: string[] | undefined;
+  /** set with `group` null when the key's group was deleted on the main site */
+  group_id?: number | null | undefined;
   group?:
     | {
         id: number;
@@ -162,6 +164,7 @@ const remoteKeySchema = z.object({
   expires_at: z.string().nullish().catch(null),
   ip_whitelist: stringList,
   ip_blacklist: stringList,
+  group_id: wireId.nullish().catch(null),
   group: remoteGroupSchema.nullish().catch(null),
 });
 const usageSchema = z.object({

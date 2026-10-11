@@ -232,6 +232,10 @@ export class KeyService {
     previous: KeyRow | undefined,
   ): Promise<{ row: KeyRow; deferred: string | null }> {
     const group = key.group;
+    // A key whose group was deleted on the main site keeps group_id but has
+    // no group; the row keeps the id with no name so the Key list can say
+    // 「分组已停用」 rather than 「未分组」 (FINDINGS K5).
+    const groupId = group?.id ?? key.group_id ?? null;
     const platform = group?.platform ?? "";
     const supported = [
       "openai",
@@ -288,7 +292,7 @@ export class KeyService {
     }
     // Last discovery result for this key, while its group is unchanged.
     const lastKnown =
-      deferred && previous?.group_id === (group?.id ?? null)
+      deferred && previous?.group_id === groupId
         ? previous
         : undefined;
     const imageModels = lastKnown?.image_models.length
@@ -305,8 +309,8 @@ export class KeyService {
           : "••••••",
       secret_enc: this.box.sealSecret(secret),
       status: key.status,
-      group_id: group?.id ?? null,
-      group_name: group?.name ?? null,
+      group_id: groupId,
+      group_name: group ? group.name : null,
       platform: platform || null,
       subscription_type: group?.subscription_type ?? null,
       allow_image_generation: Boolean(group?.allow_image_generation),
@@ -337,7 +341,9 @@ export class KeyService {
       isKeyUsable(row) &&
       group?.status === "active" &&
       supported &&
-      (!["openai", "grok"].includes(platform) || row.allow_image_generation) &&
+      // Every platform: the main site refuses image models on a group with
+      // image generation off, Gemini included (FINDINGS K3).
+      row.allow_image_generation &&
       imageModels.length > 0;
     return { row, deferred };
   }

@@ -57,8 +57,16 @@ export async function* adaptDeepAgentStream(
   // Whether the user saw anything (text or a tool). A run that ends with
   // neither used to report "completed" and leave the chat blank.
   let produced = false;
+  // Whether the run gave the user an answer: text, a picture or video, or a
+  // canvas change. Tools that only read (skills, canvas, brand kit) are not
+  // one: production saw runs read a skill and the canvas, lose the last
+  // turn, and end "completed" with nothing to show (FINDINGS A2).
+  let answered = false;
   /** Tool calls the model sent but LangChain could not parse. */
   const invalidToolCalls: string[] = [];
+  // L3: one log line per model turn and per tool, no user content.
+  let modelTurns = 0;
+  const toolStartedAt = new Map<string, number>();
 
   yield {
     conversationId: options.conversationId,
@@ -137,6 +145,7 @@ export async function* adaptDeepAgentStream(
               if (text) {
                 seenStreamedMessageIds.add(messageId);
                 produced = true;
+                answered = true;
                 yield {
                   type: "message.delta" as const,
                   runId: options.runId,
@@ -156,6 +165,7 @@ export async function* adaptDeepAgentStream(
 
         seenStreamedMessageIds.add(messageId);
         produced = true;
+        answered = true;
         yield {
           delta,
           messageId,
@@ -179,6 +189,10 @@ export async function* adaptDeepAgentStream(
           const messageId = msg.id ?? `message_${options.runId}`;
           for (const call of msg.invalid_tool_calls ?? [])
             invalidToolCalls.push(call.name ?? "unknown");
+          modelTurns += 1;
+          console.info(
+            `[agent-turn] run ${options.runId} turn ${modelTurns}: ${describeModelTurn(msg)}`,
+          );
 
           // Skip if this was a tool call message (tool lifecycle via on_tool_*)
           if ((msg.tool_calls?.length ?? 0) > 0) continue;
@@ -188,6 +202,7 @@ export async function* adaptDeepAgentStream(
           if (!delta) continue;
 
           produced = true;
+          answered = true;
           yield {
             delta,
             messageId,
@@ -207,6 +222,7 @@ export async function* adaptDeepAgentStream(
 
         if (seenStartedToolCalls.has(toolCallId)) continue;
         seenStartedToolCalls.add(toolCallId);
+        toolStartedAt.set(toolCallId, Date.now());
 
         // Extract tool input arguments for frontend display
         const rawInput = evt.data?.input;
@@ -247,7 +263,7 @@ export async function* adaptDeepAgentStream(
         }
         const error = toolFailureText(toolName);
         console.warn(
-          `[stream-adapter] tool ${toolName} failed: ${describeErrorForLog(evt.data?.error)}`,
+          `[agent-tool] run ${options.runId} ${toolName} failed after ${toolMs(toolStartedAt, toolCallId)}ms: ${describeErrorForLog(evt.data?.error)}`,
         );
         yield {
           output: { error },
@@ -278,6 +294,11 @@ export async function* adaptDeepAgentStream(
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
         const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
         const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        if ((extractedArtifacts?.length ?? 0) > 0 || toolName === "manipulate_canvas")
+          answered = true;
+        console.info(
+          `[agent-tool] run ${options.runId} ${toolName} ${toolOutcome(extractedOutput)} in ${toolMs(toolStartedAt, toolCallId)}ms${extractedArtifacts?.length ? `, ${extractedArtifacts.length} artifact(s)` : ""}`,
+        );
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -348,11 +369,61 @@ export async function* adaptDeepAgentStream(
     return;
   }
 
+  if (!answered) {
+    console.warn("[stream-adapter] Run ended without an answer", {
+      runId: options.runId,
+      modelTurns,
+      invalidToolCalls,
+    });
+    yield {
+      error: {
+        code: "run_failed",
+        message: "这次没有得到回复，可以重试，或换一个对话模型",
+      },
+      runId: options.runId,
+      timestamp: now(),
+      type: "run.failed",
+    };
+    return;
+  }
+
   yield {
     runId: options.runId,
     timestamp: now(),
     type: "run.completed",
   };
+}
+
+/** finish reason, tool calls, text size, output tokens and content part types of one model turn. */
+function describeModelTurn(msg: AIMessage | AIMessageChunk): string {
+  const meta = (msg.response_metadata ?? {}) as Record<string, unknown>;
+  const finish =
+    meta.finish_reason ?? meta.stop_reason ?? meta.status ?? meta.finishReason ?? "?";
+  // Read loosely: the message union narrows usage_metadata to never here.
+  const usage = (msg as unknown as { usage_metadata?: { output_tokens?: number } })
+    .usage_metadata;
+  const content = msg.content;
+  const types = Array.isArray(content)
+    ? [...new Set(content.map((part) => (typeof part === "string" ? "string" : String((part as { type?: unknown }).type ?? "?"))))].join("+")
+    : typeof content;
+  const text = extractChunkText(msg)?.length ?? 0;
+  return `finish=${String(finish)} tool_calls=${msg.tool_calls?.length ?? 0} invalid_tool_calls=${msg.invalid_tool_calls?.length ?? 0} text=${text} out_tokens=${usage?.output_tokens ?? "?"} content=${types || "empty"}`;
+}
+
+function toolMs(started: Map<string, number>, id: string): number {
+  const at = started.get(id);
+  started.delete(id);
+  return at ? Date.now() - at : -1;
+}
+
+/** ok, or the error code a tool returned in its output. */
+function toolOutcome(output: unknown): string {
+  if (output && typeof output === "object") {
+    const o = output as Record<string, unknown>;
+    if (typeof o.errorCode === "string") return `error ${o.errorCode}`;
+    if (o.error) return "error";
+  }
+  return "ok";
 }
 
 function canceledEvent(runId: string, now: () => string): StreamEvent {

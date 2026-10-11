@@ -67,6 +67,7 @@ import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerCspReportRoute } from "./http/csp-report.js";
+import { startStaleRunSweeper } from "./features/agent-runs/stale-run-sweeper.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
@@ -240,8 +241,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const cleanupTimer = setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
   // Logs the main site's xy2api release and whether it is a verified version.
   if (!process.env.VITEST) xy2api.compat.start();
+  const stopRunSweeper =
+    !process.env.VITEST && env.supabaseUrl
+      ? startStaleRunSweeper(getAdminClient)
+      : undefined;
   app.addHook("onClose", async () => {
     clearInterval(cleanupTimer);
+    stopRunSweeper?.();
     xy2api.compat.stop();
     await pgmq?.shutdown();
     await deliveries?.close();
