@@ -6,7 +6,10 @@ import { ListFilter, Plus, Puzzle, Search, ShieldCheck } from "lucide-react";
 import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 
 import { SKILL_CATEGORY_OPTIONS } from "@/components/skills/categories";
-import { installedTabSkills } from "@/components/skills/curated";
+import {
+  installedTabSkills,
+  withInstallState,
+} from "@/components/skills/curated";
 import { SkillCard } from "@/components/skills/skill-card";
 import { CreateSkillDialog } from "@/components/skills/create-skill-dialog";
 import { ImportPanel } from "@/components/skills/import-panel";
@@ -224,7 +227,7 @@ export default function SkillsPage() {
 
       try {
         const result = await fetchSkillDetail(token, skill.id);
-        setDetailSkill(result.skill);
+        setDetailSkill(withInstallState(result.skill, skill));
       } catch (err) {
         if (err instanceof ApiAuthError) return;
         // Fallback: display as much as we have

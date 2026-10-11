@@ -15,6 +15,7 @@ vi.mock("../src/lib/server-api", async (importOriginal) => ({
 import {
   filterCurated,
   installedTabSkills,
+  withInstallState,
 } from "../src/components/skills/curated";
 import { MarketplacePanel } from "../src/components/skills/marketplace-panel";
 import { ToastProvider } from "../src/components/toast";
@@ -105,6 +106,28 @@ describe("curated skill helpers", () => {
         (s) => s.slug,
       ),
     ).toEqual(["xy-marketing-copy"]);
+  });
+});
+
+describe("skill detail install state", () => {
+  it("takes 已安装 from the clicked card, not the detail endpoint", () => {
+    const detail = {
+      ...cover,
+      installed: undefined,
+      enabled: undefined,
+      license: null,
+      skillContent: "# 社媒封面",
+      createdBy: null,
+    };
+    expect(withInstallState(detail, cover)).toMatchObject({
+      installed: true,
+      enabled: true,
+      skillContent: "# 社媒封面",
+    });
+    expect(withInstallState(detail, poster)).toMatchObject({
+      installed: false,
+      enabled: false,
+    });
   });
 });
 
