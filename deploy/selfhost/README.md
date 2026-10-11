@@ -8,6 +8,7 @@ Read `../../docs/XY_IMAGE_SELFHOST.md` before running operational commands.
 - `verify-backup.mjs`: verify required artifacts and SHA-256 checksums.
 - `generate-types.mjs`: generate real public/langgraph types via pinned postgres-meta on the private network.
 - `nginx.conf.template`: TLS/WS public API boundary, loopback upstreams, no query logging. `prepare.mjs --cdn cloudflare` adds realip rules that trust only Cloudflare edges.
+- `nginx.single.conf.template` / `Caddyfile.single.template`: the same boundary on one domain (`prepare.mjs --origin https://… [--web-root /var/www/xy-image]`): static site at `/`, XY API at `/api`, Supabase at `/supabase` with the prefix removed. The Caddy template is the pre-launch server's live config.
 - `vendor/`: upstream Apache-2.0 resources, source commit and file checksums. No real credentials.
 
 Offline checks: `node --test deploy/selfhost/*.test.mjs`. Tests place temporary synthetic credentials under `/workspace/xy-ops/agent03/selfhost/` and remove them afterwards. Run there as paseo; do not use `/tmp` for development artifacts.

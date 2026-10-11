@@ -200,3 +200,103 @@ test("volume files are readable by container users whatever the checkout's modes
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("--origin prepares a single-domain deployment: Supabase under /supabase, API under /api", async () => {
+  const root = await createTestDirectory("prepare-single-");
+  try {
+    const dir = path.join(root, "deployment");
+    const result = await prepare({
+      dir,
+      origin: "https://image.example.com",
+      webRoot: "/srv/xy-image/site/",
+      ssoDomain: "sso.example.com",
+    });
+    assert.equal(result.mode, "single");
+    assert.ok(result.files.includes("Caddyfile"));
+    const env = parseEnv(await readFile(path.join(dir, ".env"), "utf8"));
+    const server = parseEnv(
+      await readFile(path.join(dir, "server.env"), "utf8"),
+    );
+    const browser = parseEnv(await readFile(path.join(dir, "web.env"), "utf8"));
+    // The values the pre-launch server was set up with by hand.
+    assert.equal(env.SUPABASE_PUBLIC_URL, "https://image.example.com/supabase");
+    assert.equal(
+      env.API_EXTERNAL_URL,
+      "https://image.example.com/supabase/auth/v1",
+    );
+    assert.equal(env.SITE_URL, "https://image.example.com");
+    assert.equal(
+      env.ADDITIONAL_REDIRECT_URLS,
+      "https://image.example.com/auth/callback",
+    );
+    assert.equal(server.SUPABASE_URL, "https://image.example.com/supabase");
+    assert.equal(server.SUPABASE_JWT_ISSUER, env.API_EXTERNAL_URL);
+    assert.equal(server.LOOMIC_WEB_ORIGIN, "https://image.example.com");
+    assert.equal(browser.NEXT_PUBLIC_SUPABASE_URL, server.SUPABASE_URL);
+    assert.equal(
+      browser.NEXT_PUBLIC_SERVER_BASE_URL,
+      "https://image.example.com",
+    );
+    for (const file of ["nginx.conf", "Caddyfile"])
+      assert.equal((await stat(path.join(dir, file))).mode & 0o777, 0o600);
+
+    const nginx = await readFile(path.join(dir, "nginx.conf"), "utf8");
+    assert.ok(!nginx.includes("__"), "Every placeholder is filled");
+    assert.match(nginx, /^\s+server_name image\.example\.com;$/m);
+    assert.match(nginx, /^\s+root \/srv\/xy-image\/site;$/m);
+    assert.match(nginx, /live\/image\.example\.com\/fullchain\.pem/);
+    assert.ok(!nginx.includes("set_real_ip_from"), "No CDN trusted by default");
+    assert.equal((nginx.match(/^\s*server \{$/gm) ?? []).length, 1);
+
+    const caddy = await readFile(path.join(dir, "Caddyfile"), "utf8");
+    assert.ok(!caddy.includes("__"));
+    assert.match(caddy, /^image\.example\.com \{$/m);
+    assert.match(caddy, /root \* \/srv\/xy-image\/site$/m);
+    assert.match(caddy, /handle_path \/supabase\/\* \{/);
+    assert.match(caddy, /@private_ready path \/api\/ready/);
+
+    const deployment = JSON.parse(
+      await readFile(path.join(dir, "deployment.json"), "utf8"),
+    );
+    assert.equal(deployment.mode, "single");
+    assert.equal(deployment.supabase, "https://image.example.com/supabase");
+    assert.equal(deployment.webRoot, "/srv/xy-image/site");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("--origin and the three origins are exclusive, and web-root must be a plain absolute path", async () => {
+  const dir = path.resolve(repository, "../invalid-single-test");
+  await assert.rejects(
+    prepare({ ...options, dir, origin: "https://image.example.com" }),
+    /either --origin/,
+  );
+  await assert.rejects(
+    prepare({
+      dir,
+      webOrigin: options.webOrigin,
+      ssoDomain: options.ssoDomain,
+    }),
+    /Give --origin for one domain/,
+  );
+  await assert.rejects(
+    prepare({
+      dir,
+      origin: "https://image.example.com/app",
+      ssoDomain: options.ssoDomain,
+    }),
+    /origin must be an HTTPS origin/,
+  );
+  for (const webRoot of ["site", "/srv/../etc", "/srv/xy image", "/srv;x"])
+    await assert.rejects(
+      prepare({
+        dir,
+        origin: "https://image.example.com",
+        webRoot,
+        ssoDomain: options.ssoDomain,
+      }),
+      /web-root must be an absolute path/,
+      webRoot,
+    );
+});

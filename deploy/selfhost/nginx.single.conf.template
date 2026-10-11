@@ -1,0 +1,127 @@
+# Single-domain deployment (prepare.mjs --origin). Place inside nginx http{}.
+# Install certificates before enabling this file.
+#
+# One host serves everything:
+#   /api/*       -> XY API (127.0.0.1:3101); /api/ready stays private
+#   /supabase/*  -> Supabase gateway (127.0.0.1:18000) with the prefix
+#                   removed, and only what browsers use: restricted Auth and
+#                   object reads. REST, Storage writes/listing, Realtime,
+#                   Studio, meta and admin stay on the Docker network.
+#   anything else -> the static site in __WEB_ROOT__ (apps/web/out)
+# The policy is the same as nginx.conf.template's three hosts; the
+# pre-launch server ran this layout under Caddy from 2026-10-11.
+log_format xy_safe '$remote_addr $request_method $uri $status $body_bytes_sent $request_time';
+# prepare.mjs replaces the next line. With --cdn it trusts only that CDN's
+# edges to name the client, so logs and the login limiter see real addresses.
+# __REAL_IP__
+map $http_upgrade $xy_connection_upgrade { default upgrade; '' close; }
+# Shadow users authenticate through XY API. Public Auth cannot set passwords,
+# request new email links, create users, or use password/PKCE/OAuth grants.
+# Match the full query string so duplicate grant_type arguments cannot bypass it.
+map "$request_method:$uri:$args" $xy_auth_allowed {
+    default 0;
+    ~^OPTIONS:/supabase/auth/v1/(verify|logout|user|token): 1;
+    "POST:/supabase/auth/v1/verify:" 1;
+    "GET:/supabase/auth/v1/user:" 1;
+    "POST:/supabase/auth/v1/logout:" 1;
+    ~^POST:/supabase/auth/v1/logout:scope=(global|local|others)$ 1;
+    # A regex, not an exact key: with the /supabase prefix this key is too
+    # long for the default map_hash_bucket_size and Nginx refuses to start
+    # (caught by nginx-policy.test.mjs). Anchored, so it matches the same.
+    ~^POST:/supabase/auth/v1/token:grant_type=refresh_token$ 1;
+}
+# Cache-Control for the static site: hashed build files forever, other
+# public files for a week, pages revalidated so a release shows at once.
+map $uri $xy_static_cache {
+    default "no-cache";
+    ~^/_next/static/ "public, max-age=31536000, immutable";
+    ~^/(fonts|images|providers)/ "public, max-age=604800";
+    ~^/(favicon\.svg|logo\.svg|apple-touch-icon\.png|og-image\.png)$ "public, max-age=604800";
+}
+
+server {
+    listen 443 ssl;
+    server_name __HOST__;
+    ssl_certificate /etc/letsencrypt/live/__HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem;
+    access_log /var/log/nginx/xy-image.access.log xy_safe;
+    error_log /var/log/nginx/xy-image.error.log crit;
+    client_max_body_size 20m;
+    # Every location below sets its own headers: nginx drops server-level
+    # add_header in any location that has one of its own. The API's
+    # responses keep whatever it sets (/api/proxy-image has its own CSP);
+    # only HSTS and nosniff are added there.
+
+    location = /api/ready { return 404; }
+    location /api/ {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_pass http://127.0.0.1:3101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $xy_connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 660s;
+        proxy_send_timeout 660s;
+        proxy_next_upstream off;
+    }
+
+    location ~ ^/supabase/auth/v1/(verify|logout|user|token)$ {
+        if ($xy_auth_allowed = 0) { return 404; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        proxy_hide_header X-Content-Type-Options;
+        rewrite ^/supabase(/.*)$ $1 break;
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 30s;
+        proxy_next_upstream off;
+    }
+    # Object reads only: public URLs of public buckets (keep this list in
+    # step with `storage.buckets.public`) and signed URLs, whose token is
+    # checked by Storage. Matching runs on the normalised $uri, so encoded
+    # "../" cannot climb out of the allowed prefix.
+    location ~ ^/supabase/storage/v1/object/(public/project-assets|sign/[a-z0-9-]+)/. {
+        if ($request_method !~ ^(GET|HEAD)$) { return 404; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        proxy_hide_header X-Content-Type-Options;
+        rewrite ^/supabase(/.*)$ $1 break;
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 60s;
+        proxy_next_upstream off;
+    }
+    location /supabase/ { return 404; }
+    location = /supabase { return 404; }
+
+    # The static export: /studio is studio.html, /auth/callback is
+    # auth/callback.html. Unknown paths get the site's own 404 page.
+    root __WEB_ROOT__;
+    location / {
+        # Here, not on the server: /api and /supabase 404s stay plain.
+        error_page 404 /404.html;
+        try_files $uri $uri.html $uri/index.html =404;
+        add_header Cache-Control $xy_static_cache always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "DENY" always;
+        # No script-src yet: the Next static export has inline scripts;
+        # tightening it needs nonces or hashes first.
+        add_header Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    }
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+}
