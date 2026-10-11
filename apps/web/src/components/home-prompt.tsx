@@ -233,7 +233,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             disabled={!canSubmit}
             aria-label="开始"
             title={failedUpload ? "有图片上传失败，重试或移除后再发送" : "发送（Enter）"}
-            className="sk ml-auto flex h-12 items-center rounded-[14px] bg-acc px-6 font-display text-[19px] text-acc-ink shadow-acc transition-[background-color,scale] hover:bg-acc-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted disabled:shadow-none"
+            className="sk ml-auto flex h-12 shrink-0 items-center rounded-[14px] bg-acc px-4 font-display text-[17px] whitespace-nowrap text-acc-ink sm:px-6 sm:text-[19px] shadow-acc transition-[background-color,scale] hover:bg-acc-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted disabled:shadow-none"
           >
             <span className="sk-in gap-1.5">
               交给助手
