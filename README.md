@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-11，v0.0.4）：功能开发完成，预上线环境真实联调通过。** 整套服务（自建 Supabase、API、Worker、前端、单域名边缘）部署在预上线服务器上，连真实主站，全部功能付费实测通过：OpenAI、Grok、Gemini 生图，1K/2K/4K，一次多张，参考图、局部重绘、扩图，节点画布，设计助手（主站对话模型和第三方服务商），技能市场。本版新增精选技能市场、Grok 编辑、单域名部署脚本，并修复了联调中发现的问题。实验环境（模拟上游）的浏览器端到端、双用户隔离、计费、重启和故障演练照常通过。**还没有部署到生产。** 本版的报告和上线前要做的事见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-11，v0.0.5）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com，两个真实账号付费实测通过。** 实测覆盖 OpenAI、Grok、Gemini 生图（含 4K 高质量和一次多张），设计助手（主站对话模型和第三方服务商），手机和桌面走查。本版修复了正式站实测发现的全部问题：审核拒绝和「模型没有可用账号」的提示，经 Cloudflare 被切断的请求记为待核对并自动和主站用量对上，设计助手的品牌套件、空结果、并行出图和停止，项目图片只对工作区成员可见，删除的项目 24 小时后清理，每日备份和恢复演练，监控。实验环境（模拟上游）全量回归照常通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -29,7 +29,7 @@
 | `apps/server` | Fastify API 和 Worker（同一镜像，`SERVICE_MODE` 区分）；PGMQ 任务队列；xy2api 接入层 |
 | `apps/web` | Next.js 15 静态导出，React Flow 12 节点画布，亮暗两套主题 |
 | `packages/shared` | zod 契约、错误码、对话失败文案 |
-| `supabase/migrations` | 41 份数据库迁移 |
+| `supabase/migrations` | 44 份数据库迁移 |
 | `deploy/` | 自建 Supabase 部署生成器、Nginx 模板、备份与告警；`deploy/xy2api-lab` 是 xy2api 契约实验室和模拟上游 |
 
 源码保留 `@loomic/*` 包名，避免破坏依赖。
@@ -42,11 +42,11 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 536 项
-pnpm --filter @loomic/web test    # 231 项
+pnpm --filter @loomic/server test # 673 项
+pnpm --filter @loomic/web test    # 254 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
-pnpm test:selfhost                # 16 项通过，1 项跳过
+pnpm test:selfhost                # 27 项通过，2 项跳过（真实 nginx，在 CI 里跑）
 pnpm --filter @loomic/server dev  # 同时启动 API 和 Worker，需要 Supabase 和集成配置
 ```
 
