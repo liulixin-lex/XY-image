@@ -1,8 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AmbientField } from "@/components/ambient/ambient-provider";
 import { BrandLockup } from "@/components/brand/brand-mark";
 import { buttonVariants } from "@/components/ui/button-variants";
+
+// Without this the tab of every 404 read 「… · 一句话生成图片」 like the home page.
+export const metadata: Metadata = {
+  title: "页面不存在",
+  robots: { index: false },
+};
 
 export default function NotFound() {
   return (

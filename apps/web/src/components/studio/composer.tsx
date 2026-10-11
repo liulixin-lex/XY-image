@@ -97,6 +97,8 @@ export const Composer = forwardRef<
   ComposerHandle,
   {
     models: ImageModelInfo[];
+    /** The model list has not arrived yet: an empty list means "loading", not "none". */
+    modelsLoading?: boolean;
     /** A draft carried over from the landing page; applied once, unsent. */
     initialDraft?: PendingDraft | null;
     onSubmit: (input: StudioSubmitInput) => Promise<StudioSubmitResult | null>;
@@ -105,7 +107,10 @@ export const Composer = forwardRef<
     pendingCount: number;
     className?: string;
   }
->(function Composer({ models, initialDraft, onSubmit, submitting, pendingCount, className }, ref) {
+>(function Composer(
+  { models, modelsLoading = false, initialDraft, onSubmit, submitting, pendingCount, className },
+  ref,
+) {
   const { session } = useAuth();
   const { account, updatePreferences } = useAccount();
   const { report } = useIssues();
@@ -228,6 +233,9 @@ export const Composer = forwardRef<
   }, [models, preferredModel, accountSettled]);
 
   const current = models.find((m) => m.id === model) ?? null;
+  // Still reading the list or the saved default: the picker says so instead
+  // of 「没有可用模型」 for the first few hundred ms of every visit.
+  const modelPending = models.length === 0 ? modelsLoading : !accountSettled;
   const caps = modelCapabilities(current);
   // What will actually be sent: the server applies the same shared rules.
   const {
@@ -296,8 +304,10 @@ export const Composer = forwardRef<
   const trimmed = prompt.trim();
   const room = Math.max(0, MAX_PENDING_JOBS - pendingCount);
   const blockedReason = !current
-    ? models.length > 0 && !accountSettled
-      ? "正在读取默认模型"
+    ? modelPending
+      ? models.length > 0
+        ? "正在读取默认模型"
+        : "正在读取模型"
       : "当前 Key 没有可用的生图模型"
     : room === 0
       ? `排队和生成中的已有 ${MAX_PENDING_JOBS} 张，等前面的完成`
@@ -399,7 +409,7 @@ export const Composer = forwardRef<
             value={model}
             onValueChange={chooseModel}
             options={modelOptions}
-            placeholder="没有可用模型"
+            placeholder={modelPending ? "读取模型…" : "没有可用模型"}
             disabled={models.length === 0}
             className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
             popupClassName="w-[300px]"
