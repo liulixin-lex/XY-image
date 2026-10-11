@@ -1,10 +1,37 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs, parseEnv } from "node:util";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.resolve(here, "../..");
+/**
+ * The vendored volume files are read inside the containers by their own users
+ * (Postgres runs the init scripts as uid 100, not root). `cp` keeps the mode of
+ * the checkout, so a checkout made with umask 077 (or synced as 0600) produced
+ * 0600 init scripts: the database stopped at 98-webhooks.sql with "Permission
+ * denied", the rest of Supabase's init never ran, and Storage later failed with
+ * `permission denied to set role "service_role"` (pre-launch server, 2026-10-11).
+ * None of these files hold secrets (those live in .env, 0600), so make them
+ * world-readable: directories 0755, files 0644, executables 0755.
+ */
+export async function normalizeVolumeModes(dir) {
+  await chmod(dir, 0o755);
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) await normalizeVolumeModes(file);
+    else if (entry.isFile())
+      await chmod(file, (await stat(file)).mode & 0o111 ? 0o755 : 0o644);
+  }
+}
 function origin(value, label) {
   const u = new URL(value);
   if (
@@ -124,6 +151,8 @@ export async function prepare(options) {
     await writeFile(gatewayFile, gateway);
     await mkdir(path.join(target, "volumes/storage"), { recursive: true });
     await mkdir(path.join(target, "volumes/snippets"), { recursive: true });
+    await normalizeVolumeModes(path.join(target, "volumes"));
+    // Created after the walk: Postgres sets up its own data directory.
     await mkdir(path.join(target, "volumes/db/data"), { recursive: true });
     const secret = randomBytes(48).toString("base64url");
     const password = randomBytes(32).toString("hex");

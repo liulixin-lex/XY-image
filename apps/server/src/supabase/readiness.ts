@@ -97,7 +97,12 @@ export function createReadinessProbe(env: ServerEnv) {
       })(),
       (async () => {
         try {
-          const response = await http("/storage/v1/status");
+          // Not /storage/v1/status: that answers without touching the
+          // database. Reading a bucket as service_role makes Storage switch
+          // to that role in Postgres, which is what every upload needs; a
+          // half-initialised database (missing role grants) fails here
+          // instead of at the first charged picture.
+          const response = await http("/storage/v1/bucket/project-assets");
           await response.body?.cancel();
           checks.storageApi = true;
         } catch {}
