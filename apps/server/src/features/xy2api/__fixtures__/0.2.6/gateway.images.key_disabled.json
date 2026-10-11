@@ -1,0 +1,25 @@
+{
+  "scenario": "gateway.images.key_disabled",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "88e76904-4323-4855-97d9-e04dc126b75b",
+      "x-request-id": "be09c864-0e09-482a-8cf7-4e90f4efeb60"
+    },
+    "json": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  }
+}

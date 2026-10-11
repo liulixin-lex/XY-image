@@ -1,0 +1,21 @@
+{
+  "scenario": "gateway.models.key_deleted",
+  "tier": "A",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "3e1ae0be-41d0-43b7-943a-f1742413826f",
+      "x-request-id": "73e700b2-d947-4e8a-86ce-5496bfd3fa7d"
+    },
+    "json": {
+      "code": "INVALID_API_KEY",
+      "message": "Invalid API key"
+    }
+  }
+}

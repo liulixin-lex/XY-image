@@ -1,0 +1,21 @@
+{
+  "scenario": "gateway.models.key_disabled",
+  "tier": "A",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "1b48b69c-b94c-46a6-84a1-261408ee641a",
+      "x-request-id": "9e8df929-3e08-412f-b36d-d33d3fc7c4cd"
+    },
+    "json": {
+      "code": "API_KEY_DISABLED",
+      "message": "API key is disabled"
+    }
+  }
+}

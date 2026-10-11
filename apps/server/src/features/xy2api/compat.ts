@@ -20,7 +20,7 @@ import type { Xy2apiClient } from "./client.js";
 // 0.2.2 = the release the adapters were first written against (commit 9717116f1);
 // 0.2.5 = latest release when the compat layer landed. Exact versions only:
 // pre-releases (0.2.6-rc1) must be recorded and added explicitly.
-export const XY2API_VERIFIED_VERSIONS = ["0.2.2", "0.2.5"] as const;
+export const XY2API_VERIFIED_VERSIONS = ["0.2.2", "0.2.5", "0.2.6"] as const;
 
 const PROBE_INTERVAL_MS = 30 * 60 * 1000;
 const DRIFT_LOG_INTERVAL_MS = 10 * 60 * 1000;
