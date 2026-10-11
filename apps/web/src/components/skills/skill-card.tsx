@@ -1,10 +1,10 @@
 "use client";
 
 import {
+  BadgeCheck,
   MoreHorizontal,
   ShieldCheck,
   Sparkles,
-  Users,
   UserPen,
 } from "lucide-react";
 import { useCallback } from "react";
@@ -44,7 +44,8 @@ const SOURCE_CONFIG: Record<
   { label: string; icon: typeof ShieldCheck }
 > = {
   system: { label: "官方", icon: ShieldCheck },
-  community: { label: "社区", icon: Users },
+  // Only the curated 市场 skills are community rows; imports are "user".
+  community: { label: "精选", icon: BadgeCheck },
   user: { label: "自定义", icon: UserPen },
 };
 
@@ -155,7 +156,7 @@ export function SkillCard({
           </button>
           {skill.isFeatured && (
             <Sparkles
-              aria-label="精选"
+              aria-label="推荐"
               className="size-3.5 shrink-0 text-acc-text"
             />
           )}

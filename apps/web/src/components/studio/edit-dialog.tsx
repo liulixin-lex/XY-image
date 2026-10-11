@@ -47,6 +47,7 @@ import {
   DEFAULT_OUTPAINT_PROMPT,
   IMAGE_EDIT_LABEL,
   type ImageEditMode,
+  inpaintModelNote,
   type MaskStroke,
   OUTPAINT_SCALES,
   OUTPAINT_SCALE_LABEL,
@@ -436,6 +437,11 @@ function EditBody({
               popupClassName="w-[300px]"
             />
           </Field>
+          {mode === "inpaint" && inpaintModelNote(current) ? (
+            <p className="-mt-3 text-[12.5px] leading-relaxed text-fg-muted">
+              {inpaintModelNote(current)}
+            </p>
+          ) : null}
 
           <Field
             label="画质"

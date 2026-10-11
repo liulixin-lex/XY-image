@@ -6,6 +6,7 @@ import { ListFilter, Plus, Puzzle, Search, ShieldCheck } from "lucide-react";
 import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 
 import { SKILL_CATEGORY_OPTIONS } from "@/components/skills/categories";
+import { installedTabSkills } from "@/components/skills/curated";
 import { SkillCard } from "@/components/skills/skill-card";
 import { CreateSkillDialog } from "@/components/skills/create-skill-dialog";
 import { ImportPanel } from "@/components/skills/import-panel";
@@ -62,7 +63,7 @@ const CATEGORIES = SKILL_CATEGORY_OPTIONS;
 
 export default function SkillsPage() {
   const { session } = useAuth();
-  const { error: toastError } = useToast();
+  const { error: toastError, success: toastSuccess } = useToast();
 
   // Token ref pattern (same as settings page)
   const accessTokenRef = useRef(session?.access_token);
@@ -142,7 +143,7 @@ export default function SkillsPage() {
   // ---------------------------------------------------------------------------
 
   const filteredSkills = useMemo(() => {
-    let result = skills;
+    let result = installedTabSkills(skills);
 
     // Search filter
     if (searchQuery.trim()) {
@@ -247,12 +248,17 @@ export default function SkillsPage() {
       try {
         await installSkill(token, skillId);
         await loadSkills();
+        // The detail dialog stays open: flip its button to 卸载.
+        setDetailSkill((prev) =>
+          prev?.id === skillId ? { ...prev, installed: true, enabled: true } : prev,
+        );
+        toastSuccess("已安装，助手在对话里会按需使用");
       } catch (err) {
         console.error("[skills] install failed", err);
         if (!(err instanceof ApiAuthError)) toastError("技能没有安装成功，请稍后再试");
       }
     },
-    [getToken, loadSkills, toastError],
+    [getToken, loadSkills, toastError, toastSuccess],
   );
 
   const handleUninstall = useCallback(
@@ -485,6 +491,10 @@ export default function SkillsPage() {
         <MarketplacePanel
           accessToken={getToken}
           onInstalled={handleExternalInstall}
+          skills={skills}
+          loading={pageLoading}
+          onOpenSkill={handleCardClick}
+          onInstallSkill={handleInstall}
         />
       )}
 

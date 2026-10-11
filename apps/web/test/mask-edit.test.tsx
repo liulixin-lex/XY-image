@@ -12,6 +12,7 @@ import { BatchFeed, type FeedActions } from "../src/components/studio/batch-feed
 import { groupByBatch, toImageJobView } from "../src/lib/image-jobs";
 import {
   MASK_MAX_EDGE,
+  inpaintModelNote,
   maskSize,
   nearestRatio,
   paintedShare,
@@ -44,6 +45,13 @@ describe("mask helpers", () => {
     // Nothing to measure: keep what it was made with.
     expect(sourceRatio({ aspectRatio: "21:9", width: null, height: null }, ratios)).toBe("21:9");
     expect(sourceRatio({ aspectRatio: null, width: null, height: null }, ratios)).toBeNull();
+  });
+
+  it("warns that Grok redraws the whole picture in 局部重绘", () => {
+    expect(inpaintModelNote({ vendor: "xai" })).toMatch(/Grok 会参照涂抹的地方重画整张图/);
+    expect(inpaintModelNote({ vendor: "openai" })).toBeNull();
+    expect(inpaintModelNote({})).toBeNull();
+    expect(inpaintModelNote(null)).toBeNull();
   });
 
   it("counts painted pixels the way the server does (alpha at least half)", () => {

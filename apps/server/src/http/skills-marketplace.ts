@@ -13,6 +13,8 @@ import {
   installFromMarketplace,
   MarketplaceError,
 } from "../features/skills/marketplace-service.js";
+import { SkillImportError } from "../features/skills/skill-import-service.js";
+import { SKILL_IMPORT_MESSAGES, skillSlug } from "../features/skills/slug.js";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
@@ -98,14 +100,6 @@ function mapSkillFileRow(row: SkillFileRow) {
   };
 }
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 100);
-}
 
 // ---------------------------------------------------------------------------
 // Route registration
@@ -119,6 +113,11 @@ export async function registerMarketplaceRoutes(
     viewerService: ViewerService;
   },
 ) {
+  // The 市场 tab's curated skills come from GET /api/skills (source =
+  // 'community', migration 20261011000003). These routes are its secondary
+  // "社区搜索": npm packages tagged agent-skill, unreviewed, installed as the
+  // user's own copy.
+
   // GET /api/skills/marketplace/search — search skills.sh via npm registry
   app.get("/api/skills/marketplace/search", async (request, reply) => {
     try {
@@ -130,10 +129,11 @@ export async function registerMarketplaceRoutes(
       return reply.code(200).send(result);
     } catch (error) {
       if (error instanceof MarketplaceError) {
-        return sendError(reply, "marketplace_search_failed", error.message, 502);
+        request.log.warn({ err: error }, "marketplace search failed");
+        return sendError(reply, "marketplace_search_failed", "社区市场暂时连不上，请稍后再试", 502);
       }
       request.log.error({ err: error }, "marketplace search error");
-      return sendError(reply, "marketplace_search_failed", "Marketplace search failed.");
+      return sendError(reply, "marketplace_search_failed", "社区市场暂时连不上，请稍后再试");
     }
   });
 
@@ -147,7 +147,7 @@ export async function registerMarketplaceRoutes(
       if (!name) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "marketplace_detail_failed", message: "Package name is required (use ?name=package-name)" },
+            error: { code: "marketplace_detail_failed", message: "缺少包名" },
           }),
         );
       }
@@ -155,11 +155,17 @@ export async function registerMarketplaceRoutes(
       return reply.code(200).send(detail);
     } catch (error) {
       if (error instanceof MarketplaceError) {
-        const status = error.code === "package_not_found" ? 404 : 502;
-        return sendError(reply, "marketplace_detail_failed", error.message, status);
+        const notFound = error.code === "package_not_found";
+        request.log.warn({ err: error }, "marketplace detail failed");
+        return sendError(
+          reply,
+          "marketplace_detail_failed",
+          notFound ? "社区里没有这个包了" : "社区市场暂时连不上，请稍后再试",
+          notFound ? 404 : 502,
+        );
       }
       request.log.error({ err: error }, "marketplace detail error");
-      return sendError(reply, "marketplace_detail_failed", "Failed to fetch package detail.");
+      return sendError(reply, "marketplace_detail_failed", "社区市场暂时连不上，请稍后再试");
     }
   });
 
@@ -174,9 +180,20 @@ export async function registerMarketplaceRoutes(
       const workspaceId = viewer.workspace.id;
       const client = options.createUserClient(user.accessToken);
 
+      // Slugs no longer collide on the name, so look for the package itself:
+      // a second click used to install a second copy.
+      const { data: existing } = await untypedFrom(client, "skills")
+        .select("id")
+        .eq("created_by", user.id)
+        .eq("metadata->>package_name", packageName)
+        .limit(1);
+      if (existing?.length) {
+        return sendError(reply, "marketplace_install_failed", "这个技能已经装过了，在「已安装」里可以找到", 409);
+      }
+
       // Download and parse from npm registry
       const { imported, packageName: pkgName } = await installFromMarketplace(packageName);
-      const slug = generateSlug(imported.manifest.name);
+      const slug = skillSlug(imported.manifest.name);
 
       // Insert skill
       const { data: skillData, error: skillError } = await untypedFrom(client, "skills")
@@ -203,9 +220,9 @@ export async function registerMarketplaceRoutes(
       if (skillError) {
         request.log.error({ err: skillError }, "marketplace install DB insert failed");
         if (skillError.code === "23505") {
-          return sendError(reply, "marketplace_install_failed", "This skill is already installed.", 409);
+          return sendError(reply, "marketplace_install_failed", "技能标识冲突了，请再装一次", 409);
         }
-        return sendError(reply, "marketplace_install_failed", "Failed to save marketplace skill.");
+        return sendError(reply, "marketplace_install_failed", "技能没有保存成功，请稍后再试");
       }
 
       // Insert files
@@ -243,11 +260,26 @@ export async function registerMarketplaceRoutes(
 
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
+      // The English detail stays in the log.
+      if (error instanceof SkillImportError) {
+        request.log.warn({ code: error.code, message: error.message }, "marketplace install rejected");
+        return sendError(reply, "marketplace_install_failed", SKILL_IMPORT_MESSAGES[error.code], 400);
+      }
       if (error instanceof MarketplaceError) {
-        return sendError(reply, "marketplace_install_failed", error.message, 502);
+        request.log.warn({ err: error }, "marketplace install failed");
+        return sendError(
+          reply,
+          "marketplace_install_failed",
+          error.code === "install_failed"
+            ? "这个包里没有可用的 SKILL.md，装不上"
+            : error.code === "package_not_found"
+              ? "社区里没有这个包了"
+              : "社区市场暂时连不上，请稍后再试",
+          502,
+        );
       }
       request.log.error({ err: error }, "marketplace install error");
-      return sendError(reply, "marketplace_install_failed", "Failed to install marketplace skill.");
+      return sendError(reply, "marketplace_install_failed", "安装失败，请稍后再试");
     }
   });
 }
