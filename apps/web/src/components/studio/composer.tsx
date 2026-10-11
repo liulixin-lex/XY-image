@@ -612,10 +612,12 @@ export const Composer = forwardRef<
         </Field>
       </div>
 
-      {/* Phones: pinned above the bottom tab bar (60 px tall, 12 px or the
-          safe area from the edge), else the button sat under it on the first
-          screen (FINDINGS U3). */}
-      <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6 max-md:sticky max-md:bottom-[calc(max(12px,env(safe-area-inset-bottom))+68px)] max-md:z-10 max-md:rounded-[20px] max-md:bg-panel max-md:pt-3 max-md:pb-3 max-md:shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)]">
+      {/* Phones: pinned to the bottom with its controls above the tab bar
+          (60 px tall, 12 px or the safe area from the edge), else the button
+          sat under it on the first screen (FINDINGS U3). The panel runs on
+          behind the glass tab bar, so the page no longer shows through the
+          strip between them. */}
+      <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:rounded-t-[20px] max-md:bg-panel max-md:pt-3 max-md:pb-[calc(max(12px,env(safe-area-inset-bottom))+72px)] max-md:shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)]">
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
           <Stepper value={count} min={1} max={IMAGE_BATCH_MAX} onChange={setCount} />
           <Button
