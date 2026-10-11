@@ -331,9 +331,10 @@ function CuratedSkillCard({
             已安装
           </span>
         ) : (
+          // Quiet: nine coral buttons on one screen would all shout.
           <Button
             size="sm"
-            variant="accent"
+            variant="secondary"
             disabled={installing}
             className="relative z-10 shrink-0"
             aria-label={`安装「${skill.name}」`}

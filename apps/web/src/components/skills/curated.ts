@@ -1,4 +1,4 @@
-import type { SkillCategory, SkillListItem } from "@loomic/shared";
+import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 
 import { SKILL_CATEGORY_OPTIONS } from "./categories";
 
@@ -56,4 +56,20 @@ export function filterCurated(
         Number(b.isFeatured) - Number(a.isFeatured) ||
         a.name.localeCompare(b.name, "zh-CN"),
     );
+}
+
+/**
+ * GET /api/skills/:id reads the skills table only, so the detail has no
+ * install state and its button always said 安装, even for an installed
+ * skill. Take the state from the list item the user clicked.
+ */
+export function withInstallState(
+  detail: SkillDetail,
+  item: Pick<SkillListItem, "installed" | "enabled">,
+): SkillDetail {
+  return {
+    ...detail,
+    installed: item.installed ?? false,
+    enabled: item.enabled ?? false,
+  };
 }
