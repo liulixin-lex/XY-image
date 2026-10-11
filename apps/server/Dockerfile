@@ -38,6 +38,11 @@ COPY supabase/ supabase/
 RUN pnpm --filter @loomic/shared build
 RUN pnpm --filter @loomic/server typecheck
 
+# The app runs as node and only reads these files. A checkout made with a
+# strict umask (the pre-launch server's was 0600 files, root-owned) would
+# otherwise be unreadable at runtime; files stay root-owned and immutable.
+RUN chmod -R a+rX /app
+
 # ── Stage 3: Production image ─────────────────────────────────────
 FROM node:22-slim AS production
 
@@ -57,6 +62,7 @@ EXPOSE 3001
 
 # Copy skills (fonts + SKILL.md) to /opt/loomic/skills/
 COPY skills/ /opt/loomic/skills/
+RUN chmod -R a+rX /opt/loomic/skills
 
 # SERVICE_MODE: "api" (default) or "worker"
 ENV SERVICE_MODE=api
