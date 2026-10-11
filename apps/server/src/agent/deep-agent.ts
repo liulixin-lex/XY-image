@@ -104,7 +104,7 @@ export function createLoomicDeepAgent(options: {
     ? `${LOOMIC_SYSTEM_PROMPT}\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。`
     : // No kit: say where to pick one instead of hunting through files
       // (FINDINGS A1 showed a failed step and "无法读取你标记的品牌套件").
-      `${LOOMIC_SYSTEM_PROMPT}\n\n当前项目没有选品牌套件，也没有默认品牌套件。用户提到品牌套件或品牌规范时，告诉他可以在画布顶部的「品牌套件」里选一个，或在「品牌套件」页打开「应用到新项目」；不要去文件里找品牌套件。`;
+      `${LOOMIC_SYSTEM_PROMPT}\n\n当前项目没有选品牌套件，也没有默认品牌套件。用户提到品牌套件或品牌规范时，告诉用户可以在画布顶部的「品牌套件」里选一个，或在「品牌套件」页打开「应用到新项目」；不要去文件里找品牌套件。`;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
