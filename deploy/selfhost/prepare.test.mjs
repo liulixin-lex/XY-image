@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
-import { prepare } from "./prepare.mjs";
+import { normalizeVolumeModes, prepare } from "./prepare.mjs";
 import { createTestDirectory } from "./test-sandbox.mjs";
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const options = {
@@ -28,6 +28,21 @@ test("offline preparation creates isolated credentials and a closed default netw
     for (const file of [".env", "server.env", "web.env"])
       assert.equal((await stat(path.join(dir, file))).mode & 0o777, 0o600);
     assert.equal((await stat(dir)).mode & 0o777, 0o700);
+    // Containers read the init scripts as their own users (Postgres: uid 100).
+    for (const file of [
+      "volumes/db/webhooks.sql",
+      "volumes/db/roles.sql",
+      "volumes/api/envoy/envoy.yaml",
+    ])
+      assert.equal(
+        (await stat(path.join(dir, file))).mode & 0o777,
+        0o644,
+        file,
+      );
+    assert.equal(
+      (await stat(path.join(dir, "volumes/db"))).mode & 0o777,
+      0o755,
+    );
     assert.equal(env.DISABLE_SIGNUP, "true");
     assert.equal(env.ENABLE_ANONYMOUS_USERS, "false");
     assert.equal(env.ENABLE_EMAIL_SIGNUP, "true"); // Admin magiclink verification still required.
@@ -157,4 +172,31 @@ test("--cdn cloudflare trusts only Cloudflare edges for the client address", asy
     }),
     /Unsupported cdn/,
   );
+});
+
+test("volume files are readable by container users whatever the checkout's modes", async () => {
+  const root = await createTestDirectory("prepare-modes-");
+  try {
+    await mkdir(path.join(root, "db"), { mode: 0o700 });
+    await writeFile(path.join(root, "db/webhooks.sql"), "select 1;", {
+      mode: 0o600,
+    });
+    await writeFile(path.join(root, "entrypoint.sh"), "#!/bin/sh", {
+      mode: 0o700,
+    });
+    await chmod(root, 0o700);
+    await normalizeVolumeModes(root);
+    assert.equal((await stat(root)).mode & 0o777, 0o755);
+    assert.equal((await stat(path.join(root, "db"))).mode & 0o777, 0o755);
+    assert.equal(
+      (await stat(path.join(root, "db/webhooks.sql"))).mode & 0o777,
+      0o644,
+    );
+    assert.equal(
+      (await stat(path.join(root, "entrypoint.sh"))).mode & 0o777,
+      0o755,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
