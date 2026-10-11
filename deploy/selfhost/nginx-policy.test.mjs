@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { realIpBlock } from "./prepare.mjs";
+import { realIpBlock, singleDomainConfigs } from "./prepare.mjs";
 import { createTestDirectory } from "./test-sandbox.mjs";
 
 async function unusedLoopbackPort() {
@@ -42,16 +42,149 @@ function request(port, method, url, extraHeaders = {}) {
         body += chunk;
       });
       response.on("error", reject);
-      response.on("end", () => resolve({ status: response.statusCode, body }));
+      response.on("end", () =>
+        resolve({
+          status: response.statusCode,
+          body,
+          headers: response.headers,
+        }),
+      );
     });
     outgoing.on("upgrade", (response, socket) => {
       socket.destroy();
-      resolve({ status: response.statusCode, body: "" });
+      resolve({ status: response.statusCode, body: "", headers: {} });
     });
     if (["POST", "PUT", "PATCH"].includes(method))
       outgoing.write('{"password":"synthetic-test-only"}');
     outgoing.end();
   });
+}
+
+// Supabase paths the public must never reach, and the ones browsers use.
+// The single-domain config serves the same paths under /supabase.
+const blocked = [
+  ["PUT", "/auth/v1/user"],
+  ["PATCH", "/auth/v1/user"],
+  ["POST", "/auth/v1/user"],
+  ["DELETE", "/auth/v1/user"],
+  ["POST", "/auth/v1/token?grant_type=password"],
+  ["POST", "/auth/v1/token?grant_type=pkce"],
+  ["POST", "/auth/v1/token"],
+  ["GET", "/auth/v1/token?grant_type=refresh_token"],
+  ["PUT", "/auth/v1/token?grant_type=refresh_token"],
+  ["POST", "/auth/v1/token?grant_type=refresh_token&grant_type=password"],
+  ["POST", "/auth/v1/token?grant_type=password&grant_type=refresh_token"],
+  ["POST", "/auth/v1/token?grant_type=refresh_token&grant_type=refresh_token"],
+  ["POST", "/auth/v1/token?grant_type=%72efresh_token"],
+  ["POST", "/auth/v1/token?grant_type=refresh_token&unexpected=1"],
+  ["GET", "/auth/v1/admin/users"],
+  ["POST", "/auth/v1/admin/users"],
+  ["POST", "/auth/v1/signup"],
+  ["POST", "/auth/v1/recover"],
+  ["POST", "/auth/v1/magiclink"],
+  ["POST", "/auth/v1/invite"],
+  ["POST", "/auth/v1/generate_link"],
+  ["GET", "/auth/v1/authorize"],
+  ["POST", "/auth/v1/otp"],
+  ["GET", "/auth/v1/verify"],
+  ["GET", "/auth/v1/logout"],
+  ["POST", "/auth/v1/logout?scope=invalid"],
+  ["POST", "/auth/v1/logout?scope=global&scope=local"],
+  ["POST", "/auth/v1/user/"],
+  ["POST", "/auth/v1/verify/"],
+  ["GET", "/"],
+  ["GET", "/pg/"],
+  // Browsers never use REST, Realtime or Storage writes/listing.
+  ["GET", "/rest/v1/projects?select=id"],
+  ["POST", "/rest/v1/rpc/synthetic"],
+  ["GET", "/realtime/v1/websocket?vsn=1.0.0"],
+  ["GET", "/storage/v1/bucket"],
+  ["POST", "/storage/v1/object/project-assets/synthetic.png"],
+  ["PUT", "/storage/v1/object/project-assets/synthetic.png"],
+  ["DELETE", "/storage/v1/object/project-assets"],
+  ["POST", "/storage/v1/object/list/canvases"],
+  ["POST", "/storage/v1/object/upload/sign/project-assets/synthetic.png"],
+  ["POST", "/storage/v1/object/sign/project-assets/synthetic.png"],
+  ["POST", "/storage/v1/object/public/project-assets/synthetic.png"],
+  ["GET", "/storage/v1/object/public/canvases/synthetic.png"],
+  ["GET", "/storage/v1/object/public/project-assets/"],
+  [
+    "GET",
+    "/storage/v1/object/public/project-assets/%2e%2e/%2e%2e/list/canvases",
+  ],
+  ["GET", "/storage/v1/object/public/project-assets/..%2F..%2Fbucket"],
+  ["GET", "/storage/v1/render/image/public/project-assets/synthetic.png"],
+];
+const allowed = [
+  ["POST", "/auth/v1/verify"],
+  ["POST", "/auth/v1/logout"],
+  ["POST", "/auth/v1/logout?scope=global"],
+  ["POST", "/auth/v1/logout?scope=local"],
+  ["POST", "/auth/v1/logout?scope=others"],
+  ["GET", "/auth/v1/user"],
+  ["POST", "/auth/v1/token?grant_type=refresh_token"],
+  ["OPTIONS", "/auth/v1/verify"],
+  ["OPTIONS", "/auth/v1/logout"],
+  ["OPTIONS", "/auth/v1/user"],
+  ["OPTIONS", "/auth/v1/token"],
+  ["OPTIONS", "/auth/v1/token?grant_type=refresh_token"],
+  ["GET", "/storage/v1/object/public/project-assets/synthetic.png"],
+  [
+    "GET",
+    "/storage/v1/object/public/project-assets/u/1/synthetic.png?download=a.png",
+  ],
+  [
+    "GET",
+    "/storage/v1/object/sign/brand-kit-assets/u/logo.png?token=synthetic",
+  ],
+];
+
+/**
+ * Runs the real Nginx binary on a loopback port with `serverConfig` inside
+ * http{}, and waits until it answers.
+ */
+async function startNginx(root, serverConfig, nginxPort) {
+  const config = path.join(root, "nginx.conf");
+  await writeFile(
+    config,
+    `daemon off;\nmaster_process off;\npid ${JSON.stringify(path.join(root, "nginx.pid"))};\nerror_log ${JSON.stringify(path.join(root, "startup.log"))} crit;\nevents { worker_connections 64; }\nhttp {\nclient_body_temp_path ${JSON.stringify(path.join(root, "body"))};\nproxy_temp_path ${JSON.stringify(path.join(root, "proxy"))};\nfastcgi_temp_path ${JSON.stringify(path.join(root, "fastcgi"))};\nuwsgi_temp_path ${JSON.stringify(path.join(root, "uwsgi"))};\nscgi_temp_path ${JSON.stringify(path.join(root, "scgi"))};\n${serverConfig}\n}\n`,
+    { mode: 0o600 },
+  );
+  const child = spawn(
+    process.env.XY_NGINX_BINARY,
+    ["-p", `${root}/`, "-c", config],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  let spawnError;
+  child.on("error", (error) => {
+    spawnError = error;
+  });
+  const exited = new Promise((resolve) => child.once("close", resolve));
+  let ready = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (spawnError) throw spawnError;
+    assert.equal(
+      child.exitCode,
+      null,
+      `Nginx exited before listening: ${stderr}`,
+    );
+    try {
+      const probe = await request(nginxPort, "GET", "/blocked-startup-probe");
+      assert.equal(probe.status, 404);
+      ready = true;
+      break;
+    } catch (error) {
+      if (error.code !== "ECONNREFUSED") throw error;
+      await delay(20);
+    }
+  }
+  assert.ok(ready, `Nginx did not start: ${stderr}`);
+  return { child, exited };
 }
 
 async function stopChild(child, exited) {
@@ -94,7 +227,6 @@ test(
     });
     let child;
     let exited;
-    let stderr = "";
     try {
       upstream.listen(0, "127.0.0.1");
       await once(upstream, "listening");
@@ -125,106 +257,8 @@ test(
         !template.includes("listen 443"),
         "Every production listener must be loopback-only in this test",
       );
-      const config = path.join(root, "nginx.conf");
-      await writeFile(
-        config,
-        `daemon off;\nmaster_process off;\npid ${JSON.stringify(path.join(root, "nginx.pid"))};\nerror_log ${JSON.stringify(path.join(root, "startup.log"))} crit;\nevents { worker_connections 64; }\nhttp {\nclient_body_temp_path ${JSON.stringify(path.join(root, "body"))};\nproxy_temp_path ${JSON.stringify(path.join(root, "proxy"))};\nfastcgi_temp_path ${JSON.stringify(path.join(root, "fastcgi"))};\nuwsgi_temp_path ${JSON.stringify(path.join(root, "uwsgi"))};\nscgi_temp_path ${JSON.stringify(path.join(root, "scgi"))};\n${template}\n}\n`,
-        { mode: 0o600 },
-      );
-      child = spawn(
-        process.env.XY_NGINX_BINARY,
-        ["-p", `${root}/`, "-c", config],
-        { stdio: ["ignore", "ignore", "pipe"] },
-      );
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
-      let spawnError;
-      child.on("error", (error) => {
-        spawnError = error;
-      });
-      exited = new Promise((resolve) => child.once("close", resolve));
-      let ready = false;
-      for (let attempt = 0; attempt < 100; attempt++) {
-        if (spawnError) throw spawnError;
-        assert.equal(
-          child.exitCode,
-          null,
-          `Nginx exited before listening: ${stderr}`,
-        );
-        try {
-          const probe = await request(
-            nginxPort,
-            "GET",
-            "/blocked-startup-probe",
-          );
-          assert.equal(probe.status, 404);
-          ready = true;
-          break;
-        } catch (error) {
-          if (error.code !== "ECONNREFUSED") throw error;
-          await delay(20);
-        }
-      }
-      assert.ok(ready, `Nginx did not start: ${stderr}`);
+      ({ child, exited } = await startNginx(root, template, nginxPort));
 
-      const blocked = [
-        ["PUT", "/auth/v1/user"],
-        ["PATCH", "/auth/v1/user"],
-        ["POST", "/auth/v1/user"],
-        ["DELETE", "/auth/v1/user"],
-        ["POST", "/auth/v1/token?grant_type=password"],
-        ["POST", "/auth/v1/token?grant_type=pkce"],
-        ["POST", "/auth/v1/token"],
-        ["GET", "/auth/v1/token?grant_type=refresh_token"],
-        ["PUT", "/auth/v1/token?grant_type=refresh_token"],
-        ["POST", "/auth/v1/token?grant_type=refresh_token&grant_type=password"],
-        ["POST", "/auth/v1/token?grant_type=password&grant_type=refresh_token"],
-        [
-          "POST",
-          "/auth/v1/token?grant_type=refresh_token&grant_type=refresh_token",
-        ],
-        ["POST", "/auth/v1/token?grant_type=%72efresh_token"],
-        ["POST", "/auth/v1/token?grant_type=refresh_token&unexpected=1"],
-        ["GET", "/auth/v1/admin/users"],
-        ["POST", "/auth/v1/admin/users"],
-        ["POST", "/auth/v1/signup"],
-        ["POST", "/auth/v1/recover"],
-        ["POST", "/auth/v1/magiclink"],
-        ["POST", "/auth/v1/invite"],
-        ["POST", "/auth/v1/generate_link"],
-        ["GET", "/auth/v1/authorize"],
-        ["POST", "/auth/v1/otp"],
-        ["GET", "/auth/v1/verify"],
-        ["GET", "/auth/v1/logout"],
-        ["POST", "/auth/v1/logout?scope=invalid"],
-        ["POST", "/auth/v1/logout?scope=global&scope=local"],
-        ["POST", "/auth/v1/user/"],
-        ["POST", "/auth/v1/verify/"],
-        ["GET", "/"],
-        ["GET", "/pg/"],
-        // Browsers never use REST, Realtime or Storage writes/listing.
-        ["GET", "/rest/v1/projects?select=id"],
-        ["POST", "/rest/v1/rpc/synthetic"],
-        ["GET", "/realtime/v1/websocket?vsn=1.0.0"],
-        ["GET", "/storage/v1/bucket"],
-        ["POST", "/storage/v1/object/project-assets/synthetic.png"],
-        ["PUT", "/storage/v1/object/project-assets/synthetic.png"],
-        ["DELETE", "/storage/v1/object/project-assets"],
-        ["POST", "/storage/v1/object/list/canvases"],
-        ["POST", "/storage/v1/object/upload/sign/project-assets/synthetic.png"],
-        ["POST", "/storage/v1/object/sign/project-assets/synthetic.png"],
-        ["POST", "/storage/v1/object/public/project-assets/synthetic.png"],
-        ["GET", "/storage/v1/object/public/canvases/synthetic.png"],
-        ["GET", "/storage/v1/object/public/project-assets/"],
-        [
-          "GET",
-          "/storage/v1/object/public/project-assets/%2e%2e/%2e%2e/list/canvases",
-        ],
-        ["GET", "/storage/v1/object/public/project-assets/..%2F..%2Fbucket"],
-        ["GET", "/storage/v1/render/image/public/project-assets/synthetic.png"],
-      ];
       for (const [method, url] of blocked) {
         const count = forwarded.length;
         const result = await request(nginxPort, method, url);
@@ -236,29 +270,6 @@ test(
         );
       }
 
-      const allowed = [
-        ["POST", "/auth/v1/verify"],
-        ["POST", "/auth/v1/logout"],
-        ["POST", "/auth/v1/logout?scope=global"],
-        ["POST", "/auth/v1/logout?scope=local"],
-        ["POST", "/auth/v1/logout?scope=others"],
-        ["GET", "/auth/v1/user"],
-        ["POST", "/auth/v1/token?grant_type=refresh_token"],
-        ["OPTIONS", "/auth/v1/verify"],
-        ["OPTIONS", "/auth/v1/logout"],
-        ["OPTIONS", "/auth/v1/user"],
-        ["OPTIONS", "/auth/v1/token"],
-        ["OPTIONS", "/auth/v1/token?grant_type=refresh_token"],
-        ["GET", "/storage/v1/object/public/project-assets/synthetic.png"],
-        [
-          "GET",
-          "/storage/v1/object/public/project-assets/u/1/synthetic.png?download=a.png",
-        ],
-        [
-          "GET",
-          "/storage/v1/object/sign/brand-kit-assets/u/logo.png?token=synthetic",
-        ],
-      ];
       for (const [method, url] of allowed) {
         const count = forwarded.length;
         const result = await request(nginxPort, method, url);
@@ -315,6 +326,187 @@ test(
         ).status,
         404,
       );
+    } finally {
+      if (child && exited) await stopChild(child, exited);
+      upstream.closeAllConnections();
+      await new Promise((resolve) => upstream.close(resolve));
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "the single-domain Nginx config applies the same Supabase policy under /supabase, keeps /api/ready private and serves the static site with its headers",
+  {
+    skip: process.env.XY_NGINX_BINARY
+      ? false
+      : "Set XY_NGINX_BINARY to run the real local Nginx policy regression",
+    timeout: 30_000,
+  },
+  async () => {
+    const root = await createTestDirectory("nginx-single-");
+    const site = path.join(root, "site");
+    const forwarded = [];
+    const upstream = http.createServer((incoming, response) => {
+      incoming.resume();
+      forwarded.push({ method: incoming.method, url: incoming.url });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(forwarded.at(-1)));
+    });
+    upstream.on("upgrade", (incoming, socket) => {
+      forwarded.push({ method: incoming.method, url: incoming.url });
+      socket.on("error", () => {});
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+      );
+      socket.end();
+    });
+    let child;
+    let exited;
+    try {
+      // A miniature static export: Next writes /studio as studio.html.
+      for (const [file, text] of [
+        ["index.html", "home page"],
+        ["studio.html", "studio page"],
+        ["404.html", "not found page"],
+        ["auth/callback.html", "callback page"],
+        ["_next/static/chunks/app.js", "chunk"],
+        ["fonts/display.woff2", "font"],
+        ["favicon.svg", "<svg/>"],
+      ]) {
+        await mkdir(path.dirname(path.join(site, file)), { recursive: true });
+        await writeFile(path.join(site, file), text);
+      }
+      upstream.listen(0, "127.0.0.1");
+      await once(upstream, "listening");
+      const upstreamPort = upstream.address().port;
+      const nginxPort = await unusedLoopbackPort();
+      const { nginx } = await singleDomainConfigs({
+        host: "image.test.invalid",
+        webRoot: site,
+        realIp: realIpBlock(),
+      });
+      // As above: only transport and filesystem paths are substituted.
+      const template = nginx
+        .replaceAll("listen 443 ssl;", `listen 127.0.0.1:${nginxPort};`)
+        .replace(/^\s*ssl_certificate(?:_key)?\s+[^;]+;\s*$/gm, "")
+        .replaceAll("http://127.0.0.1:3101", `http://127.0.0.1:${upstreamPort}`)
+        .replaceAll(
+          "http://127.0.0.1:18000",
+          `http://127.0.0.1:${upstreamPort}`,
+        )
+        .replace(/\/var\/log\/nginx\/(xy-[a-z.-]+\.log)/g, (_match, name) =>
+          JSON.stringify(path.join(root, name)),
+        );
+      assert.ok(!template.includes("listen 443"));
+      assert.ok(!template.includes("__"), "Every placeholder is filled");
+      ({ child, exited } = await startNginx(root, template, nginxPort));
+      const host = { host: "image.test.invalid" };
+
+      for (const [method, url] of [
+        ...blocked.map(([m, u]) => [m, `/supabase${u}`]),
+        ["GET", "/supabase"],
+        ["GET", "/api/ready"],
+        ["GET", "/auth/v1/user"],
+        ["GET", "/storage/v1/object/public/project-assets/synthetic.png"],
+      ]) {
+        const count = forwarded.length;
+        const result = await request(nginxPort, method, url, host);
+        assert.equal(result.status, 404, `${method} ${url} must be rejected`);
+        assert.equal(
+          forwarded.length,
+          count,
+          `${method} ${url} must not reach an upstream`,
+        );
+      }
+      for (const [method, url] of allowed) {
+        const count = forwarded.length;
+        const result = await request(
+          nginxPort,
+          method,
+          `/supabase${url}`,
+          host,
+        );
+        assert.equal(
+          result.status,
+          200,
+          `${method} /supabase${url} must remain usable`,
+        );
+        assert.equal(forwarded.length, count + 1);
+        assert.deepEqual(
+          JSON.parse(result.body),
+          { method, url },
+          "Supabase sees the path without /supabase, query unchanged",
+        );
+        assert.equal(
+          result.headers["strict-transport-security"],
+          "max-age=31536000",
+        );
+      }
+      const realtime = await request(
+        nginxPort,
+        "GET",
+        "/supabase/realtime/v1/websocket?vsn=1.0.0",
+        { ...host, upgrade: "websocket", connection: "Upgrade" },
+      );
+      assert.equal(realtime.status, 404, "Realtime is not public");
+
+      const api = await request(nginxPort, "POST", "/api/jobs?x=1", host);
+      assert.equal(api.status, 200);
+      assert.deepEqual(JSON.parse(api.body), {
+        method: "POST",
+        url: "/api/jobs?x=1",
+      });
+      assert.equal(api.headers["x-content-type-options"], "nosniff");
+      assert.equal(
+        api.headers["content-security-policy"],
+        undefined,
+        "The API sets its own CSP where it needs one",
+      );
+
+      const page = await request(nginxPort, "GET", "/studio", host);
+      assert.equal(page.status, 200);
+      assert.equal(page.body, "studio page");
+      assert.equal(page.headers["cache-control"], "no-cache");
+      assert.equal(page.headers["x-frame-options"], "DENY");
+      assert.match(
+        page.headers["content-security-policy"],
+        /frame-ancestors 'none'/,
+      );
+      assert.equal(
+        page.headers["referrer-policy"],
+        "strict-origin-when-cross-origin",
+      );
+      assert.equal(page.headers["x-content-type-options"], "nosniff");
+      assert.equal(
+        (await request(nginxPort, "GET", "/", host)).body,
+        "home page",
+      );
+      assert.equal(
+        (await request(nginxPort, "GET", "/auth/callback?code=x", host)).body,
+        "callback page",
+      );
+      const chunk = await request(
+        nginxPort,
+        "GET",
+        "/_next/static/chunks/app.js",
+        host,
+      );
+      assert.equal(
+        chunk.headers["cache-control"],
+        "public, max-age=31536000, immutable",
+      );
+      for (const url of ["/fonts/display.woff2", "/favicon.svg"])
+        assert.equal(
+          (await request(nginxPort, "GET", url, host)).headers["cache-control"],
+          "public, max-age=604800",
+          url,
+        );
+      for (const url of ["/nope", "/auth", "/studio.html/x"]) {
+        const missing = await request(nginxPort, "GET", url, host);
+        assert.equal(missing.status, 404, url);
+        assert.equal(missing.body, "not found page", url);
+      }
     } finally {
       if (child && exited) await stopChild(child, exited);
       upstream.closeAllConnections();

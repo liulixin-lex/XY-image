@@ -91,6 +91,63 @@ export function realIpBlock(cdn) {
     "real_ip_header CF-Connecting-IP;",
   ].join("\n");
 }
+/**
+ * Where the public origins point. Three hosts (web, API, Supabase) is the
+ * original layout. With `origin`, one host serves all three: the static
+ * site at the root, XY API under /api and Supabase under /supabase (the
+ * pre-launch server's layout since 2026-10-11, set up by hand until this).
+ * The code already accepts a SUPABASE_URL with a path (reference downloads,
+ * /api/proxy-image, the browser's own-storage check).
+ */
+export function publicOrigins(options) {
+  const split = ["webOrigin", "apiOrigin", "supabaseOrigin"].filter(
+    (k) => options[k],
+  );
+  if (options.origin) {
+    if (split.length)
+      throw new Error(
+        "Use either --origin (one domain) or --web-origin/--api-origin/--supabase-origin",
+      );
+    const site = origin(options.origin, "origin");
+    return {
+      mode: "single",
+      web: site,
+      api: site,
+      supabase: `${site}/supabase`,
+    };
+  }
+  if (split.length !== 3)
+    throw new Error(
+      "Give --origin for one domain, or all of --web-origin, --api-origin and --supabase-origin",
+    );
+  const web = origin(options.webOrigin, "web-origin");
+  const api = origin(options.apiOrigin, "api-origin");
+  const supabase = origin(options.supabaseOrigin, "supabase-origin");
+  if (new Set([web, api, supabase]).size !== 3)
+    throw new Error(
+      "Use three distinct public origins, or --origin for a single domain",
+    );
+  return { mode: "split", web, api, supabase };
+}
+/** The static site's directory on the host (single-domain configs serve it). */
+function webRootPath(value = "/var/www/xy-image") {
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(value) || value.split("/").includes(".."))
+    throw new Error("web-root must be an absolute path without spaces or ..");
+  return value.replace(/\/+$/, "") || "/";
+}
+/** Host configs for a single-domain deployment: Nginx and Caddy. */
+export async function singleDomainConfigs({ host, webRoot, realIp }) {
+  const fill = (text) =>
+    text.replaceAll("__HOST__", host).replaceAll("__WEB_ROOT__", webRoot);
+  return {
+    nginx: fill(
+      await readFile(path.join(here, "nginx.single.conf.template"), "utf8"),
+    ).replace("# __REAL_IP__", realIp),
+    caddy: fill(
+      await readFile(path.join(here, "Caddyfile.single.template"), "utf8"),
+    ),
+  };
+}
 const envText = (values) =>
   `${Object.entries(values)
     .map(([k, v]) => {
@@ -106,14 +163,9 @@ export async function prepare(options) {
   if (!/^[a-z][a-z0-9-]{2,30}$/.test(options.project ?? "xy-image"))
     throw new Error("Invalid project name");
   const project = options.project ?? "xy-image";
-  const web = origin(options.webOrigin, "web-origin");
-  const api = origin(options.apiOrigin, "api-origin");
-  const supabase = origin(options.supabaseOrigin, "supabase-origin");
+  const { mode, web, api, supabase } = publicOrigins(options);
+  const webRoot = mode === "single" ? webRootPath(options.webRoot) : null;
   const realIp = realIpBlock(options.cdn);
-  if (new Set([web, api, supabase]).size !== 3)
-    throw new Error(
-      "Use three distinct public origins with this deployment template",
-    );
   if (
     !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(
       options.ssoDomain,
@@ -372,9 +424,11 @@ export async function prepare(options) {
           repository,
           upstreamCommit: upstream.commit,
           createdAt: new Date().toISOString(),
+          mode,
           web,
           api,
           supabase,
+          webRoot,
           cdn: options.cdn ?? null,
         },
         null,
@@ -382,24 +436,37 @@ export async function prepare(options) {
       )}\n`,
       { mode: 0o600 },
     );
-    const nginx = (
-      await readFile(path.join(here, "nginx.conf.template"), "utf8")
-    )
-      .replaceAll("__API_HOST__", new URL(api).hostname)
-      .replaceAll("__SUPABASE_HOST__", new URL(supabase).hostname)
-      .replace("# __REAL_IP__", realIp);
-    await writeFile(path.join(target, "nginx.conf"), nginx, { mode: 0o600 });
-    return {
-      directory: target,
-      files: [
-        ".env",
-        "server.env",
-        "web.env",
-        "compose.json",
-        "nginx.conf",
-        "deployment.json",
-      ],
-    };
+    const files = [
+      ".env",
+      "server.env",
+      "web.env",
+      "compose.json",
+      "nginx.conf",
+      "deployment.json",
+    ];
+    if (mode === "single") {
+      const configs = await singleDomainConfigs({
+        host: new URL(web).hostname,
+        webRoot,
+        realIp,
+      });
+      await writeFile(path.join(target, "nginx.conf"), configs.nginx, {
+        mode: 0o600,
+      });
+      await writeFile(path.join(target, "Caddyfile"), configs.caddy, {
+        mode: 0o600,
+      });
+      files.push("Caddyfile");
+    } else {
+      const nginx = (
+        await readFile(path.join(here, "nginx.conf.template"), "utf8")
+      )
+        .replaceAll("__API_HOST__", new URL(api).hostname)
+        .replaceAll("__SUPABASE_HOST__", new URL(supabase).hostname)
+        .replace("# __REAL_IP__", realIp);
+      await writeFile(path.join(target, "nginx.conf"), nginx, { mode: 0o600 });
+    }
+    return { directory: target, mode, files };
   } catch (error) {
     // Keep partial output for inspection. Never delete a deployment or silently rotate its keys.
     throw new Error(
@@ -416,6 +483,8 @@ if (
     const { values } = parseArgs({
       options: {
         dir: { type: "string" },
+        origin: { type: "string" },
+        "web-root": { type: "string" },
         "web-origin": { type: "string" },
         "api-origin": { type: "string" },
         "supabase-origin": { type: "string" },
@@ -424,18 +493,15 @@ if (
         cdn: { type: "string" },
       },
     });
-    for (const k of [
-      "dir",
-      "web-origin",
-      "api-origin",
-      "supabase-origin",
-      "sso-domain",
-    ])
+    // Origins are checked by publicOrigins: --origin, or all three.
+    for (const k of ["dir", "sso-domain"])
       if (!values[k]) throw new Error(`Missing --${k}`);
     console.log(
       JSON.stringify(
         await prepare({
           dir: values.dir,
+          origin: values.origin,
+          webRoot: values["web-root"],
           webOrigin: values["web-origin"],
           apiOrigin: values["api-origin"],
           supabaseOrigin: values["supabase-origin"],
