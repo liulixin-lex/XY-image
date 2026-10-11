@@ -1,4 +1,8 @@
+import { HumanMessage } from "@langchain/core/messages";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
+import { createDeepAgent } from "deepagents";
 import { describe, expect, it } from "vitest";
+import { loomicAgentMiddleware } from "../../agent/deep-agent.js";
 import { GatewayError, mapGatewayError } from "../xy2api/errors.js";
 import { ChatProviderError } from "./errors.js";
 import { chatRunError } from "./run-error.js";
@@ -59,6 +63,49 @@ describe("chatRunError", () => {
     expect(chatRunError(new Error("socket hang up"))).toEqual({
       code: "run_failed",
       message: "请求处理失败，请稍后再试",
+    });
+  });
+
+  it("finds the refusal under every middleware layer of the real agent", async () => {
+    // LangChain wraps the model error once per wrapModelCall middleware.
+    // With a fixed 8-level walk, PR #45's extra middleware hid the refusal
+    // (lab regression 06-chat, 2026-10-11).
+    const runWith = async (thrown: Error) => {
+      class Failing extends FakeListChatModel {
+        override async _generate(): Promise<never> {
+          throw thrown;
+        }
+        override bindTools() {
+          return this as never;
+        }
+      }
+      const agent = createDeepAgent({
+        model: new Failing({ responses: [] }) as never,
+        middleware: loomicAgentMiddleware(),
+      });
+      return agent.invoke({ messages: [new HumanMessage("你好")] }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    };
+    const refusal = await runWith(
+      wrapped(403, {
+        error: {
+          message: "内容审计命中风险规则",
+          type: "content_policy_violation",
+        },
+      }),
+    );
+    expect(chatRunError(refusal)).toMatchObject({
+      message: "内容未通过审核，请修改提示词",
+    });
+    const provider = await runWith(
+      Object.assign(new Error("Connection error."), {
+        cause: new ChatProviderError("provider_auth_failed"),
+      }),
+    );
+    expect(chatRunError(provider, true)).toMatchObject({
+      code: "provider_auth_failed",
     });
   });
 

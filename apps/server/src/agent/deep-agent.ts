@@ -52,6 +52,17 @@ export type LoomicAgentFactory = (options: {
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
 
+/**
+ * Our middleware, after deepagents' own. Glued parallel tool calls from some
+ * gateways are split back into separate calls (glued-tool-calls.ts).
+ * Innermost tool-call middleware: tool errors go back to the model instead
+ * of ending the run (tool-errors.ts). Every wrapModelCall hook adds a layer
+ * of MiddlewareError around model errors (see utils/error-chain.ts).
+ */
+export function loomicAgentMiddleware() {
+  return [createGluedToolCallMiddleware(), createToolErrorMiddleware()];
+}
+
 export function createLoomicDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
@@ -119,11 +130,7 @@ export function createLoomicDeepAgent(options: {
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
-    // Glued parallel tool calls from some gateways are split back into
-    // separate calls (glued-tool-calls.ts). Innermost tool-call middleware:
-    // tool errors go back to the model instead of ending the run
-    // (tool-errors.ts).
-    middleware: [createGluedToolCallMiddleware(), createToolErrorMiddleware()],
+    middleware: loomicAgentMiddleware(),
     model: resolvedModel,
     name: "loomic",
     ...(options.store ? { store: options.store } : {}),
