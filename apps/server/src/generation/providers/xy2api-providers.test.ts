@@ -693,6 +693,68 @@ describe("xAI image transport", () => {
     ).rejects.toMatchObject({ code: "invalid_input" });
     expect(server.requests).toHaveLength(1);
   });
+  it("sends Grok 局部重绘 as the source plus a white-where-painted mask", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await xai.generate(
+      {
+        model: "grok-imagine-image-2.0",
+        prompt: "放一只红色的小狐狸",
+        resolution: "1K",
+        aspectRatio: "3:4",
+        inputImages: [`data:image/png;base64,${await sourcePng(96, 128)}`],
+        edit: {
+          mode: "inpaint",
+          mask: `data:image/png;base64,${await maskPng(48, 64, { left: 12, top: 32, width: 24, height: 16 })}`,
+        },
+      },
+      { apiKey: "synthetic-xai-key", baseUrl: server.baseUrl },
+    );
+    expect(server.requests[0]?.path).toBe("/v1/images/edits");
+    const body = JSON.parse(server.requests[0]?.body ?? "{}");
+    expect(body.prompt).toContain("white in the mask image");
+    expect(body.prompt).toContain("放一只红色的小狐狸");
+    expect(body.images).toBeUndefined();
+    expect(body.image.type).toBe("image_url");
+    expect(body.mask.type).toBe("image_url");
+    const mask = Buffer.from(body.mask.url.split(",")[1], "base64");
+    const { width, height } = await sharp(mask).metadata();
+    expect([width, height]).toEqual([96, 128]);
+    const raw = await sharp(mask).greyscale().raw().toBuffer();
+    // The studio painted (24,64)-(72,96) in source pixels: white there only.
+    expect(raw[80 * 96 + 48]).toBe(255);
+    expect(raw[10 * 96 + 10]).toBe(0);
+  });
+  it("sends Grok 扩图 as the picture on a gray frame with the frame white in the mask", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await xai.generate(
+      {
+        model: "grok-imagine-image-2.0",
+        prompt: "继续画",
+        aspectRatio: "16:9",
+        inputImages: [`data:image/png;base64,${await sourcePng(64, 64)}`],
+        edit: { mode: "outpaint", scale: 1.5, anchor: "left" },
+      },
+      { apiKey: "synthetic-xai-key", baseUrl: server.baseUrl },
+    );
+    const body = JSON.parse(server.requests[0]?.body ?? "{}");
+    expect(body.prompt).toContain("flat gray frame");
+    expect(body.aspect_ratio).toBe("16:9");
+    const framed = await sharp(
+      Buffer.from(body.image.url.split(",")[1], "base64"),
+    ).metadata();
+    const mask = sharp(Buffer.from(body.mask.url.split(",")[1], "base64"));
+    const meta = await mask.metadata();
+    expect([meta.width, meta.height]).toEqual([framed.width, framed.height]);
+    expect(
+      framed.width && framed.height && framed.width / framed.height,
+    ).toBeCloseTo(16 / 9, 1);
+    const raw = await mask.greyscale().raw().toBuffer();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    // Anchored left: the picture stays on the left (black), new area right (white).
+    expect(raw[Math.floor(h / 2) * w + 5]).toBe(0);
+    expect(raw[Math.floor(h / 2) * w + w - 5]).toBe(255);
+  });
   it("maps refusals once, with no retry", async () => {
     const server = await gateway(429, {
       error: { type: "rate_limit", message: "synthetic-sensitive-message" },

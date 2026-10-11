@@ -120,10 +120,12 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     aliases: [],
     displayName: "Grok Imagine 2.0",
     maker: "xAI",
-    description: "文生图",
+    description: "生成与多图编辑",
     resolutions: ["1K", "2K"],
     qualities: ["auto", "low", "medium"],
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
+    // Fallback for servers that do not send capabilities (they predate Grok
+    // edits). Current servers send maxInputImages: 3, which wins.
     maxInputImages: 0,
   },
   {
