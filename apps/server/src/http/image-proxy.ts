@@ -1,5 +1,9 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ServerEnv } from "../config/env.js";
+import {
+  type MemberCheck,
+  authorizeMedia,
+} from "../features/media/media-access.js";
 import { createSupabaseFetch } from "../supabase/transport.js";
 import { RequestLimiter } from "../utils/request-limiter.js";
 
@@ -16,8 +20,11 @@ import { RequestLimiter } from "../utils/request-limiter.js";
  *
  * Now only public or signed object URLs under SUPABASE_URL are read, through
  * the internal Supabase transport, without redirects; only raster images up
- * to MAX_BYTES come back, with nosniff. No sign-in: everything it serves is
- * already readable at that URL, so the per-IP limit only guards bandwidth.
+ * to MAX_BYTES come back, with nosniff. With LOOMIC_MEDIA_ACCESS=cookie a
+ * public project-assets URL needs the same media cookie the edge asks for
+ * (features/media/media-access.ts, FINDINGS S2), or this route would hand
+ * out what the edge refuses; signed URLs carry their own token. The per-IP
+ * limit guards bandwidth.
  */
 const OBJECT_PATHS = ["/storage/v1/object/public/", "/storage/v1/object/sign/"];
 const IMAGE_TYPES = new Set([
@@ -38,7 +45,12 @@ const fail = (status: number, code: string, message: string): ProxyFailure => ({
 
 export function registerImageProxyRoute(
   app: FastifyInstance,
-  options: { env: ServerEnv; fetch?: typeof fetch },
+  options: {
+    env: ServerEnv;
+    fetch?: typeof fetch;
+    /** Set when LOOMIC_MEDIA_ACCESS=cookie. */
+    media?: { secret: string; isMember: MemberCheck };
+  },
 ) {
   const base = parseBase(options.env.supabaseUrl);
   const fetcher = options.fetch ?? createSupabaseFetch(options.env);
@@ -63,6 +75,29 @@ export function registerImageProxyRoute(
       if ("status" in target) {
         console.warn(`[image-proxy] refused: ${target.code}`);
         return sendFailure(reply, target);
+      }
+
+      if (
+        options.media &&
+        target.pathname.slice(base?.path.length ?? 0).startsWith(OBJECT_PATHS[0]!)
+      ) {
+        const decision = await authorizeMedia({
+          uri: target.pathname,
+          cookieHeader: request.headers.cookie,
+          secret: options.media.secret,
+          isMember: options.media.isMember,
+        }).catch(() => null);
+        if (!decision?.allowed) {
+          console.warn(
+            `[image-proxy] refused ${shortPath(target)}: ${decision ? decision.reason : "membership check failed"}`,
+          );
+          return sendFailure(
+            reply,
+            decision
+              ? fail(decision.status, "media_forbidden", "没有权限查看这张图片")
+              : fail(503, "media_check_failed", "图片读取失败，请稍后重试"),
+          );
+        }
       }
 
       const result = await readImage(fetcher, target);

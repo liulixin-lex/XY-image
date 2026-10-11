@@ -48,7 +48,22 @@ const MESSAGE_ERROR_IDS: [RegExp, string][] = [
   ],
 ];
 
-const SAFETY_PATTERN = /safety|content_policy|moderation/i;
+// Upstream moderation refusals that xy2api passes through as a plain 400
+// invalid_request_error, e.g. OpenAI's Chinese wording seen on gguuai.com
+// group 20 (2026-10-11): "非常抱歉，该提示可能违反了我们的内容政策。…".
+const SAFETY_PATTERN =
+  /safety|content.?policy|policy.?violation|moderation|内容政策|违反.{0,12}政策|内容审核|内容安全/i;
+
+// xy2api has no upstream account in the key's group that can serve this
+// model at all (gguuai.com group 74, 2026-10-11: 503 "No available Gemini
+// accounts: no available accounts supporting model: gemini-nano-banana-2.1
+// (channel pricing restriction)"). Retrying never helps until the main site
+// adds an account, so it must not read as "主站暂时繁忙". The bare "No
+// available compatible accounts" is different: every account is cooling down
+// after upstream errors (recorded in __fixtures__/*/gateway.images.after_*),
+// which passes — that one stays upstream_busy.
+const NO_ACCOUNT_PATTERN =
+  /no available accounts? supporting model|channel pricing restriction/i;
 
 // Positive evidence that this key (or its group/subscription) cannot be used:
 // the only refusals allowed to mark a key invalid. Ids from xy2api 0.2.5
@@ -68,13 +83,17 @@ const KEY_UNUSABLE_IDS = new Set([
 // Main-site text shown to the user for refusals we cannot classify. xy2api
 // messages are operator/system wording, but strip anything key-like anyway.
 function mainSiteDetail(message: string): string {
+  return scrub(message, 120);
+}
+
+function scrub(message: string, max: number): string {
   return message
     .replace(/\p{Cc}+/gu, " ")
     .replace(/\bsk-[\w-]{6,}/gi, "sk-***")
     .replace(/[A-Za-z0-9_+/=-]{32,}/g, "***")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 120);
+    .slice(0, max);
 }
 
 export function extractXy2apiErrorId(_status: number, body: unknown): string {
@@ -103,10 +122,11 @@ export const gatewayMessages = {
   key_ip_restricted: "当前 Key 设置了 IP 限制，请在主站放行生图站出口 IP",
   insufficient_balance: "主站余额不足，请充值后重试",
   model_not_accessible: "当前 Key 无权使用此模型",
+  model_unavailable: "主站这个分组暂时出不了这个模型，请换一个模型或 Key",
   key_quota_exhausted: "当前 Key 额度已用完，请切换 Key 或去主站调整",
   rate_limited: "请求过于频繁，请稍后再试",
   invalid_input: "生成参数无效，请检查输入",
-  safety_filter: "内容未通过审核，请修改提示词",
+  safety_filter: "内容未通过审核，有时是误判，可以改一下提示词再试",
   request_rejected: "主站拒绝了这次请求，请到主站查看账号和 Key 状态",
   upstream_busy: "主站暂时繁忙，请稍后再试",
   upstream_too_large: "图片响应过大，请降低画质后重试",
@@ -118,6 +138,23 @@ export const gatewayMessages = {
   storage_retrying: "图片已生成，正在重新保存，稍后会出现在生成记录里",
 } as const;
 export type GatewayCode = keyof typeof gatewayMessages;
+/**
+ * What came back on the wire, for the failure log line only (L1). Never
+ * holds the key or the prompt; `message` is cut and scrubbed like
+ * mainSiteDetail.
+ */
+export type GatewayDiagnostics = {
+  status?: number;
+  /** xy2api error id/type, e.g. INSUFFICIENT_BALANCE, invalid_request_error */
+  errorId?: string;
+  message?: string;
+  cfRay?: string;
+  server?: string;
+  contentType?: string;
+  /** false: the answer did not carry xy2api's X-Client-Request-ID */
+  answeredByXy2api?: boolean;
+  elapsedMs?: number;
+};
 export type GatewayFailure = {
   code: GatewayCode;
   retryable: boolean;
@@ -125,6 +162,7 @@ export type GatewayFailure = {
   userMessage: string;
   /** xy2api X-Client-Request-ID; usage records are keyed "client:<id>" */
   requestId?: string;
+  diagnostics?: GatewayDiagnostics;
 };
 
 /**
@@ -146,6 +184,7 @@ function unavailableFailure(): GatewayFailure {
 // (530). The request never got to xy2api. 520 and 524 did reach it (it
 // answered oddly or too slowly) and stay unknown.
 const ORIGIN_NOT_REACHED = new Set([521, 522, 523, 525, 526, 530]);
+const ORIGIN_REACHED_NO_ANSWER = new Set([520, 524]);
 
 // Failures before any byte of the request left this server.
 const NEVER_SENT_CODES = new Set([
@@ -192,6 +231,15 @@ export function mapGatewayError(input: {
   status?: number | undefined;
   body?: unknown;
   responseReceived?: boolean;
+  /**
+   * Whether the answer carried xy2api's X-Client-Request-ID. xy2api sets it
+   * on every response, its own refusals included; a 5xx without it came
+   * from something in between (Cloudflare cutting a request after ~125 s,
+   * gguuai.com 2026-10-11) while xy2api may still be generating — and
+   * billing. Such a 5xx is 待核对, never "not charged". Leave undefined when
+   * the caller cannot see the headers.
+   */
+  answeredByXy2api?: boolean;
 }): GatewayFailure {
   const { status, body } = input;
   if (status && ORIGIN_NOT_REACHED.has(status)) return unavailableFailure();
@@ -201,13 +249,14 @@ export function mapGatewayError(input: {
   const message = String(b.message ?? e.message ?? "");
   let code: GatewayCode = "upstream_unknown";
   let retryable = false;
-  const known = Boolean(
+  let known = Boolean(
     status && (input.responseReceived ?? body !== undefined),
   );
   if (known) {
     // xy2api risk control blocks with error type content_policy_violation and
     // an admin-chosen status (default 403, any of 400-599).
     if (id === "content_policy_violation") code = "safety_filter";
+    else if (NO_ACCOUNT_PATTERN.test(message)) code = "model_unavailable";
     else if (status === 401 && ["USER_INACTIVE", "USER_NOT_FOUND"].includes(id))
       code = "xy2api_reauth_required";
     else if ((status === 401 || status === 403) && KEY_UNUSABLE_IDS.has(id))
@@ -254,6 +303,13 @@ export function mapGatewayError(input: {
       code = "model_not_accessible";
     else if (status === 502 && /Upstream response too large/i.test(message))
       code = "upstream_too_large";
+    else if (
+      status &&
+      status >= 500 &&
+      (ORIGIN_REACHED_NO_ANSWER.has(status) || input.answeredByXy2api === false)
+    )
+      // Cut in between: xy2api may finish and bill after we stopped waiting.
+      known = false;
     else if (status && status >= 500) {
       code = "upstream_busy";
       retryable = true;
@@ -269,6 +325,69 @@ export function mapGatewayError(input: {
       ? `主站拒绝了这次请求：${detail}`
       : gatewayMessages[code],
   };
+}
+
+/**
+ * The log-safe facts of one failed gateway answer (L1): status, xy2api's
+ * error id, the first 200 characters of its message, and the edge headers
+ * that tell a Cloudflare cut from an xy2api refusal. Feed it the parsed
+ * JSON body when there is one, else the raw text.
+ */
+export function gatewayDiagnostics(input: {
+  status?: number | undefined;
+  headers?: Headers | Record<string, string | undefined> | undefined;
+  body?: unknown;
+  text?: string | undefined;
+  requestId?: string | undefined;
+  startedAt?: number;
+}): GatewayDiagnostics {
+  const header = (name: string) => {
+    const h = input.headers;
+    if (!h) return undefined;
+    const value =
+      typeof (h as Headers).get === "function"
+        ? (h as Headers).get(name)
+        : (h as Record<string, string | undefined>)[name];
+    return value ? value.slice(0, 80) : undefined;
+  };
+  const b = record(input.body);
+  const e = record(b.error);
+  const raw =
+    [b.message, e.message, b.error].find(
+      (value): value is string => typeof value === "string" && value !== "",
+    ) ?? input.text;
+  const message = raw ? scrub(raw, 200) : undefined;
+  const cfRay = header("cf-ray");
+  const server = header("server");
+  const contentType = header("content-type");
+  return {
+    ...(input.status ? { status: input.status } : {}),
+    ...(input.body !== undefined
+      ? { errorId: extractXy2apiErrorId(input.status ?? 0, input.body) }
+      : {}),
+    ...(message ? { message } : {}),
+    ...(cfRay ? { cfRay } : {}),
+    ...(server ? { server } : {}),
+    ...(contentType ? { contentType } : {}),
+    ...(input.headers ? { answeredByXy2api: Boolean(input.requestId) } : {}),
+    ...(input.startedAt ? { elapsedMs: Date.now() - input.startedAt } : {}),
+  };
+}
+
+/** One line for the worker log; empty when nothing was captured. */
+export function describeDiagnostics(d: GatewayDiagnostics | undefined): string {
+  if (!d) return "";
+  const parts = [
+    d.status ? `status=${d.status}` : "",
+    d.errorId ? `id=${d.errorId}` : "",
+    d.answeredByXy2api === false ? "no-xy2api-request-id" : "",
+    d.cfRay ? `cf-ray=${d.cfRay}` : "",
+    d.server ? `server=${d.server}` : "",
+    d.contentType ? `type=${d.contentType.split(";")[0]}` : "",
+    d.elapsedMs !== undefined ? `after=${(d.elapsedMs / 1000).toFixed(1)}s` : "",
+    d.message ? `msg=${JSON.stringify(d.message)}` : "",
+  ];
+  return parts.filter(Boolean).join(" ");
 }
 
 export class BillingGuardError extends Error {
@@ -340,9 +459,16 @@ export function sanitizeGatewayError(error: unknown): GatewayError {
 export function withRequestId(
   error: unknown,
   requestId: string | null | undefined,
+  diagnostics?: GatewayDiagnostics,
 ): GatewayError {
   const gateway = sanitizeGatewayError(error);
-  return requestId && !gateway.failure.requestId
-    ? new GatewayError({ ...gateway.failure, requestId })
-    : gateway;
+  const failure = {
+    ...gateway.failure,
+    ...(requestId && !gateway.failure.requestId ? { requestId } : {}),
+    ...(diagnostics && !gateway.failure.diagnostics ? { diagnostics } : {}),
+  };
+  return failure.requestId === gateway.failure.requestId &&
+    failure.diagnostics === gateway.failure.diagnostics
+    ? gateway
+    : new GatewayError(failure);
 }

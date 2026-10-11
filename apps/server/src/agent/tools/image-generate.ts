@@ -41,14 +41,14 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}${describeCapabilities(m)}`).join("\n")}`
     : "Model identifier (no providers currently registered)";
 
-  // z.enum needs [string, ...string[]], but we may have 0 models at test time.
-  const modelField =
-    modelIds.length >= 1
-      ? z
-          .enum(modelIds as [string, ...string[]])
-          .default(defaultModel as (typeof modelIds)[number])
-          .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+  // A free string, read by resolveToolModel: as an enum, a display name or
+  // an alias the model typed failed tool-input parsing, and production saw
+  // the assistant tell the user "批量调用出现了参数校验问题" (FINDINGS A4).
+  const modelField = z
+    .string()
+    .optional()
+    .default(defaultModel)
+    .describe(modelDescription);
 
   return z.object({
     title: z
@@ -367,6 +367,24 @@ export async function runImageGenerate(
   };
 }
 
+/**
+ * The catalog id for what the model wrote: the id, or its display name or a
+ * case/spacing variant of either; anything else is the first model, logged.
+ */
+export function resolveToolModel(
+  requested: string | undefined,
+  models: AvailableModel[],
+): { id: string; adjusted: boolean } {
+  if (!models.length) return { id: requested || DEFAULT_MODEL, adjusted: false };
+  const key = (value: string) => value.toLowerCase().replace(/[\s_]+/g, "-");
+  const wanted = key(requested ?? "");
+  const match = models.find(
+    (m) => key(m.id) === wanted || key(m.displayName) === wanted,
+  );
+  if (match) return { id: match.id, adjusted: match.id !== requested };
+  return { id: models[0]!.id, adjusted: true };
+}
+
 export function createImageGenerateTool(deps?: {
   persistImage?: PersistImageFn;
   submitImageJob?: SubmitImageJobFn;
@@ -384,8 +402,13 @@ export function createImageGenerateTool(deps?: {
       const attachmentMap = config?.configurable?.user_attachment_map as
         | Record<string, string>
         | undefined;
+      const model = resolveToolModel(input.model, models);
+      if (model.adjusted)
+        console.info(
+          `[generate_image] model "${String(input.model).slice(0, 60)}" read as ${model.id}`,
+        );
       return await runImageGenerate(
-        input,
+        { ...input, model: model.id },
         deps?.persistImage,
         deps?.submitImageJob,
         attachmentMap,

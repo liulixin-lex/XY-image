@@ -239,7 +239,7 @@ function PictureCard({
             >
               <RevealImage src={listImage(job) ?? job.url} alt="" reveal={reveal} className="h-full w-full" />
             </button>
-            <Toolbar job={job} selected={selected} actions={actions} />
+            <Toolbar job={job} selected={selected} actions={actions} compact={aspect >= 1.25} />
           </>
         ) : (
           <Placeholder job={job} outcome={outcome} usageUrl={usageUrl} actions={actions} />
@@ -289,24 +289,38 @@ function Toolbar({
   job,
   selected,
   actions,
+  compact,
 }: {
   job: ImageJobView;
   selected: boolean;
   actions: FeedActions;
+  /**
+   * Wide pictures (16:9, 21:9) are short cards: about 240×135 in a 1280 px
+   * window, where the two-row toolbar covered nearly all of it (FINDINGS
+   * G6). Icons only, one row.
+   */
+  compact: boolean;
 }) {
+  const iconOnly = "w-8 justify-center px-0";
   return (
     <div
       className={cn(
-        "absolute inset-x-2 bottom-2 flex flex-wrap items-center gap-1 rounded-[13px] bg-[rgb(28_24_32/0.72)] p-1.5 text-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.5)] backdrop-blur-md transition-opacity duration-200",
+        "absolute inset-x-2 bottom-2 flex items-center gap-1 rounded-[13px] bg-[rgb(28_24_32/0.72)] p-1.5 text-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.5)] backdrop-blur-md transition-opacity duration-200",
+        compact ? "flex-nowrap gap-0.5 p-1" : "flex-wrap",
         selected
           ? "opacity-100"
           : "pointer-events-none opacity-0 group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 pointer-fine:group-hover/card:pointer-events-auto pointer-fine:group-hover/card:opacity-100",
       )}
     >
       {actions.onReference && job.assetId ? (
-        <button type="button" onClick={() => actions.onReference?.(job)} className={cn(toolClass, "bg-acc text-acc-ink hover:bg-acc-hover")}>
+        <button
+          type="button"
+          onClick={() => actions.onReference?.(job)}
+          title="以此为参考：加到参考图，描述不变"
+          className={cn(toolClass, "bg-acc text-acc-ink hover:bg-acc-hover", compact && iconOnly)}
+        >
           <ImagePlusIcon strokeWidth={1.8} />
-          以此为参考
+          <span className={cn(compact && "sr-only")}>以此为参考</span>
         </button>
       ) : null}
       {actions.onVariant && job.assetId ? (
@@ -314,10 +328,14 @@ function Toolbar({
           type="button"
           onClick={() => actions.onVariant?.(job)}
           title="变体：用它的描述和设置，并把它作为参考图"
-          className={cn(toolClass, "hover:bg-white/15 @max-[260px]/card:w-8 @max-[260px]/card:justify-center @max-[260px]/card:px-0")}
+          className={cn(
+            toolClass,
+            "hover:bg-white/15 @max-[260px]/card:w-8 @max-[260px]/card:justify-center @max-[260px]/card:px-0",
+            compact && iconOnly,
+          )}
         >
           <ShuffleIcon strokeWidth={1.8} />
-          <span className="@max-[260px]/card:sr-only">变体</span>
+          <span className={cn("@max-[260px]/card:sr-only", compact && "sr-only")}>变体</span>
         </button>
       ) : null}
       <span className="ml-auto flex items-center gap-0.5">

@@ -43,9 +43,11 @@ export function AgentModelSelector({ compact }: { compact?: boolean | undefined 
     return [
       {
         value: AUTO,
-        text: "默认模型",
-        label: "默认模型",
-        description: defaultModel ? `设置里的默认：${defaultModel.name}` : "使用设置里的默认对话模型",
+        // The button names the model that will answer, not just "默认"
+        // (FINDINGS U2: it was unclear which model a run used).
+        text: defaultModel ? defaultModel.name : "默认模型",
+        label: defaultModel ? `默认 · ${defaultModel.name}` : "默认模型",
+        description: defaultModel ? "设置里的默认对话模型" : "使用设置里的默认对话模型",
       },
       ...groups.flatMap((group) =>
         group.models.map((m) => ({

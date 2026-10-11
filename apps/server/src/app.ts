@@ -66,11 +66,15 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
+import { registerCspReportRoute } from "./http/csp-report.js";
+import { startStaleRunSweeper } from "./features/agent-runs/stale-run-sweeper.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
+import { registerMediaAccessRoutes } from "./http/media-access.js";
+import { createMemberCheck } from "./features/media/media-access.js";
 import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
@@ -239,8 +243,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const cleanupTimer = setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
   // Logs the main site's xy2api release and whether it is a verified version.
   if (!process.env.VITEST) xy2api.compat.start();
+  const stopRunSweeper =
+    !process.env.VITEST && env.supabaseUrl
+      ? startStaleRunSweeper(getAdminClient)
+      : undefined;
   app.addHook("onClose", async () => {
     clearInterval(cleanupTimer);
+    stopRunSweeper?.();
     xy2api.compat.stop();
     await pgmq?.shutdown();
     await deliveries?.close();
@@ -302,8 +311,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       ? Promise.resolve({ ok: false, checks: { accepting: false } })
       : readiness.check(),
   );
+  void registerCspReportRoute(app);
   void registerFontsRoutes(app, { env });
-  void registerImageProxyRoute(app, { env });
+  // FINDINGS S2: who may read project-assets images (media-access.ts).
+  const isMember = createMemberCheck(getAdminClient);
+  void registerMediaAccessRoutes(app, { env, auth, isMember });
+  void registerImageProxyRoute(app, {
+    env,
+    ...(env.mediaAccess === "cookie"
+      ? { media: { secret: env.secretKey, isMember } }
+      : {}),
+  });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,

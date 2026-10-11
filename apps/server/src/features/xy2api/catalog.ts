@@ -239,6 +239,26 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     supportsEdit: true,
     maxInputImages: 3,
   },
+  // The Grok-image group lists these next to 2.0 (FINDINGS K1). Same
+  // xai-images protocol; edits stay off until verified per model.
+  {
+    id: "grok-imagine-image-quality",
+    displayName: "Grok Imagine 高质量",
+    description: "xAI 图像生成，画质优先，出图稍慢",
+    protocol: "xai-images",
+    platforms: ["grok", "composite"],
+    supportsEdit: false,
+    maxInputImages: 0,
+  },
+  {
+    id: "grok-imagine-image",
+    displayName: "Grok Imagine",
+    description: "xAI 图像生成",
+    protocol: "xai-images",
+    platforms: ["grok", "composite"],
+    supportsEdit: false,
+    maxInputImages: 0,
+  },
   {
     id: "gemini-3.1-flash-image",
     aliases: ["gemini-3.1-flash-image-preview", "nano-banana-2"],

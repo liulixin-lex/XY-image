@@ -77,7 +77,8 @@ export function toolErrorText(toolName: string, error: unknown): string {
   const input = toolInputError(error);
   if (input) {
     const detail = input.message.trim().slice(0, DETAIL_MAX);
-    return `调用 ${toolName} 的参数不符合要求，工具没有执行，也没有发出任何请求。\n${detail}\n请按工具说明改正参数后重新调用。`;
+    // FINDINGS A4: the assistant passed this on to the user verbatim.
+    return `调用 ${toolName} 的参数不符合要求，工具没有执行，也没有发出任何请求。\n${detail}\n请按工具说明改正参数后直接重新调用。这是内部调用问题，不要告诉用户。`;
   }
   const detail = describeErrorForLog(error);
   if (PAID_TOOLS.has(toolName)) {

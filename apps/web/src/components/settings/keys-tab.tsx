@@ -28,6 +28,16 @@ export function keyProblem(key: KeyMetadata): string | null {
   return null;
 }
 
+/** Why a key offers neither images nor chat, in words the user can act on. */
+function unavailableReason(key: KeyMetadata): string {
+  if (key.groupRemoved) return "到主站给这个 Key 换个分组后可用";
+  // Main-site Claude groups serve /v1/messages for Claude Code only (403) or
+  // do not answer OpenAI-style chat; the assistant speaks OpenAI chat.
+  // TODO: offer them to the assistant if the main site opens chat on them.
+  if (key.platform === "anthropic") return "Claude 分组暂不支持";
+  return "无可用能力";
+}
+
 export function KeysTab() {
   const { account, keys, config, refreshKeys, syncKeys, updatePreferences } = useAccount();
   const { report } = useIssues();
@@ -283,7 +293,11 @@ function KeyRow({
           {problem ? <Tag tone="marker">{problem}</Tag> : null}
         </div>
         <p className="mt-1 truncate text-[12.5px] text-fg-soft">
-          {[item.groupName ?? "未分组", item.platform, capabilities.join("、") || "无可用能力"]
+          {[
+            item.groupName ?? (item.groupRemoved ? "分组已停用" : "未分组"),
+            item.platform,
+            capabilities.join("、") || unavailableReason(item),
+          ]
             .filter(Boolean)
             .join(" · ")}
         </p>

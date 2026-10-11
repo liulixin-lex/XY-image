@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStreamingChatModel } from "./deep-agent.js";
+import { XY2API_USER_AGENT } from "../utils/user-agent.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -89,7 +90,7 @@ describe("per-user chat transport", () => {
     expect(
       server.requests.every(
         (request) =>
-          request.ua === "LoomicServer/1.0" &&
+          request.ua === XY2API_USER_AGENT &&
           request.path === "/v1/chat/completions",
       ),
     ).toBe(true);

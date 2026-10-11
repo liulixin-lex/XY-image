@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Xy2apiClient } from "./client.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 
 const response = (data: unknown) =>
   new Response(JSON.stringify({ code: 0, data }));
@@ -18,7 +19,7 @@ describe("xy2api client", () => {
     );
     expect(result.kind).toBe("ok");
     expect(fetcher.mock.calls[0]?.[1].headers).toEqual({
-      "User-Agent": "LoomicServer/1.0",
+      "User-Agent": XY2API_USER_AGENT,
       Accept: "application/json",
       "Content-Type": "application/json",
     });
@@ -192,5 +193,89 @@ describe("xy2api usage lookup", () => {
         lookup,
       ),
     ).toEqual({ kind: "incomplete" });
+  });
+});
+
+describe("xy2api usage lookup by shape", () => {
+  const row = (over: Record<string, unknown>) => ({
+    id: 1,
+    request_id: "client:aaa",
+    model: "gpt-image-2",
+    image_size: "4K",
+    user_agent: "GGUU-AI-Image/0.0.5",
+    created_at: "2026-10-11T15:30:33Z",
+    actual_cost: 0.1,
+    ...over,
+  });
+  const shape = {
+    apiKeyId: 24546,
+    model: "gpt-image-2",
+    imageSize: "4K",
+    after: new Date("2026-10-11T15:25:00Z"),
+    before: new Date("2026-10-11T15:59:20Z"),
+    exclude: new Set(["ok-twin"]),
+  };
+  it("finds the one row of the job's shape", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      response({
+        items: [
+          row({ id: 2, request_id: "client:862ee3fc" }),
+          // a twin that succeeded: its id is already on another job
+          row({ id: 3, request_id: "client:ok-twin" }),
+          row({ id: 4, request_id: "client:x1", image_size: "2K" }),
+          row({ id: 5, request_id: "client:x2", model: "gpt-image-2.5-flare" }),
+          row({ id: 6, request_id: "client:x3", user_agent: "curl/8.0" }),
+          row({ id: 7, request_id: "client:x4", created_at: "2026-10-11T16:30:00Z" }),
+          // sent before 0.0.5
+          row({ id: 8, request_id: "client:old", user_agent: "LoomicServer/1.0", created_at: "2026-10-10T10:00:00Z" }),
+        ],
+        pages: 1,
+      }),
+    );
+    const client = new Xy2apiClient("https://example.com", fetcher);
+    expect(await client.findUsageByShape("synthetic", shape)).toEqual({
+      kind: "found",
+      usageId: 2,
+      actualCost: 0.1,
+      requestId: "862ee3fc",
+    });
+    expect(
+      Object.fromEntries(new URL(fetcher.mock.calls[0]?.[0]).searchParams),
+    ).toMatchObject({
+      start_date: "2026-10-10",
+      end_date: "2026-10-12",
+      api_key_id: "24546",
+      timezone: "UTC",
+    });
+  });
+  it("is ambiguous with two rows and inconclusive without the fields", async () => {
+    const two = vi.fn().mockResolvedValue(
+      response({
+        items: [row({ id: 2 }), row({ id: 3, request_id: "client:bbb" })],
+        pages: 1,
+      }),
+    );
+    expect(
+      await new Xy2apiClient("https://example.com", two).findUsageByShape(
+        "synthetic",
+        shape,
+      ),
+    ).toEqual({ kind: "ambiguous", candidates: 2 });
+    const drifted = vi
+      .fn()
+      .mockResolvedValue(response({ items: [{ id: 1, request_id: "client:a" }], pages: 1 }));
+    expect(
+      await new Xy2apiClient("https://example.com", drifted).findUsageByShape(
+        "synthetic",
+        shape,
+      ),
+    ).toEqual({ kind: "incomplete" });
+    const none = vi.fn().mockResolvedValue(response({ items: [], pages: 0 }));
+    expect(
+      await new Xy2apiClient("https://example.com", none).findUsageByShape(
+        "synthetic",
+        shape,
+      ),
+    ).toEqual({ kind: "absent" });
   });
 });

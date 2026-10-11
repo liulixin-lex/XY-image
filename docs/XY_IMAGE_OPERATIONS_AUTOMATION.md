@@ -1,6 +1,6 @@
 # XY-IMAGE 自建运维自动化
 
-状态：离线实现与 fake 测试。没有初始化真实备份仓库、安装 timer、停止服务或发送外部告警。先阅读 `XY_IMAGE_SELFHOST.md`；本页补充上线前的执行配置，不代替真实恢复演练。
+状态：restic 异地备份和 webhook 告警仍是离线实现与 fake 测试，没有初始化真实备份仓库或发送外部告警。10-11 起生产（image.gguuai.com）已经启用每日不停机本地备份和监控，见下文「生产现状」。先阅读 `XY_IMAGE_SELFHOST.md`；本页补充上线前的执行配置。
 
 ## 能力与限制
 
@@ -47,6 +47,24 @@ AWS_SECRET_ACCESS_KEY=实际访问密钥
 6. 观察 `systemctl list-timers`、服务退出码和 `operations-state/backup.json`，验证故障/恢复告警。为宿主机失联、timer失败/未运行及备份目标容量配置独立外部检查。
 
 默认保留7个有备份的日、4周、6月；按 restic 规则合并计算，可能不是简单17份。备份路径每次变化，因此 backup/forget 均用 `host,tags` 分组，forget 同时限定专用 host/tag，不按动态路径形成永不轮换的新组。不要对同一仓库并行执行其他 prune/forget/unlock；脚本保留 restic 原生锁，冲突失败退出。生产先审查同等参数的 `forget --dry-run` 输出，必要时采用对象存储不可变/离线副本保护；本次没有宣称已配置 WORM/PITR。
+
+## 生产现状（10-11 agent01）
+
+image.gguuai.com 跑在 ovh 上，部署目录 `/image/deploy/xy-image-prod`，仓库 `/image/XY-image-prod`。四个 unit 是按 `deploy/selfhost/systemd/` 的模板改了路径装的：
+
+| unit | 做什么 | 时间 |
+| --- | --- | --- |
+| `xy-image-prod-hot-backup.timer` / `.service` | `hot-backup.mjs --root /image/backups/xy-image-prod --keep-daily 7 --keep-weekly 4` | 每天 03:40 UTC（北京时间 11:40）后 10 分钟内，`Persistent=true`，停机后补跑 |
+| `xy-image-prod-monitor.timer` / `.service` | `operations.mjs monitor /etc/xy-image-prod/operations.json` | 每 2 分钟 |
+
+- 不停机备份每次约 17 秒、214 MiB（10-11）。同一天用 `restore-drill.mjs` 演练过一次：12 张表的行数都和线上一致，Storage 132/132，`pg_restore` 0 个错误。
+- 监控配置没有 `alertFile`，因为还没有告警接收地址。发现问题时，只在 journal 里打 `[operations] ALERT <代码>` 和 `ALERT resolved`，平时打 `[operations] ok:`。查看方法：`journalctl -u xy-image-prod-monitor.service --since -1h`。**目前没有人会被通知**，告警渠道定下来后再加 `alertFile`。
+- 监控比模板多了四项可选检查，都写在 `operations.example.json` 里：
+  - `hotBackupRoot`：读 `latest.json`，算备份年龄；`latest-failure.json` 比它新时报 `hot_backup_failed`。
+  - `publicUrl`：从外面探测首页和 `/api/health`，失败报 `public_site_down` / `public_api_down`。
+  - `imageFailureAlert`：最近 `windowMinutes` 分钟内，生图任务至少 `minJobs` 个，且失败比例达到 `ratio`，报 `image_failure_rate_high`。审核拒绝、余额不足、Key 额度或不可用这类用户自己那边的原因，不计入分子和分母（FINDINGS O2：分组 74 当天 100% 失败却没人发现）。
+  - `minAvailableMiB`：可用内存低于这个值（MiB），报 `memory_low`。
+- 异地备份（restic）没有配置，`offsiteConfirmed` 仍是 false，`operations.mjs backup` 不会运行。
 
 ## 失败与人工恢复
 

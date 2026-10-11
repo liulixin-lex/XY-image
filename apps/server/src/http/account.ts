@@ -143,6 +143,8 @@ export function registerAccountRoutes(
           maskedKey: row.masked_key,
           status: row.status,
           groupName: row.group_name,
+          // FINDINGS K5: the group was deleted on the main site.
+          groupRemoved: row.group_id !== null && row.group_name === null,
           platform: row.platform,
           imageCapable: row.image_capable,
           imageModels: row.image_models,

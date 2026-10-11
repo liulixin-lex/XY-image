@@ -85,22 +85,31 @@ async function jsonOrNull(file) {
     throw error;
   }
 }
-export async function loadConfig(file) {
+/**
+ * `monitor` runs without an offsite repository or an alert destination
+ * (FINDINGS O2: production had neither yet): alerts then go to the journal
+ * as `[operations] ALERT …` lines. `backup` still requires both.
+ */
+export async function loadConfig(file, { forMonitor = false } = {}) {
   const config = JSON.parse(await privateFile(file));
-  for (const key of [
-    "deployDir",
-    "backupRoot",
-    "stateDir",
-    "resticEnvFile",
-    "alertFile",
-  ])
+  const paths = ["deployDir", "backupRoot", "stateDir"];
+  if (!forMonitor) paths.push("resticEnvFile", "alertFile");
+  else if (config.alertFile != null) paths.push("alertFile");
+  if (config.hotBackupRoot != null) paths.push("hotBackupRoot");
+  for (const key of paths)
     if (typeof config[key] !== "string" || !path.isAbsolute(config[key]))
       fail("invalid_config_path");
+  if (config.publicUrl != null) {
+    const url = new URL(config.publicUrl);
+    if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash)
+      fail("invalid_public_url");
+  }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(config.host))
     fail("invalid_host");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(config.tag))
     fail("invalid_tag");
-  if (config.offsiteConfirmed !== true) fail("offsite_not_confirmed");
+  if (!forMonitor && config.offsiteConfirmed !== true)
+    fail("offsite_not_confirmed");
   for (const key of [
     "keepDaily",
     "keepWeekly",
@@ -320,6 +329,13 @@ export async function scheduledBackup(config, dependencies = {}) {
   }
 }
 export async function sendAlert(config, event, dependencies = {}) {
+  if (!config.alertFile) {
+    // No destination yet: the journal is the alert (journalctl -u xy-image-monitor).
+    console.warn(
+      `[operations] ALERT ${event.status}: ${event.problems.join(",") || "-"}${event.details ? ` ${JSON.stringify(event.details)}` : ""}`,
+    );
+    return;
+  }
   const secret = JSON.parse(await privateFile(config.alertFile));
   const url = new URL(secret.url);
   if (url.protocol !== "https:" || url.username || url.password || url.hash)
@@ -339,6 +355,16 @@ export async function sendAlert(config, event, dependencies = {}) {
   await response.body?.cancel();
   if (!response.ok) fail("alert_delivery_failed");
 }
+const USER_SIDE_FAILURES = new Set([
+  "safety_filter",
+  "insufficient_balance",
+  "key_quota_exhausted",
+  "key_unavailable",
+  "key_ip_restricted",
+  "xy2api_reauth_required",
+  "invalid_input",
+  "model_not_accessible",
+]);
 export async function monitor(config, dependencies = {}) {
   const run = dependencies.run ?? quietRun;
   const fetcher = dependencies.fetch ?? fetch;
@@ -362,8 +388,25 @@ export async function monitor(config, dependencies = {}) {
         problems.push(`disk_unknown_${label}`);
       }
     }
+    const details = {};
     const backup = await jsonOrNull(path.join(config.stateDir, "backup.json"));
-    const age = now().getTime() - Date.parse(backup?.lastSuccessAt ?? "");
+    // The local hot backup (hot-backup.mjs) counts as a backup too; until an
+    // offsite one exists it is the only one.
+    const hot = config.hotBackupRoot
+      ? await jsonOrNull(path.join(config.hotBackupRoot, "latest.json"))
+      : null;
+    const lastBackupAt = Math.max(
+      Date.parse(backup?.lastSuccessAt ?? "") || 0,
+      hot?.status === "complete" ? Date.parse(hot.at ?? "") || 0 : 0,
+    );
+    const age = lastBackupAt ? now().getTime() - lastBackupAt : NaN;
+    if (config.hotBackupRoot) {
+      const hotFailure = await jsonOrNull(
+        path.join(config.hotBackupRoot, "latest-failure.json"),
+      );
+      if (hotFailure && Date.parse(hotFailure.at) > (Date.parse(hot?.at ?? "") || 0))
+        problems.push("hot_backup_failed");
+    }
     if (
       !Number.isFinite(age) ||
       age < 0 ||
@@ -442,6 +485,80 @@ export async function monitor(config, dependencies = {}) {
     } catch {
       problems.push("api_not_ready");
     }
+    // What a visitor sees: DNS, TLS, the edge, the static site and the API
+    // through it (FINDINGS O2).
+    if (config.publicUrl) {
+      for (const [problem, target] of [
+        ["public_site_down", new URL("/", config.publicUrl)],
+        ["public_api_down", new URL("/api/health", config.publicUrl)],
+      ]) {
+        try {
+          const result = await fetcher(target, {
+            redirect: "error",
+            signal: AbortSignal.timeout(10_000),
+          });
+          await result.body?.cancel();
+          if (!result.ok) problems.push(problem);
+        } catch {
+          problems.push(problem);
+        }
+      }
+    }
+    // A group or model that stopped working shows up as most pictures of
+    // the last half hour failing (FINDINGS O2: G2 failed 100% unnoticed).
+    // Error codes and counts only.
+    if (config.imageFailureAlert) {
+      const { windowMinutes = 30, minJobs = 5, ratio = 0.5 } =
+        config.imageFailureAlert;
+      try {
+        const text = await run("docker", [
+          ...composeArgs(config),
+          "exec",
+          "-T",
+          "db",
+          "psql",
+          "-U",
+          "postgres",
+          "-d",
+          "postgres",
+          "-AtX",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-c",
+          `SELECT coalesce(error_code, status::text), count(*) FROM public.background_jobs WHERE job_type = 'image_generation' AND status::text IN ('succeeded', 'failed', 'dead_letter') AND updated_at > now() - interval '${Number(windowMinutes)} minutes' GROUP BY 1 ORDER BY 2 DESC`,
+        ]);
+        const rows = text
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => line.split("|"))
+          .filter(([code, count]) => /^[a-z0-9_]{1,64}$/.test(code ?? "") && /^\d+$/.test(count ?? ""))
+          .map(([code, count]) => [code, Number(count)]);
+        // The user's own doing (prompt refused, balance, key limits) is not
+        // the site failing: left out of both counts, still in the details.
+        const counted = rows.filter(([code]) => !USER_SIDE_FAILURES.has(code));
+        const total = counted.reduce((sum, [, count]) => sum + count, 0);
+        const failed = counted
+          .filter(([code]) => code !== "succeeded")
+          .reduce((sum, [, count]) => sum + count, 0);
+        if (total >= minJobs && failed / total >= ratio) {
+          problems.push("image_failure_rate_high");
+          details.imageFailures = Object.fromEntries(rows.slice(0, 6));
+        }
+      } catch {
+        problems.push("image_failure_check_unknown");
+      }
+    }
+    if (config.minAvailableMiB) {
+      try {
+        const meminfo = await (dependencies.readFile ?? readFile)("/proc/meminfo", "utf8");
+        const kib = Number(/MemAvailable:\s+(\d+)/.exec(meminfo)?.[1]);
+        if (Number.isFinite(kib) && kib / 1024 < config.minAvailableMiB)
+          problems.push("memory_low");
+      } catch {
+        // Not Linux: nothing to read.
+      }
+    }
     problems.sort();
     const previous = await jsonOrNull(
       path.join(config.stateDir, "monitor.json"),
@@ -460,6 +577,7 @@ export async function monitor(config, dependencies = {}) {
         {
           status: problems.length ? "firing" : "resolved",
           problems,
+          ...(Object.keys(details).length ? { details } : {}),
           observedAt: now().toISOString(),
         },
         dependencies,
@@ -482,7 +600,9 @@ if (
 ) {
   try {
     const [command, configFile] = process.argv.slice(2);
-    const config = await loadConfig(configFile);
+    const config = await loadConfig(configFile, {
+      forMonitor: command === "monitor",
+    });
     if (command === "backup") {
       await scheduledBackup(config);
       console.log(

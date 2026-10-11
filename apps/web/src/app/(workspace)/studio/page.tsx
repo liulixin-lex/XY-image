@@ -225,6 +225,7 @@ export default function StudioPage() {
             ref={composer}
             initialDraft={pendingDraft}
             models={models.data ?? []}
+            modelsLoading={models.data === null || models.loading}
             onSubmit={studio.submit}
             submitting={studio.submitting}
             pendingCount={studio.busyCount}

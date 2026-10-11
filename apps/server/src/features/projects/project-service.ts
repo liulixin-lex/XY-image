@@ -196,6 +196,33 @@ export function createProjectService(options: {
         );
       }
 
+      // 「应用到新项目」: the user's default brand kit goes on every new
+      // project (FINDINGS A1: the switch was saved and never read). Best
+      // effort; the run falls back to the default kit too (runtime.ts).
+      try {
+        const { data: kit } = await client
+          .from("brand_kits")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("is_default", true)
+          .limit(1)
+          .maybeSingle();
+        if (kit?.id) {
+          const { error: kitError } = await client
+            .from("projects")
+            .update({ brand_kit_id: kit.id })
+            .eq("id", result.project.id);
+          if (kitError) throw kitError;
+          console.info(
+            `[projects] project ${result.project.id} created with default brand kit ${kit.id}`,
+          );
+        }
+      } catch {
+        console.warn(
+          `[projects] project ${result.project.id}: default brand kit not applied`,
+        );
+      }
+
       return mapProjectSummary({
         canvas: result.canvas,
         project: result.project,

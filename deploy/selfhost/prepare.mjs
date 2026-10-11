@@ -325,6 +325,10 @@ export async function prepare(options) {
       LOOMIC_MAX_PENDING_IMAGE_JOBS: "8",
       LOOMIC_MAX_IMAGES_PER_RUN: "6",
       LOOMIC_SKILLS_ROOT: "/opt/loomic/skills",
+      // Single domain: the edge asks /api/media/authorize before serving a
+      // project-assets image (FINDINGS S2). Separate origins cannot share
+      // the cookie, so their images stay public.
+      LOOMIC_MEDIA_ACCESS: mode === "single" ? "cookie" : "open",
     };
     base.name = project;
     for (const service of Object.values(base.services)) {
@@ -353,6 +357,21 @@ export async function prepare(options) {
       "false";
     base.services.auth.environment.GOTRUE_DISABLE_SIGNUP = "true";
     base.services.rest.environment.PGRST_DB_SCHEMAS = "public";
+    // Memory ceilings (FINDINGS O3): the host is shared, so a runaway
+    // process is stopped by its own limit instead of pushing everything
+    // into swap. Several times what each used in production on 2026-10-11
+    // (API 145 MiB, worker 115 MiB, storage 175 MiB, imgproxy 20 MiB,
+    // studio 195 MiB). The database has none: the kernel would kill it
+    // rather than slow it down. Node's heap is capped below the limit so it
+    // collects garbage before the cgroup kills it.
+    const memory = {
+      storage: "1g",
+      imgproxy: "1g",
+      studio: "512m",
+      realtime: "512m",
+    };
+    for (const [service, limit] of Object.entries(memory))
+      if (base.services[service]) base.services[service].mem_limit = limit;
     const app = {
       image: `${project}-backend:local`,
       build: { context: repository, dockerfile: "apps/server/Dockerfile" },
@@ -380,7 +399,11 @@ export async function prepare(options) {
       ...app,
       profiles: ["app"],
       ports: [`127.0.0.1:${ports.api}:3101`],
-      environment: { SERVICE_MODE: "api" },
+      environment: {
+        SERVICE_MODE: "api",
+        NODE_OPTIONS: "--max-old-space-size=768",
+      },
+      mem_limit: "1g",
       deploy: { replicas: 1 },
       healthcheck: {
         test: [
@@ -401,7 +424,10 @@ export async function prepare(options) {
       environment: {
         SERVICE_MODE: "worker",
         WORKER_HEARTBEAT_FILE: "/tmp/xy-worker-heartbeat",
+        // sharp decodes 4K pictures outside the JS heap; leave it room.
+        NODE_OPTIONS: "--max-old-space-size=1024",
       },
+      mem_limit: "1536m",
       healthcheck: {
         test: [
           "CMD",

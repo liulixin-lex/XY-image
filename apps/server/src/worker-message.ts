@@ -1,5 +1,5 @@
 import type { BackgroundJobType } from "@loomic/shared";
-import { DISPATCH_RETRY_SECONDS } from "./features/jobs/dispatch-gate.js";
+import { dispatchRetrySeconds } from "./features/jobs/dispatch-gate.js";
 import {
   type ExecutorContext,
   getExecutor,
@@ -38,9 +38,12 @@ export async function processMessage(
       ? msg.message.session_id.slice(0, 8)
       : undefined;
   const startTime = Date.now();
-  console.log(
-    `${tag} Processing job ${jobId} (${jobType})${sessionShort ? ` session:${sessionShort}` : ""}`,
-  );
+  // Logged once the job really starts (below the dispatch gate): a waiting
+  // job is picked up again every few seconds (FINDINGS L2).
+  const logStart = (waited?: string) =>
+    console.log(
+      `${tag} Processing job ${jobId} (${jobType})${sessionShort ? ` session:${sessionShort}` : ""}${waited ?? ""}`,
+    );
 
   const executor = getExecutor(jobType);
   if (!executor) {
@@ -76,11 +79,11 @@ export async function processMessage(
       ctx.env.maxConcurrentJobs,
     );
     if (decision === "busy") {
-      await ctx.pgmq.setVt(queue, msg.msg_id, DISPATCH_RETRY_SECONDS);
-      // Once on the first wait and then about every minute, not every 3 s.
-      if (msg.read_ct <= 1 || msg.read_ct % 20 === 0)
+      await ctx.pgmq.setVt(queue, msg.msg_id, dispatchRetrySeconds(msg.read_ct));
+      // One line when the wait starts, then about every 5 minutes.
+      if (msg.read_ct <= 1 || msg.read_ct % 30 === 0)
         console.log(
-          `${tag} Job ${jobId} waiting: user has ${ctx.env.maxConcurrentJobs} image requests in flight (read ${msg.read_ct})`,
+          `${tag} Job ${jobId} waiting: user has ${ctx.env.maxConcurrentJobs} image requests in flight (check ${msg.read_ct})`,
         );
       return;
     }
@@ -94,6 +97,12 @@ export async function processMessage(
       }
     }
   }
+  logStart(
+    msg.read_ct > 1 && current.status === "queued"
+      ? ` after waiting ${Math.round((Date.now() - Date.parse(current.created_at)) / 1000)}s (${msg.read_ct} checks)`
+      : undefined,
+  );
+
   // Increment attempt count
   await ctx.jobService.incrementAttempt(jobId);
 

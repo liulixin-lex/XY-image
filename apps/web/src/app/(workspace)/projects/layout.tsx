@@ -1,0 +1,9 @@
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+
+// Per-page tab title (FINDINGS W1); the root layout adds " · GGUU AI IMAGE".
+export const metadata: Metadata = { title: "画布项目" };
+
+export default function Layout({ children }: { children: ReactNode }) {
+  return children;
+}

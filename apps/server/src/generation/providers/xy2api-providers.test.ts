@@ -16,12 +16,20 @@ import {
 } from "./xy2api-openai-image.js";
 import { EDIT_PREPARE_FAILED } from "../mask-edit.js";
 import { Xy2apiXaiImageProvider } from "./xy2api-xai-image.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((close) => close()));
 });
-async function gateway(status: number, body: unknown, delayMs = 0) {
+async function gateway(
+  status: number,
+  body: unknown,
+  delayMs = 0,
+  headers: Record<string, string> = {
+    "X-Client-Request-ID": "fixture-request-id",
+  },
+) {
   const requests: {
     path: string;
     auth: string | undefined;
@@ -40,10 +48,7 @@ async function gateway(status: number, body: unknown, delayMs = 0) {
       ua: req.headers["user-agent"],
     });
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
-    res.writeHead(status, {
-      "Content-Type": "application/json",
-      "X-Client-Request-ID": "fixture-request-id",
-    });
+    res.writeHead(status, { "Content-Type": "application/json", ...headers });
     res.end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -161,7 +166,7 @@ describe("per-call gateway image transports", () => {
     expect(server.requests[0]).toMatchObject({
       path: "/v1/images/generations",
       auth: "Bearer synthetic-openai-key",
-      ua: "LoomicServer/1.0",
+      ua: XY2API_USER_AGENT,
     });
     const sent = JSON.parse(server.requests[0]?.body ?? "{}");
     expect(sent).toMatchObject({
@@ -401,7 +406,7 @@ describe("per-call gateway image transports", () => {
       "/v1beta/models/gemini-3-pro-image-preview:generateContent",
     );
     expect(server.requests[0]?.googleKey).toBe("synthetic-google-key");
-    expect(server.requests[0]?.ua).toBe("LoomicServer/1.0");
+    expect(server.requests[0]?.ua).toBe(XY2API_USER_AGENT);
     expect(result.requestId).toBe("fixture-request-id");
     const config = JSON.parse(
       server.requests[0]?.body ?? "{}",
@@ -622,6 +627,59 @@ describe("per-call gateway image transports", () => {
   });
 });
 
+// gguuai.com 2026-10-11 (FINDINGS G7): Cloudflare cut 4K requests after
+// ~125 s with a 5xx that xy2api never sent (no X-Client-Request-ID), while
+// xy2api went on and billed. Every channel must call that 待核对.
+describe("a 5xx that did not come from xy2api", () => {
+  const cut = { error: { message: "Bad gateway", type: "upstream_error" } };
+  const edge = { "CF-RAY": "8f00aa11bb22cc33-SJC", Server: "cloudflare" };
+  it.each(["openai", "gemini", "xai"])("stays 待核对 (%s)", async (kind) => {
+    const server = await gateway(502, cut, 0, edge);
+    const ctx = { apiKey: "synthetic-key", baseUrl: server.baseUrl };
+    const call =
+      kind === "openai"
+        ? openai.generate({ model: "gpt-image-2", prompt: "fixture" }, ctx)
+        : kind === "gemini"
+          ? gemini.generate({ model: "gemini-3-pro-image", prompt: "fixture" }, ctx)
+          : xai.generate({ model: "grok-imagine-image-2.0", prompt: "fixture" }, ctx);
+    const error = await call.catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: "upstream_unknown",
+      failure: {
+        billing: "unknown",
+        diagnostics: {
+          status: 502,
+          cfRay: "8f00aa11bb22cc33-SJC",
+          server: "cloudflare",
+          answeredByXy2api: false,
+        },
+      },
+    });
+    expect(server.requests).toHaveLength(1);
+  });
+  it.each(["openai", "gemini", "xai"])(
+    "is a plain refusal when xy2api sent it (%s)",
+    async (kind) => {
+      const server = await gateway(503, cut);
+      const ctx = { apiKey: "synthetic-key", baseUrl: server.baseUrl };
+      const call =
+        kind === "openai"
+          ? openai.generate({ model: "gpt-image-2", prompt: "fixture" }, ctx)
+          : kind === "gemini"
+            ? gemini.generate({ model: "gemini-3-pro-image", prompt: "fixture" }, ctx)
+            : xai.generate({ model: "grok-imagine-image-2.0", prompt: "fixture" }, ctx);
+      await expect(call).rejects.toMatchObject({
+        code: "upstream_busy",
+        failure: {
+          billing: "not_charged",
+          requestId: "fixture-request-id",
+          diagnostics: { status: 503, answeredByXy2api: true },
+        },
+      });
+    },
+  );
+});
+
 describe("xAI image transport", () => {
   it("sends one JSON generation with xAI's own size fields", async () => {
     const server = await gateway(200, { data: [{ b64_json: await png() }] });
@@ -644,7 +702,7 @@ describe("xAI image transport", () => {
     expect(server.requests[0]).toMatchObject({
       path: "/v1/images/generations",
       auth: "Bearer synthetic-xai-key",
-      ua: "LoomicServer/1.0",
+      ua: XY2API_USER_AGENT,
     });
     // 4K is not offered by xAI (moved to 2k); 4:5 is not either (nearest
     // 3:4). `size` repeats the tier for the main site's billing.

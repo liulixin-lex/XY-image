@@ -7,10 +7,13 @@ import {
 import {
   BillingGuardError,
   GatewayError,
+  type GatewayDiagnostics,
+  gatewayDiagnostics,
   mapGatewayError,
   record,
   withRequestId,
 } from "../../features/xy2api/errors.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 import type {
   GeneratedImage,
   ImageCallContext,
@@ -172,6 +175,8 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
     // xy2api's id for this call, kept on every failure after it answered so a
     // 待核对 job can be matched to its usage row.
     let requestId: string | undefined;
+    let diagnostics: GatewayDiagnostics | undefined;
+    const startedAt = Date.now();
     try {
       const timeout = AbortSignal.timeout(600000);
       const response = await fetch(
@@ -181,7 +186,7 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
           headers: {
             Authorization: `Bearer ${ctx.apiKey}`,
             "Content-Type": "application/json",
-            "User-Agent": "LoomicServer/1.0",
+            "User-Agent": XY2API_USER_AGENT,
           },
           body: JSON.stringify(body),
           signal: ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout,
@@ -196,10 +201,23 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
       } catch {
         json = undefined;
       }
-      if (!response.ok)
+      if (!response.ok) {
+        diagnostics = gatewayDiagnostics({
+          status: response.status,
+          headers: response.headers,
+          body: json,
+          text,
+          requestId,
+          startedAt,
+        });
         throw new GatewayError(
-          mapGatewayError({ status: response.status, body: json }),
+          mapGatewayError({
+            status: response.status,
+            body: json,
+            answeredByXy2api: Boolean(requestId),
+          }),
         );
+      }
       const data = record(json).data;
       const output = record(Array.isArray(data) ? data[0] : undefined);
       // xAI reports whether the picture passed its moderation. A blocked one
@@ -247,7 +265,11 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
         throw error;
       // Refused before sending (DNS, TLS, connect) maps to not charged;
       // anything after that stays 待核对 with the request id when there is one.
-      throw withRequestId(error, requestId);
+      throw withRequestId(
+        error,
+        requestId,
+        diagnostics ?? { elapsedMs: Date.now() - startedAt },
+      );
     }
   }
 }

@@ -2,12 +2,15 @@
 
 import {
   ArrowUpRightIcon,
+  BlocksIcon,
   KeyRoundIcon,
   LogOutIcon,
   ReceiptTextIcon,
+  SwatchBookIcon,
   WalletIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { displayNameOf, useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
@@ -21,7 +24,8 @@ import { BalanceFigure } from "./balance";
  * Top-right account control: the main-site balance in poster numerals with
  * a recharge link, the theme switch, and a coral slanted avatar that opens
  * the account menu (balance, usage, keys, sign out). On phones only the
- * avatar shows; the menu carries the balance.
+ * avatar shows; the menu carries the balance, and 品牌套件 / 技能, which do
+ * not fit the four-tab bottom bar (FINDINGS U1).
  */
 export function AccountChip({ className }: { className?: string }) {
   const router = useRouter();
@@ -32,6 +36,11 @@ export function AccountChip({ className }: { className?: string }) {
   const initial = (name || "·").slice(0, 1).toUpperCase();
   // A selected key with an unreadable balance is "暂不可读", not "未选 Key".
   const noKey = Boolean(data && !data.balance && data.preferences.image_key_id === null);
+  const [open, setOpen] = useState(false);
+  const go = (href: string) => {
+    setOpen(false);
+    router.push(href);
+  };
 
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
@@ -55,7 +64,7 @@ export function AccountChip({ className }: { className?: string }) {
         ) : null}
       </div>
       <ThemeToggle />
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className="sk flex h-9 w-10 items-center justify-center rounded-[10px] bg-acc font-display text-[17px] text-acc-ink shadow-acc transition-[background-color,scale] outline-none hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:scale-95"
         aria-label="账户与余额"
@@ -94,13 +103,26 @@ export function AccountChip({ className }: { className?: string }) {
           <MenuButton
             icon={<KeyRoundIcon />}
             label={noKey ? "选择 Key" : "Key 与模型"}
-            onClick={() => router.push("/settings?tab=keys")}
+            onClick={() => go("/settings?tab=keys")}
             emphasis={noKey}
+          />
+          <MenuButton
+            icon={<SwatchBookIcon />}
+            label="品牌套件"
+            onClick={() => go("/brand-kit")}
+            className="md:hidden"
+          />
+          <MenuButton
+            icon={<BlocksIcon />}
+            label="技能"
+            onClick={() => go("/skills")}
+            className="md:hidden"
           />
           <MenuButton
             icon={<LogOutIcon />}
             label="退出登录"
             onClick={async () => {
+              setOpen(false);
               await signOut();
               router.replace("/login");
             }}
@@ -145,14 +167,16 @@ function MenuButton({
   label,
   onClick,
   emphasis,
+  className,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   emphasis?: boolean;
+  className?: string;
 }) {
   return (
-    <button type="button" onClick={onClick} className={cn(itemClass, "text-left")}>
+    <button type="button" onClick={onClick} className={cn(itemClass, "text-left", className)}>
       {icon}
       <span className={cn("flex-1", emphasis && "font-semibold text-alert")}>{label}</span>
     </button>

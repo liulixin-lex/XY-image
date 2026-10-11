@@ -78,6 +78,10 @@ export const GeneratorNode = memo(function GeneratorNode({
   const preferred = account.data?.preferences.default_image_model ?? null;
 
   // The node's model if the key reaches it, else the account default, else the first.
+  // A node without its own model waits for the account (G3): the first
+  // model shown before the saved default arrives would otherwise be sent.
+  const pickedHere = models.some((m) => m.id === config.model);
+  const awaitingDefault = !pickedHere && !account.data && !account.error;
   const model =
     models.find((m) => m.id === config.model) ??
     models.find((m) => m.id === preferred) ??
@@ -150,7 +154,9 @@ export const GeneratorNode = memo(function GeneratorNode({
       ? modelsLoading
         ? "正在读取可用模型"
         : "当前 Key 没有可用的生图模型"
-      : imageIds.length > refLimit
+      : awaitingDefault
+        ? "正在读取默认模型"
+        : imageIds.length > refLimit
         ? refLimit === 0
           ? `${model.displayName} 不支持参考图`
           : `${model.displayName} 最多 ${refLimit} 张参考图`

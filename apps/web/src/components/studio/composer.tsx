@@ -97,6 +97,8 @@ export const Composer = forwardRef<
   ComposerHandle,
   {
     models: ImageModelInfo[];
+    /** The model list has not arrived yet: an empty list means "loading", not "none". */
+    modelsLoading?: boolean;
     /** A draft carried over from the landing page; applied once, unsent. */
     initialDraft?: PendingDraft | null;
     onSubmit: (input: StudioSubmitInput) => Promise<StudioSubmitResult | null>;
@@ -105,7 +107,10 @@ export const Composer = forwardRef<
     pendingCount: number;
     className?: string;
   }
->(function Composer({ models, initialDraft, onSubmit, submitting, pendingCount, className }, ref) {
+>(function Composer(
+  { models, modelsLoading = false, initialDraft, onSubmit, submitting, pendingCount, className },
+  ref,
+) {
   const { session } = useAuth();
   const { account, updatePreferences } = useAccount();
   const { report } = useIssues();
@@ -153,7 +158,9 @@ export const Composer = forwardRef<
     onReject: (message) => toastError(message),
   });
 
-  // Restore 画质 / 质量 / 比例 / 数量 from the last session. Saving waits for
+  // Restore 画质 / 质量 / 比例 from the last session. 数量 is not kept: a
+  // batch of 4 carried over to the next day was easy to send unnoticed
+  // (FINDINGS G5), so every visit starts at 1. Saving waits for
   // this: the first render still holds the defaults, and writing them would
   // overwrite what is about to be restored (seen under StrictMode's
   // double-run, where the second restore then read the defaults back).
@@ -166,7 +173,6 @@ export const Composer = forwardRef<
         resolution?: unknown;
         quality?: unknown;
         ratio?: unknown;
-        count?: number;
       };
       if (RESOLUTIONS.includes(saved.resolution as ImageResolution))
         setResolution(saved.resolution as ImageResolution);
@@ -174,8 +180,6 @@ export const Composer = forwardRef<
         setResolution(saved.quality === "hd" ? "2K" : "1K");
       if (QUALITIES.includes(saved.quality as ImageQuality)) setQuality(saved.quality as ImageQuality);
       if (isAspectRatio(saved.ratio)) setRatio(saved.ratio);
-      if (Number.isInteger(saved.count) && saved.count! >= 1 && saved.count! <= IMAGE_BATCH_MAX)
-        setCount(saved.count!);
     } catch {
       // ignore malformed storage
     } finally {
@@ -196,28 +200,42 @@ export const Composer = forwardRef<
   useEffect(() => {
     if (!restored) return;
     try {
-      localStorage.setItem(PARAMS_KEY, JSON.stringify({ resolution, quality, ratio, count }));
+      localStorage.setItem(PARAMS_KEY, JSON.stringify({ resolution, quality, ratio }));
     } catch {
       // ignore
     }
-  }, [restored, resolution, quality, ratio, count]);
+  }, [restored, resolution, quality, ratio]);
 
-  // Model: keep the current choice while valid; otherwise the saved
-  // preference, otherwise the first model the key offers.
+  // Model: what the user picked here while valid; otherwise the saved
+  // preference, otherwise what is shown, otherwise the first model the key
+  // offers. The model list and the account (which holds the preference) load
+  // in parallel; picking before the account arrived locked in models[0] in
+  // 6 of 8 production runs (FINDINGS G3), so nothing is chosen until the
+  // account is in (or failed), and a late preference still wins over a
+  // choice the user did not make.
   const preferredModel = account.data?.preferences.default_image_model ?? null;
+  const accountSettled = Boolean(account.data) || Boolean(account.error);
+  const userPickedModel = useRef(false);
   useEffect(() => {
     if (models.length === 0) {
       setModel(null);
       return;
     }
+    if (!accountSettled) return;
     setModel((current) => {
-      if (current && models.some((m) => m.id === current)) return current;
-      if (preferredModel && models.some((m) => m.id === preferredModel)) return preferredModel;
+      const valid = (id: string | null): id is string =>
+        Boolean(id) && models.some((m) => m.id === id);
+      if (userPickedModel.current && valid(current)) return current;
+      if (valid(preferredModel)) return preferredModel;
+      if (valid(current)) return current;
       return models[0]?.id ?? null;
     });
-  }, [models, preferredModel]);
+  }, [models, preferredModel, accountSettled]);
 
   const current = models.find((m) => m.id === model) ?? null;
+  // Still reading the list or the saved default: the picker says so instead
+  // of 「没有可用模型」 for the first few hundred ms of every visit.
+  const modelPending = models.length === 0 ? modelsLoading : !accountSettled;
   const caps = modelCapabilities(current);
   // What will actually be sent: the server applies the same shared rules.
   const {
@@ -232,6 +250,7 @@ export const Composer = forwardRef<
 
   const chooseModel = useCallback(
     (next: string) => {
+      userPickedModel.current = true;
       setModel(next);
       // Remember as the account default (best effort, server validates).
       updatePreferences({ defaultImageModel: next }).catch((error) =>
@@ -247,7 +266,10 @@ export const Composer = forwardRef<
       applyParams: (params) => {
         setPrompt(params.prompt);
         setBeforeRewrite(null);
-        if (params.model && models.some((m) => m.id === params.model)) setModel(params.model);
+        if (params.model && models.some((m) => m.id === params.model)) {
+          userPickedModel.current = true;
+          setModel(params.model);
+        }
         if (params.resolution) setResolution(params.resolution);
         if (params.quality) setQuality(params.quality);
         if (isAspectRatio(params.aspectRatio)) setRatio(params.aspectRatio);
@@ -282,7 +304,11 @@ export const Composer = forwardRef<
   const trimmed = prompt.trim();
   const room = Math.max(0, MAX_PENDING_JOBS - pendingCount);
   const blockedReason = !current
-    ? "当前 Key 没有可用的生图模型"
+    ? modelPending
+      ? models.length > 0
+        ? "正在读取默认模型"
+        : "正在读取模型"
+      : "当前 Key 没有可用的生图模型"
     : room === 0
       ? `排队和生成中的已有 ${MAX_PENDING_JOBS} 张，等前面的完成`
       : count > room
@@ -383,7 +409,7 @@ export const Composer = forwardRef<
             value={model}
             onValueChange={chooseModel}
             options={modelOptions}
-            placeholder="没有可用模型"
+            placeholder={modelPending ? "读取模型…" : "没有可用模型"}
             disabled={models.length === 0}
             className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
             popupClassName="w-[300px]"
@@ -553,7 +579,14 @@ export const Composer = forwardRef<
 
         <Field
           label="质量"
-          note={caps.qualities.length ? QUALITY_HINT[sendQuality] : "当前模型不可调，由模型决定"}
+          note={
+            !caps.qualities.length
+              ? "当前模型不可调，由模型决定"
+              : sendResolution === "4K" && sendQuality === "high"
+                ? // Production 4K 高 took 78–200 s (FINDINGS G7).
+                  "4K 配高质量常要 1～3 分钟，请耐心等"
+                : QUALITY_HINT[sendQuality]
+          }
         >
           <Segmented
             ariaLabel="质量"
@@ -579,7 +612,12 @@ export const Composer = forwardRef<
         </Field>
       </div>
 
-      <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6">
+      {/* Phones: pinned to the bottom with its controls above the tab bar
+          (60 px tall, 12 px or the safe area from the edge), else the button
+          sat under it on the first screen (FINDINGS U3). The panel runs on
+          behind the glass tab bar, so the page no longer shows through the
+          strip between them. */}
+      <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:rounded-t-[20px] max-md:bg-panel max-md:pt-3 max-md:pb-[calc(max(12px,env(safe-area-inset-bottom))+72px)] max-md:shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)]">
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
           <Stepper value={count} min={1} max={IMAGE_BATCH_MAX} onChange={setCount} />
           <Button

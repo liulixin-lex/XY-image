@@ -947,7 +947,29 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
-          rlog.lap("brand_kit_resolved");
+          // A project without a kit uses the user's default (「应用到新项目」),
+          // so projects made before the switch was set get it too (A1).
+          let brandKitSource = brandKitId ? "project" : "none";
+          if (!brandKitId && run.accessToken && run.userId && options.createUserClient) {
+            try {
+              const { data: kit } = await (
+                options.createUserClient(run.accessToken) as UserSupabaseClient
+              )
+                .from("brand_kits")
+                .select("id")
+                .eq("user_id", run.userId)
+                .eq("is_default", true)
+                .limit(1)
+                .maybeSingle();
+              if (kit?.id) {
+                brandKitId = kit.id;
+                brandKitSource = "default";
+              }
+            } catch {
+              console.warn(`[agent-runtime] run ${runId}: default brand kit lookup failed`);
+            }
+          }
+          rlog.lap("brand_kit_resolved", { source: brandKitSource });
 
           // Pre-write workspace skill SKILL.md files AND associated files
           // (scripts/, references/, assets/) into the Store so the agent can
@@ -1218,11 +1240,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 });
               } catch {
                 run.status = "canceled";
-                yield {
+                const canceled: StreamEvent = {
                   runId,
                   timestamp: now(),
                   type: "run.canceled",
                 };
+                await syncPersistedRunFromEvent(
+                  options.agentRunMetadataService,
+                  run,
+                  canceled,
+                  now,
+                ).catch(() =>
+                  console.error(`[agent-runtime] run ${runId} canceled; status not saved`),
+                );
+                yield canceled;
                 return;
               }
             }
@@ -1344,6 +1375,16 @@ async function syncPersistedRunFromEvent(
     await updatePersistedRunStatus(agentRunMetadataService, run, "completed", {
       completedAt: now(),
     });
+    return;
+  }
+
+  if (event.type === "run.canceled") {
+    if (agentRunMetadataService && run.threadId)
+      await agentRunMetadataService.updateRun({
+        completedAt: now(),
+        runId: run.runId,
+        status: "canceled",
+      });
     return;
   }
 

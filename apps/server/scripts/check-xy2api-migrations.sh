@@ -30,6 +30,7 @@ for _ in 1 2; do
   sql < "$repo_dir/supabase/migrations/20261009000005_xy2api_pending_deliveries.sql"
   sql < "$repo_dir/supabase/migrations/20261009000006_xy2api_billing_reconcile.sql"
   sql < "$repo_dir/supabase/migrations/20261009000007_workspace_members_no_self_service.sql"
+  sql < "$repo_dir/supabase/migrations/20261011000004_billing_reconcile_without_request_id.sql"
 done
 sql < "$script_dir/fixtures/xy2api-migration-assert.sql"
 sql < "$script_dir/fixtures/chat-provider-migration-assert.sql"

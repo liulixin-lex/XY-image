@@ -14,16 +14,30 @@ import { BillingGuardError, Xy2apiError } from "./errors.js";
 //     conclusive;
 //   - anything else (no session, rate limit, page cap, wire drift) → retried
 //     on a later sweep, and the job stays 待核对.
-// Jobs without a request id (a timeout before xy2api answered) stay 待核对:
-// xy2api ignores request ids sent by clients, so nothing ties them to a row.
+// Jobs without a request id (Cloudflare cut the call after ~125 s, or the
+// worker died mid-call; FINDINGS G7/R1) are matched by shape instead:
+// xy2api ignores request ids sent by clients, but its row records the key,
+// the requested model, the 画质 and our User-Agent. Exactly one row of that
+// shape written between enqueue and 30 minutes after the failure, and not
+// tied to another job → charged, and its id is kept on the job. Several
+// rows → no conclusion (stays 待核对). None in a complete scan a day later →
+// not charged, as above.
 // TODO(agent01): show the matched row's actual_cost on the job once the UI
 // has a place for it; today it is only logged.
+// TODO(agent01): two id-less jobs of one shape in one window stay 待核对
+// (ambiguous); settle them together if that ever shows up in the logs.
 
 export type UnsettledJob = {
   id: string;
   userId: string;
   keyId: number | null;
-  requestId: string;
+  /** null: xy2api's id never came back; matched by shape */
+  requestId: string | null;
+  /** payload model and 画质, for shape matching */
+  model?: string | null;
+  resolution?: string | null;
+  /** dispatch time (background_jobs.started_at) */
+  startedAt?: Date | null;
   createdAt: Date;
   endedAt: Date;
 };
@@ -31,10 +45,28 @@ export type UnsettledJob = {
 export type ReconcileStore = {
   /** Claims due 待核对 jobs and stamps billing_checked_at (safe across workers). */
   claim(limit: number): Promise<UnsettledJob[]>;
-  /** unknown → charged / not_charged; false when the job no longer is unknown. */
-  settle(jobId: string, status: "charged" | "not_charged"): Promise<boolean>;
+  /**
+   * unknown → charged / not_charged; false when the job no longer is
+   * unknown. `requestId` (a shape match) is kept when the job has none.
+   */
+  settle(
+    jobId: string,
+    status: "charged" | "not_charged",
+    requestId?: string | null,
+  ): Promise<boolean>;
+  /** xy2api request ids already on the user's jobs created in the window. */
+  attributedRequestIds(
+    userId: string,
+    from: Date,
+    to: Date,
+  ): Promise<Set<string>>;
   close(): Promise<void>;
 };
+
+/** Usage rows of an id-less job: written from dispatch to this long after it failed. */
+export const SHAPE_MATCH_AFTER_MS = 30 * 60 * 1000;
+/** Clock difference allowed between this server and the main site. */
+const CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 export const RECONCILE_SETTLE_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +101,8 @@ export function createReconcileStore(databaseUrl: string): ReconcileStore {
         `WITH due AS (
            SELECT id FROM public.background_jobs
             WHERE billing_status = 'unknown'
-              AND xy2api_request_id IS NOT NULL
+              AND (xy2api_request_id IS NOT NULL OR started_at IS NOT NULL)
+              AND job_type = 'image_generation'
               AND created_by IS NOT NULL
               AND created_at > now() - interval '7 days'
               AND updated_at < now() - interval '2 minutes'
@@ -83,7 +116,9 @@ export function createReconcileStore(databaseUrl: string): ReconcileStore {
          UPDATE public.background_jobs j SET billing_checked_at = now()
            FROM due WHERE j.id = due.id
          RETURNING j.id, j.created_by, j.xy2api_key_id, j.xy2api_request_id,
-                   j.created_at, coalesce(j.failed_at, j.completed_at, j.created_at) AS ended_at`,
+                   j.payload->>'model' AS model, j.payload->>'resolution' AS resolution,
+                   j.started_at, j.created_at,
+                   coalesce(j.failed_at, j.completed_at, j.created_at) AS ended_at`,
         [limit],
       );
       return rows.map((row) => ({
@@ -91,18 +126,32 @@ export function createReconcileStore(databaseUrl: string): ReconcileStore {
         userId: row.created_by,
         // bigint arrives as a string
         keyId: row.xy2api_key_id == null ? null : Number(row.xy2api_key_id),
-        requestId: row.xy2api_request_id,
+        requestId: row.xy2api_request_id ?? null,
+        model: row.model ?? null,
+        resolution: row.resolution ?? null,
+        startedAt: row.started_at ?? null,
         createdAt: row.created_at,
         endedAt: row.ended_at,
       }));
     },
-    async settle(jobId, status) {
+    async settle(jobId, status, requestId) {
       const { rowCount } = await db().query(
-        `UPDATE public.background_jobs SET billing_status = $2
+        `UPDATE public.background_jobs
+            SET billing_status = $2,
+                xy2api_request_id = coalesce(xy2api_request_id, $3)
           WHERE id = $1 AND billing_status = 'unknown'`,
-        [jobId, status],
+        [jobId, status, requestId ?? null],
       );
       return rowCount === 1;
+    },
+    async attributedRequestIds(userId, from, to) {
+      const { rows } = await db().query(
+        `SELECT xy2api_request_id FROM public.background_jobs
+          WHERE created_by = $1 AND xy2api_request_id IS NOT NULL
+            AND created_at BETWEEN $2 AND $3`,
+        [userId, from, to],
+      );
+      return new Set(rows.map((row) => String(row.xy2api_request_id)));
     },
     async close() {
       await pool?.end();
@@ -112,8 +161,10 @@ export function createReconcileStore(databaseUrl: string): ReconcileStore {
 }
 
 type Deps = {
-  store: Pick<ReconcileStore, "claim" | "settle">;
-  client: Pick<Xy2apiClient, "findUsage">;
+  store: Pick<ReconcileStore, "claim" | "settle"> &
+    Partial<Pick<ReconcileStore, "attributedRequestIds">>;
+  client: Pick<Xy2apiClient, "findUsage"> &
+    Partial<Pick<Xy2apiClient, "findUsageByShape">>;
   accounts: Pick<AccountService, "withAccess">;
   now?: () => number;
 };
@@ -124,11 +175,13 @@ export async function reconcileJob(
   job: UnsettledJob,
   deps: Deps,
 ): Promise<ReconcileOutcome> {
+  if (!job.requestId) return reconcileByShape(job, deps);
+  const requestId = job.requestId;
   const now = deps.now?.() ?? Date.now();
   // One day of margin on each side keeps the row inside the window even if
   // a release ignores timezone=UTC and cuts days in its own zone.
   const input = {
-    requestId: job.requestId,
+    requestId,
     from: new Date(job.createdAt.getTime() - DAY_MS),
     to: new Date(job.endedAt.getTime() + DAY_MS),
   };
@@ -163,6 +216,72 @@ export async function reconcileJob(
     if (await deps.store.settle(job.id, "not_charged"))
       console.info(
         `[xy2api-reconcile] job ${job.id} not charged: no usage row after ${Math.round((now - job.endedAt.getTime()) / 3_600_000)}h`,
+      );
+    return "not_charged";
+  }
+  return "waiting";
+}
+
+/** R1: a 待核对 job without xy2api's request id, matched by shape. */
+async function reconcileByShape(
+  job: UnsettledJob,
+  deps: Deps,
+): Promise<ReconcileOutcome> {
+  const now = deps.now?.() ?? Date.now();
+  const findByShape = deps.client.findUsageByShape?.bind(deps.client);
+  if (!job.model || !job.startedAt || !findByShape) return "waiting";
+  const model = job.model;
+  // From enqueue: a job picked up again after a worker crash gets a new
+  // started_at, later than the call that was actually paid for.
+  const after = new Date(
+    Math.min(job.createdAt.getTime(), job.startedAt.getTime()) - CLOCK_SKEW_MS,
+  );
+  const before = new Date(job.endedAt.getTime() + SHAPE_MATCH_AFTER_MS);
+  // Rows already tied to the user's other jobs (a twin that succeeded) are
+  // not candidates.
+  const exclude =
+    (await deps.store.attributedRequestIds?.(
+      job.userId,
+      new Date(after.getTime() - DAY_MS),
+      new Date(before.getTime() + DAY_MS),
+    )) ?? new Set<string>();
+  const input = {
+    model,
+    imageSize: job.resolution ?? undefined,
+    after,
+    before,
+    exclude,
+  };
+  const match = await deps.accounts.withAccess(job.userId, async (token) => {
+    if (!job.keyId) return findByShape(token, input);
+    try {
+      return await findByShape(token, { ...input, apiKeyId: job.keyId });
+    } catch (error) {
+      if (error instanceof Xy2apiError && [403, 404].includes(error.status))
+        return findByShape(token, input);
+      throw error;
+    }
+  });
+  if (match.kind === "found") {
+    if (await deps.store.settle(job.id, "charged", match.requestId))
+      console.info(
+        `[xy2api-reconcile] job ${job.id} charged (matched by key/model/size/time, no request id): usage row ${match.usageId ?? "?"} request ${match.requestId ?? "?"} actual_cost=${match.actualCost ?? "?"}`,
+      );
+    return "charged";
+  }
+  if (match.kind === "ambiguous") {
+    console.warn(
+      `[xy2api-reconcile] job ${job.id} has ${match.candidates} usage rows of its shape (${model} ${job.resolution ?? "?"}, key ${job.keyId ?? "?"}); stays 待核对`,
+    );
+    return "waiting";
+  }
+  if (
+    match.kind === "absent" &&
+    now - job.endedAt.getTime() >= RECONCILE_SETTLE_MS
+  ) {
+    if (await deps.store.settle(job.id, "not_charged"))
+      console.info(
+        `[xy2api-reconcile] job ${job.id} not charged: no usage row of its shape after ${Math.round((now - job.endedAt.getTime()) / 3_600_000)}h`,
       );
     return "not_charged";
   }

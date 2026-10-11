@@ -1,0 +1,23 @@
+[Unit]
+Description=XY-IMAGE daily hot backup with local retention (no maintenance window)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=xy-ops
+Group=xy-ops
+SupplementaryGroups=docker
+UMask=0077
+WorkingDirectory=/opt/xy-image
+# Database snapshot + Storage archive while the site runs; keeps 7 daily and
+# 4 weekly copies in /srv/xy-image/hot-backups (latest.json for monitoring).
+# Local only: ship the directory offsite once a destination exists.
+ExecStart=/usr/bin/node /opt/xy-image/deploy/selfhost/hot-backup.mjs --dir /srv/xy-image/deployment --root /srv/xy-image/hot-backups --keep-daily 7 --keep-weekly 4
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/xy-image

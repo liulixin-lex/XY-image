@@ -10,9 +10,12 @@ import {
 import {
   BillingGuardError,
   GatewayError,
+  type GatewayDiagnostics,
+  gatewayDiagnostics,
   mapGatewayError,
   withRequestId,
 } from "../../features/xy2api/errors.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 import type {
   GeneratedImage,
   ImageCallContext,
@@ -128,20 +131,38 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
     // xy2api's id for this call, kept on every failure after it answered so a
     // 待核对 job can be matched to its usage row.
     let requestId: string | undefined;
+    // Status, edge headers and message of a failed answer, for the worker log
+    // and to tell an xy2api refusal from a Cloudflare cut (G7).
+    let diagnostics: GatewayDiagnostics | undefined;
+    const startedAt = Date.now();
     const client = new OpenAI({
       apiKey: ctx.apiKey,
       baseURL: `${ctx.baseUrl}/v1`,
       timeout: 600000,
       maxRetries: 0,
-      defaultHeaders: { "User-Agent": "LoomicServer/1.0" },
+      defaultHeaders: { "User-Agent": XY2API_USER_AGENT },
       fetch: async (input, init) => {
         const response = await fetch(input, init);
         requestId = response.headers.get("x-client-request-id") ?? requestId;
-        if (!response.ok)
-          errorBody = await response
+        if (!response.ok) {
+          const text = await response
             .clone()
-            .json()
-            .catch(() => undefined);
+            .text()
+            .catch(() => "");
+          try {
+            errorBody = JSON.parse(text);
+          } catch {
+            errorBody = undefined;
+          }
+          diagnostics = gatewayDiagnostics({
+            status: response.status,
+            headers: response.headers,
+            body: errorBody,
+            text,
+            requestId: response.headers.get("x-client-request-id") ?? undefined,
+            startedAt,
+          });
+        }
         return response;
       },
     });
@@ -216,7 +237,13 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
-      if (error instanceof GatewayError) throw withRequestId(error, requestId);
+      const seen =
+        diagnostics ??
+        (error instanceof OpenAI.APIError
+          ? undefined
+          : { elapsedMs: Date.now() - startedAt });
+      if (error instanceof GatewayError)
+        throw withRequestId(error, requestId, seen);
       if (error instanceof BillingGuardError) throw error;
       if (
         errorBody !== undefined &&
@@ -225,11 +252,16 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       )
         throw withRequestId(
           new GatewayError(
-            mapGatewayError({ status: error.status, body: errorBody }),
+            mapGatewayError({
+              status: error.status,
+              body: errorBody,
+              answeredByXy2api: Boolean(requestId),
+            }),
           ),
           requestId,
+          seen,
         );
-      throw withRequestId(error, requestId);
+      throw withRequestId(error, requestId, seen);
     }
   }
 }

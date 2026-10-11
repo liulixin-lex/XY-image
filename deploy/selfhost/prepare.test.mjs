@@ -82,6 +82,12 @@ test("offline preparation creates isolated credentials and a closed default netw
     assert.equal(server.XY2API_BASE_URL, "https://gguuai.com");
     assert.equal(browser.NEXT_PUBLIC_XY2API_WEB_URL, "https://gguuai.com");
     assert.equal(compose.services["xy-api"].deploy.replicas, 1);
+    // FINDINGS O3: memory ceilings on a shared host, none on the database.
+    assert.equal(compose.services["xy-api"].mem_limit, "1g");
+    assert.equal(compose.services["xy-worker"].mem_limit, "1536m");
+    assert.match(compose.services["xy-worker"].environment.NODE_OPTIONS, /max-old-space-size=1024/);
+    assert.equal(compose.services.storage.mem_limit, "1g");
+    assert.equal(compose.services.db.mem_limit, undefined);
     assert.ok(
       compose.services.realtime.networks.default.aliases.includes(
         "realtime-dev.supabase-realtime",
@@ -234,6 +240,8 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.equal(server.SUPABASE_URL, "https://image.example.com/supabase");
     assert.equal(server.SUPABASE_JWT_ISSUER, env.API_EXTERNAL_URL);
     assert.equal(server.LOOMIC_WEB_ORIGIN, "https://image.example.com");
+    // FINDINGS S2: images only for workspace members, checked at the edge.
+    assert.equal(server.LOOMIC_MEDIA_ACCESS, "cookie");
     assert.equal(browser.NEXT_PUBLIC_SUPABASE_URL, server.SUPABASE_URL);
     assert.equal(
       browser.NEXT_PUBLIC_SERVER_BASE_URL,
@@ -249,6 +257,8 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.match(nginx, /live\/image\.example\.com\/fullchain\.pem/);
     assert.ok(!nginx.includes("set_real_ip_from"), "No CDN trusted by default");
     assert.equal((nginx.match(/^\s*server \{$/gm) ?? []).length, 1);
+    assert.match(nginx, /auth_request \/_xy_media_authorize;/);
+    assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3101\/api\/media\/authorize;/);
 
     const caddy = await readFile(path.join(dir, "Caddyfile"), "utf8");
     assert.ok(!caddy.includes("__"));
@@ -256,6 +266,7 @@ test("--origin prepares a single-domain deployment: Supabase under /supabase, AP
     assert.match(caddy, /root \* \/srv\/xy-image\/site$/m);
     assert.match(caddy, /handle_path \/supabase\/\* \{/);
     assert.match(caddy, /@private_ready path \/api\/ready/);
+    assert.match(caddy, /forward_auth 127\.0\.0\.1:3101 \{\n\s+uri \/api\/media\/authorize/);
 
     const deployment = JSON.parse(
       await readFile(path.join(dir, "deployment.json"), "utf8"),

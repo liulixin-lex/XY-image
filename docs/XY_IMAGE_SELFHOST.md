@@ -1,6 +1,6 @@
 # XY-IMAGE 自建 Supabase 与后端运行手册
 
-更新：2026-10-09（北京时间）。用户决定：先提交已有成果，再继续深化后端并改用自建 Supabase。此前后端成果已提交为 `6e67855`，未推送。本轮提供自建部署工程和后端加固；用户随后授权离线收尾并提交、推送、合并。代码集成与真实上线分开记录，见 [发布验收表](XY_IMAGE_RELEASE.md)。没有在真实服务器启动 Supabase，也没有调用主站或付费模型。
+更新：2026-10-09（北京时间）；10-11 补充图片访问、删除项目清理、内存上限和不停机备份。用户决定：先提交已有成果，再继续深化后端并改用自建 Supabase。此前后端成果已提交为 `6e67855`，未推送。本轮提供自建部署工程和后端加固；用户随后授权离线收尾并提交、推送、合并。代码集成与真实上线分开记录，见 [发布验收表](XY_IMAGE_RELEASE.md)。没有在真实服务器启动 Supabase，也没有调用主站或付费模型。
 
 ## 架构与边界
 
@@ -8,7 +8,7 @@
 - PostgreSQL、Auth、Storage、PostgREST、Realtime、Studio 等采用官方 Supabase Docker 配置，固定至 `ff80bb14991e68667c04f74248b954e8babe6fde`。来源、SHA-256 和 Apache-2.0 LICENSE 在 `deploy/selfhost/vendor/`。`compose.base.json` 是该版本 YAML 的等价 JSON，不含自定义秘密。
 - 当前固定版本默认网关为 Envoy；不沿用旧版本 Kong 的服务名假设。镜像有固定版本标签，升级时重新审核官方变更并固定 image digest；不能自动追随 master/latest。官方镜像实际拉取、目标架构和 Docker 构建仍待验收。
 - API 与 Worker 同镜像，API 固定单实例。Supabase 网关绑定宿主机 `127.0.0.1:18000`，XY API 绑定 `127.0.0.1:3101`；数据库无宿主机端口。可选 Supavisor 置于 `pooler` profile，默认不启动、不暴露端口。API/Worker 使用 Docker 内网直连 DB。
-- 对外只由宿主机 Nginx 提供 TLS。Studio 通过 SSH 隧道访问本机网关并使用随机管理员密码；公网反代只允许受限 Auth 和对象读取（`project-assets` 的公开 URL、各桶的签名 URL，仅 GET/HEAD）；REST、Storage 写入与列举、Realtime、Studio、meta 和 Auth admin 都不对公网开放（10-09 agent01，H2：浏览器不用这些路径，API 走 `SUPABASE_INTERNAL_URL`）。新增公开桶时要同步改 Nginx 模板里的桶名。Auth按方法/路径/完整query明确放行：POST verify、POST refresh_token、GET user、POST logout及OPTIONS；设置密码、password/PKCE grant、注册/邮件登录等入口全部拒绝，避免影子用户绕过主站认证。Realtime保留官方网关所需的网络DNS别名和tenant Host重写。
+- 对外只由宿主机 Nginx 提供 TLS。Studio 通过 SSH 隧道访问本机网关并使用随机管理员密码；公网反代只允许受限 Auth 和对象读取（`project-assets` 的公开 URL、各桶的签名 URL，仅 GET/HEAD；10-11 起单域名部署的公开 URL 只给工作区成员，见「图片只给工作区成员看」）；REST、Storage 写入与列举、Realtime、Studio、meta 和 Auth admin 都不对公网开放（10-09 agent01，H2：浏览器不用这些路径，API 走 `SUPABASE_INTERNAL_URL`）。新增公开桶时要同步改 Nginx 模板里的桶名。Auth按方法/路径/完整query明确放行：POST verify、POST refresh_token、GET user、POST logout及OPTIONS；设置密码、password/PKCE grant、注册/邮件登录等入口全部拒绝，避免影子用户绕过主站认证。Realtime保留官方网关所需的网络DNS别名和tenant Host重写。
 - `SUPABASE_URL` 是浏览器可达的公网 HTTPS 地址；`SUPABASE_INTERNAL_URL=http://api-gw:8000` 仅路由服务端 SDK 网络请求，SDK 生成的 Storage 公共/签名 URL 仍以公网域名为基础。服务端下载参考图时也把公网对象 URL 改写到内部地址（10-09 agent01，M4），因为公网反代只放行对象 GET，并且服务端不应绕到公网再回来。内部调用不经过外部 HTTP 代理。
 - 主站账号仍在 gguuai.com 验证，Supabase 使用服务端创建的影子用户。`DISABLE_SIGNUP=true`，匿名/电话/Google 登录关闭；保留 email provider 是为了 Admin generateLink + verifyOtp 的影子会话，不能随意关闭此 provider。不会配置邮件发送。
 - API/Worker 以非 root 运行、只读根文件系统，临时运行文件仅存在容器 tmpfs。所有开发文件仍在 claude-module-02 的 `/workspace`。
@@ -143,6 +143,42 @@ node deploy/selfhost/prepare.mjs \
 - `--xy2api-url` 同时写进 `XY2API_BASE_URL`、`XY2API_WEB_URL` 和前端的 `NEXT_PUBLIC_XY2API_WEB_URL`，必须是 https 根地址。
 - `deployment.json` 记下 `ports` 和 `xy2api`。运维脚本的 `readyUrl` 要改成对应的 API 端口。
 
+## 图片访问、删除项目和内存上限（10-11 agent01）
+
+### 图片只给工作区成员看（FINDINGS S2）
+
+10-09 时 `project-assets` 桶按用户决定保持公开，知道完整地址就能看图，包括用户上传的参考图。10-11 起，单域名部署多了一道检查：
+
+- 登录后，前端调 `POST /api/media/session`，换一个签名的 HttpOnly cookie `xy_media`，有效期 24 小时。另有一个页面能读到的 `xy_media_exp`，里面只有到期时间；离到期不到 12 小时，前端就换一个新的。退出登录时两个 cookie 一起清掉。
+- 边缘代理收到 `/supabase/storage/v1/object/public/project-assets/<工作区>/…` 时，先问 `GET /api/media/authorize`：cookie 有效，且用户是这个工作区的成员，返回 204，放行；否则返回 401 或 403，图片拿不到。成员关系缓存 60 秒，被拒的请求超过 5 秒会重新查一次。Caddy 用 `forward_auth`，Nginx 用 `auth_request`。
+- 带签名的地址（`/object/sign/…`）照旧放行，签名本身就是凭证。`/api/proxy-image` 读本站图片时，做同样的检查。
+- 开关是 `server.env` 的 `LOOMIC_MEDIA_ACCESS`：`cookie` 开启检查，`open` 保持 10-09 的公开读法。单域名的 `prepare.mjs` 默认写 `cookie`；三域名部署仍是 `open`，因为图片域名和 API 不在一个域名下，cookie 带不过去。要退回公开，把它改成 `open`，重启 xy-api，再从 Caddyfile 或 nginx.conf 里去掉这道检查。
+- 图片响应带 `Cache-Control: private`，CDN 不会把一个人的图缓存给别人。
+
+### 删除的项目 24 小时后真正删掉
+
+`DELETE /api/projects/:id` 只是写 `archived_at`，但删除对话框说的是「画布和对话记录会一起删除，无法恢复」。Worker 每小时检查一次（启动后 3～6 分钟第一次），删除时间超过 24 小时的项目会被真正删掉。每次最多处理 50 个。
+
+- 先通过 Storage API 删项目里上传的文件和缩略图（只删这个工作区目录下的），再删项目这一行。画布、对话、消息、Agent 运行和文件记录随外键级联删除。`background_jobs` 的计费记录保留，项目、画布、会话字段置空。
+- 生成的图片留着：它们属于用户的生图记录，和项目无关。画布上的图片失去引用后，由画布图片清理任务删除。
+- 有文件没删掉的项目这次不删，下一轮再试，不会出现记录没了、文件还能公开访问的情况。
+- 24 小时内要撤回误删，把 `archived_at` 改回 null 即可。
+- 开关是 `PROJECT_PURGE`：`on`（默认）、`dry-run`（只记日志）、`off`。日志前缀是 `[project-purge]`，没有到期项目时不输出。
+
+### 内存上限
+
+`prepare.mjs` 给几个服务加了 `mem_limit`，免得一个服务失控拖垮整台机器：
+
+| 服务 | 上限 | 说明 |
+| --- | --- | --- |
+| storage、imgproxy | 1g | |
+| studio、realtime | 512m | |
+| xy-api | 1g | `NODE_OPTIONS=--max-old-space-size=768` |
+| xy-worker | 1536m | `NODE_OPTIONS=--max-old-space-size=1024` |
+| db | 不设 | 超限会被内核直接杀掉，不如让它慢一点 |
+
+数值是 10-11 生产实际用量的几倍（API 145 MiB、Worker 115 MiB、storage 175 MiB、imgproxy 20 MiB、studio 195 MiB）。Node 的堆上限低于容器上限，所以会先做垃圾回收，不会直接被杀。已有的部署目录要手动把这些值加进 `compose.json`，然后用 `up -d --no-deps --force-recreate <服务>` 重建对应容器。
+
 ## 备份与恢复
 
 `backup.mjs` 是停写的一致性备份，**会造成维护窗口**，仅在部署运维需要时执行；本轮没有运行真实备份。它停止正在运行的写入服务（保留DB），等待应用优雅停止；保存 postgres 和 `_supabase` 的自定义格式dump、角色SQL、Storage文件、DB自定义密钥配置、应用和Supabase环境文件、部署版本及恢复服务清单，另含 `deployment-config.tar.gz`（实际使用的Envoy脱敏配置、functions、pooler与DB顶层初始化SQL，不含DB数据目录）。手动和调度共享锁，停写失败标记阻止下一轮误报成功。全部成功生成SHA-256清单后才恢复原来运行的服务。失败保留部分结果和停机状态，人工检查 `resume.json` 后恢复，不把部分备份当成功。
@@ -163,6 +199,19 @@ node deploy/selfhost/verify-backup.mjs /workspace/xy-backups/backup-20261009
 5. 校验迁移账本、RLS/RPC权限、Storage桶/文件数和抽样哈希；先启动Supabase，然后迁移 `status` 与应用。ready检查、实际登录/上传/下载、任务与计费核对全部通过后再切流量。发现未知计费状态仍人工核对，不自动重新生图。
 6. 保留原服务/原备份供回退。版本回滚只回退兼容的应用镜像；不能直接降级已升级的数据库目录。
 
+### 不停机的每日备份和恢复演练（10-11 agent01，FINDINGS O1）
+
+`backup.mjs --hot` 不停任何服务：数据库用 `pg_dump` 拿一份一致的快照，Storage 文件最后打包，所以文件只会比数据库多，不会少。`hot-backup.mjs` 每天调用它，校验哈希，再按「最近 7 天每天一份、最近 4 周每周一份」删掉旧的，结果写进备份目录的 `latest.json`（失败写 `latest-failure.json`），监控会读这两个文件。备份前会检查剩余空间（默认至少 5 GiB）。
+
+```sh
+node deploy/selfhost/hot-backup.mjs --dir "$XY_DEPLOY_DIR" --root /srv/xy-image/hot-backups
+node deploy/selfhost/restore-drill.mjs --backup /srv/xy-image/hot-backups/hot-<时间> --dir "$XY_DEPLOY_DIR"
+```
+
+`restore-drill.mjs` 用备份里记录的同一个数据库镜像起一个不联网的临时容器，先导入 `roles.sql`，再 `pg_restore --clean --if-exists`，然后比较 12 张关键表的行数和 Storage 文件数，最后删掉容器。它只读正在运行的库（`select count(*)`），不往部署目录写任何东西。
+
+这些备份和数据在同一台机器上，能应付改坏的迁移、误删和卷损坏，挡不住整台机器丢失。异地目的地确定之前，这就是唯一的备份（见 [运维自动化](XY_IMAGE_OPERATIONS_AUTOMATION.md)）。
+
 后续若引入持续备份/PITR、S3对象存储或多API实例，应单独设计并验收；当前交付是单机持久卷与维护窗口备份，不承诺零停机或高可用。
 
 ## 检查证据与已知限制
@@ -178,7 +227,7 @@ node deploy/selfhost/verify-backup.mjs /workspace/xy-backups/backup-20261009
 - 10-09 agent01（P0 修正，host-studio 实验环境）：Nginx 策略测试改为 47 拒绝 + 15 放行 + HEAD 放行 + Realtime 升级 404，在容器里的 Debian nginx 上通过，旧模板会在 `GET /rest/v1` 处失败。隔离迁移检查加入 `20261009000004`，canvases 锁定和两种漂移检测通过。实验环境库已执行该迁移：越权上传 400、匿名列举 0 条、旧对象公开读取 400。边缘代理按新规则收窄后，readiness 8/8，三套端到端全部通过，期间 226 次图片读取都是 200。
 - 10-09 agent01（M4/M6，host-studio 实验环境）：隔离迁移检查加入 `20261009000005`，暂存表权限、权限漂移、随任务级联删除、空字节拒绝都通过；实验环境库已执行，readiness 8/8。存储故障演练（`xy-ops/agent01/e2e/m6-storage.sh`）：停掉 storage 后生图，页面 4 秒内显示“保存中”、没有取消按钮；第 2 次补传返回 Service Unavailable，暂存行 attempts 1→2；storage 恢复后第 3 次补传成功，暂存行删除，任务 `succeeded`，主站只扣一次。参考图生图（`probe-m4-reference.mjs`）成功：上游收到 1 次 edits 调用，Worker 没有“参考图读取失败”日志。三套端到端全部通过。
 - 10-09 agent01（“待核对”自动核对，host-studio 实验环境）：隔离迁移检查加入 `20261009000006`，列和部分索引存在；实验环境库已执行，readiness 8/8，三套端到端通过。核对演练（`xy-ops/agent01/e2e/reconcile.sh`）：主站计费的 Gemini 安全拦截任务在 286 秒后按用量记录改为“已扣费”，页面同步更新；主站没见过的请求 ID、已过 25 小时的任务在下一轮改为“未扣费”。
-- 10-09 agent01（双用户数据隔离，host-studio 实验环境）：`xy-ops/agent01/e2e/isolation.sh` 让 lab-broke 建一套临时数据（项目、画布、会话、消息、品牌套件、上传、技能），lab-a 通过 API、WebSocket、Supabase REST 和存储逐项读、改、删、引用。修复前 74 项里 6 项不合格：越权保存画布返回 200（实际没写入）、越权建会话/发消息返回 500、自己的项目能挂别人的品牌套件、上传和生图任务能带别人的项目/画布 ID（上传 500、生图 201）。另发现：任何 owner 能把别人加进自己的工作区，Agent 生图查“个人工作区”时没按 owner 过滤，角色对调后旧查询会选中别人的工作区。修复后 83 项全部通过，越权写入和引用一律 404；迁移 `20261009000007` 后加成员返回 403。`probe-agent-workspace.mjs`：画布 Agent 生图任务带画布和会话 ID，存进自己的工作区，画布上出现 1 张图。`project-assets` 按用户决定保持公开，知道完整路径就能读（含用户上传的参考图），列举返回 0 条。隔离迁移检查加入 `20261009000007`，readiness 8/8，三套端到端通过。
+- 10-09 agent01（双用户数据隔离，host-studio 实验环境）：`xy-ops/agent01/e2e/isolation.sh` 让 lab-broke 建一套临时数据（项目、画布、会话、消息、品牌套件、上传、技能），lab-a 通过 API、WebSocket、Supabase REST 和存储逐项读、改、删、引用。修复前 74 项里 6 项不合格：越权保存画布返回 200（实际没写入）、越权建会话/发消息返回 500、自己的项目能挂别人的品牌套件、上传和生图任务能带别人的项目/画布 ID（上传 500、生图 201）。另发现：任何 owner 能把别人加进自己的工作区，Agent 生图查“个人工作区”时没按 owner 过滤，角色对调后旧查询会选中别人的工作区。修复后 83 项全部通过，越权写入和引用一律 404；迁移 `20261009000007` 后加成员返回 403。`probe-agent-workspace.mjs`：画布 Agent 生图任务带画布和会话 ID，存进自己的工作区，画布上出现 1 张图。`project-assets` 按用户决定保持公开，知道完整路径就能读（含用户上传的参考图），列举返回 0 条（10-11 起单域名部署改为只给工作区成员，见上文）。隔离迁移检查加入 `20261009000007`，readiness 8/8，三套端到端通过。
 
 ## 官方依据
 

@@ -422,3 +422,61 @@ test("restic rejects symlink or broadly readable cache and temporary directories
     }
   }
 });
+
+test("monitor without offsite or webhook: probes the public site, failure rate, hot backup and memory, alerts to the journal", async () => {
+  const { root, config } = await setup();
+  try {
+    delete config.alertFile;
+    config.publicUrl = "https://image.example.com/";
+    config.hotBackupRoot = path.join(root, "hot");
+    config.imageFailureAlert = { windowMinutes: 30, minJobs: 5, ratio: 0.5 };
+    config.minAvailableMiB = 1024;
+    await mkdir(config.hotBackupRoot, { recursive: true });
+    await atomicJson(path.join(config.hotBackupRoot, "latest.json"), {
+      status: "complete",
+      at: fixedNow().toISOString(),
+    });
+    let jobs = "succeeded|2\nupstream_busy|4\nsafety_filter|9\n";
+    let publicUp = false;
+    const lines = [];
+    const warn = console.warn;
+    console.warn = (line) => lines.push(line);
+    const dependencies = {
+      now: fixedNow,
+      statfs: async () => ({ bavail: 1024 ** 3, bsize: 4096 }),
+      readFile: async () => "MemTotal: 16000000 kB\nMemAvailable:  512000 kB\n",
+      run: async (_command, args) => {
+        if (args.includes("psql"))
+          return args.at(-1).includes("GROUP BY") ? jobs : "0|0\n";
+        return JSON.stringify(
+          config.requiredServices.map((Service) => ({ Service, State: "running", Health: "healthy" })),
+        );
+      },
+      fetch: async (url) =>
+        new Response(null, { status: String(url).startsWith("https:") && !publicUp ? 502 : 200 }),
+    };
+    try {
+      const first = await monitor(config, dependencies);
+      assert.deepEqual(first.problems, [
+        "image_failure_rate_high",
+        "memory_low",
+        "public_api_down",
+        "public_site_down",
+      ]);
+      assert.match(lines.join("\n"), /ALERT firing: image_failure_rate_high,memory_low,public_api_down,public_site_down .*upstream_busy/);
+      // Refused prompts are the user's doing, not the site failing.
+      jobs = "succeeded|2\nsafety_filter|9\n";
+      publicUp = true;
+      dependencies.readFile = async () => "MemAvailable: 4096000 kB\n";
+      assert.equal((await monitor(config, dependencies)).status, "ok");
+      assert.match(lines.at(-1), /ALERT resolved/);
+    } finally {
+      console.warn = warn;
+    }
+    await writeFile(path.join(root, "monitor-only.json"), JSON.stringify({ ...config, resticEnvFile: undefined, offsiteConfirmed: false }), { mode: 0o600 });
+    await assert.rejects(loadConfig(path.join(root, "monitor-only.json")), /invalid_config_path|offsite_not_confirmed/);
+    assert.equal((await loadConfig(path.join(root, "monitor-only.json"), { forMonitor: true })).publicUrl, "https://image.example.com/");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

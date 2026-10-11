@@ -4,6 +4,7 @@ import {
   type SubmitImageJobFn,
   createImageGenerateTool,
   normalizeToolImageParams,
+  resolveToolModel,
 } from "./image-generate.js";
 
 describe("normalizeToolImageParams", () => {
@@ -109,5 +110,23 @@ describe("generate_image tool", () => {
       errorCode: "insufficient_balance",
       billingStatus: "none",
     });
+  });
+});
+
+// FINDINGS A4: a display name or a loose id failed tool-input parsing.
+describe("the model argument", () => {
+  const models = [
+    { id: "gpt-image-2", displayName: "GPT Image 2" },
+    { id: "gpt-image-2.5-sunburst", displayName: "GPT Image 2.5 Sunburst" },
+  ] as Parameters<typeof resolveToolModel>[1];
+  it("reads ids, display names and loose spellings", () => {
+    expect(resolveToolModel("gpt-image-2", models)).toEqual({ id: "gpt-image-2", adjusted: false });
+    expect(resolveToolModel("GPT Image 2.5 Sunburst", models)).toEqual({
+      id: "gpt-image-2.5-sunburst",
+      adjusted: true,
+    });
+    expect(resolveToolModel("GPT_IMAGE_2", models).id).toBe("gpt-image-2");
+    expect(resolveToolModel("dall-e-3", models)).toEqual({ id: "gpt-image-2", adjusted: true });
+    expect(resolveToolModel(undefined, models).id).toBe("gpt-image-2");
   });
 });

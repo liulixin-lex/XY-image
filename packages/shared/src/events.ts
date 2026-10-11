@@ -112,6 +112,7 @@ export const billingErrorCodeSchema = z.enum([
   "storage_retrying",
   "insufficient_credits",
   "model_not_accessible",
+  "model_unavailable",
   "resolution_not_allowed",
   "concurrency_limit",
 ]);

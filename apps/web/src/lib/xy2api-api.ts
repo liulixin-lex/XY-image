@@ -81,6 +81,8 @@ export type KeyMetadata = {
   maskedKey: string;
   status: string;
   groupName: string | null;
+  /** The key's group was deleted on the main site (servers before r50 omit it). */
+  groupRemoved?: boolean;
   platform: string | null;
   imageCapable: boolean;
   imageModels: string[];

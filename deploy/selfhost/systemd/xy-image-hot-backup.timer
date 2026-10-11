@@ -1,0 +1,12 @@
+[Unit]
+Description=XY-IMAGE daily hot backup
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 UTC
+RandomizedDelaySec=10min
+# Safe to catch up after downtime: a hot backup stops nothing.
+Persistent=true
+Unit=xy-image-hot-backup.service
+
+[Install]
+WantedBy=timers.target

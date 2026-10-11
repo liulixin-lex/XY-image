@@ -1,0 +1,16 @@
+# GGUU AI IMAGE: only the landing page is meant for search engines.
+User-agent: *
+Allow: /$
+Disallow: /api/
+Disallow: /supabase/
+Disallow: /home
+Disallow: /studio
+Disallow: /projects
+Disallow: /canvas
+Disallow: /settings
+Disallow: /brand-kit
+Disallow: /skills
+Disallow: /login
+Disallow: /register
+Disallow: /auth/
+Disallow: /preview-

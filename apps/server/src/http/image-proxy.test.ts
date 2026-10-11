@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEnv } from "../config/env.js";
+import { mintMediaToken } from "../features/media/media-access.js";
 import { registerImageProxyRoute } from "./image-proxy.js";
 
 // The proxy used to fetch any *supabase.co / *replicate.* URL and follow
@@ -18,6 +19,7 @@ afterEach(async () => {
 function fixture(
   respond: (url: URL) => Response | Promise<Response>,
   env: Partial<ServerEnv> = { supabaseUrl: BASE },
+  media?: Parameters<typeof registerImageProxyRoute>[1]["media"],
 ) {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const calls: Array<{ url: string; init?: RequestInit | undefined }> = [];
@@ -28,13 +30,18 @@ function fixture(
     },
   ) as unknown as typeof fetch;
   const app = Fastify();
-  registerImageProxyRoute(app, { env: env as ServerEnv, fetch: fetcher });
+  registerImageProxyRoute(app, {
+    env: env as ServerEnv,
+    fetch: fetcher,
+    ...(media ? { media } : {}),
+  });
   apps.push(app);
-  const get = (url?: string) =>
+  const get = (url?: string, headers: Record<string, string> = {}) =>
     app.inject({
       method: "GET",
       url: "/api/proxy-image",
       query: url === undefined ? {} : { url },
+      headers,
     });
   return { get, calls };
 }
@@ -43,6 +50,32 @@ const image = (
   type = "image/png",
   headers = {},
 ) => new Response(body, { headers: { "content-type": type, ...headers } });
+
+describe("image proxy with media access (FINDINGS S2)", () => {
+  const SECRET = "synthetic-secret-for-media-tests";
+  const USER = "11111111-2222-4333-8444-555555555555";
+  const WS = "62bcdca6-40f1-4100-ab63-14fca67032dd";
+  const MEMBER_OBJECT = `${BASE}/storage/v1/object/public/project-assets/${WS}/generated/a.png`;
+  const media = {
+    secret: SECRET,
+    isMember: async (user: string, ws: string) => user === USER && ws === WS,
+  };
+  it("serves a member's image only with the media cookie", async () => {
+    const { get, calls } = fixture(() => image(), { supabaseUrl: BASE }, media);
+    expect((await get(MEMBER_OBJECT)).statusCode).toBe(401);
+    expect(calls).toHaveLength(0);
+    const cookie = `xy_media=${mintMediaToken(SECRET, USER).token}`;
+    expect((await get(MEMBER_OBJECT, { cookie })).statusCode).toBe(200);
+    expect(
+      (await get(MEMBER_OBJECT.replace(WS, "69aba91c-13e4-4b93-8134-4cfcd97a1d30"), { cookie })).statusCode,
+    ).toBe(403);
+  });
+  it("still reads signed URLs, which carry their own token", async () => {
+    const { get } = fixture(() => image(), { supabaseUrl: BASE }, media);
+    const signed = `${BASE}/storage/v1/object/sign/brand-kit-assets/u/logo.png?token=synthetic`;
+    expect((await get(signed)).statusCode).toBe(200);
+  });
+});
 
 describe("image proxy", () => {
   it("serves an image from the site's own storage without following redirects", async () => {

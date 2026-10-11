@@ -192,6 +192,10 @@ describe("per-user dispatch gate", () => {
       3,
     );
     expect(f.ctx.jobService.incrementAttempt).not.toHaveBeenCalled();
+    // FINDINGS L2: a waiting job is not logged as "Processing" each pickup.
+    expect(
+      vi.mocked(console.log).mock.calls.flat().join("\n"),
+    ).not.toContain("Processing job");
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.job.status).toBe("queued");
     expect(f.ctx.pgmq.archive).not.toHaveBeenCalled();
