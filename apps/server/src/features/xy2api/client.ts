@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isMaskedKey, reportWireDrift } from "./compat.js";
 import { Xy2apiError, extractXy2apiErrorId, record } from "./errors.js";
+import { XY2API_USER_AGENT, isOwnUserAgent } from "../../utils/user-agent.js";
 
 // Wire schemas are tolerant readers: unknown fields are ignored, optional or
 // cosmetic fields fall back to safe defaults (reported via reportWireDrift),
@@ -94,6 +95,23 @@ export type RemoteKey = {
     | null
     | undefined;
 };
+/**
+ * Result of looking for the usage row of a request whose id never came back
+ * (Cloudflare cut it, or the worker died mid-call): matched by key, model,
+ * 画质, time and this site's User-Agent instead.
+ */
+export type UsageMatch =
+  | {
+      kind: "found";
+      usageId: number | null;
+      actualCost: number | null;
+      /** the row's X-Client-Request-ID, without the "client:" prefix */
+      requestId: string | null;
+    }
+  | { kind: "absent" }
+  /** several rows fit and nothing tells them apart: no conclusion */
+  | { kind: "ambiguous"; candidates: number }
+  | { kind: "incomplete" };
 /** Result of looking up one gateway request in the user's usage list. */
 export type UsageLookup =
   | { kind: "found"; usageId: number | null; actualCost: number | null }
@@ -251,7 +269,7 @@ export class Xy2apiClient {
       response = await this.fetcher(`${this.baseUrl}${path}`, {
         method: options.method ?? "GET",
         headers: {
-          "User-Agent": "LoomicServer/1.0",
+          "User-Agent": XY2API_USER_AGENT,
           Accept: "application/json",
           ...(options.body ? { "Content-Type": "application/json" } : {}),
           ...(options.token
@@ -488,6 +506,109 @@ export class Xy2apiClient {
             ? page * pageSize >= total
             : items.length < pageSize);
       if (last) return unreadable ? { kind: "incomplete" } : { kind: "absent" };
+    }
+    return { kind: "incomplete" };
+  }
+  /**
+   * Finds the one usage row a request without an id left: same key, same
+   * model (requested name), same 画质 when the row records it, written
+   * between `after` and `before`, sent with this site's User-Agent when the
+   * row records it, and not already tied to another job (`exclude`, ids
+   * without the "client:" prefix). Rows missing request_id, model or
+   * created_at make the scan inconclusive rather than absent.
+   */
+  async findUsageByShape(
+    token: string,
+    input: {
+      apiKeyId?: number | undefined;
+      model: string;
+      imageSize?: string | undefined;
+      after: Date;
+      before: Date;
+      exclude: ReadonlySet<string>;
+      maxPages?: number;
+    },
+  ): Promise<UsageMatch> {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const day = (date: Date) => date.toISOString().slice(0, 10);
+    const model = input.model.toLowerCase();
+    const pageSize = 100;
+    let unreadable = false;
+    const candidates: Array<{
+      usageId: number | null;
+      actualCost: number | null;
+      requestId: string | null;
+    }> = [];
+    for (let page = 1; page <= (input.maxPages ?? 5); page++) {
+      const query = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+        // A day of margin each side, as in findUsage.
+        start_date: day(new Date(input.after.getTime() - DAY_MS)),
+        end_date: day(new Date(input.before.getTime() + DAY_MS)),
+        timezone: "UTC",
+        ...(input.apiKeyId ? { api_key_id: String(input.apiKeyId) } : {}),
+      });
+      const result = record(
+        await this.request<unknown>(`/api/v1/usage?${query}`, { token }),
+      );
+      const items = Array.isArray(result) ? result : result.items;
+      if (!Array.isArray(items)) throw new Xy2apiError(502, "INVALID_RESPONSE");
+      for (const item of items) {
+        const row = record(item);
+        const at = Date.parse(String(row.created_at ?? ""));
+        const models = [row.requested_model, row.model].filter(
+          (value): value is string => typeof value === "string" && value !== "",
+        );
+        if (
+          typeof row.request_id !== "string" ||
+          !Number.isFinite(at) ||
+          models.length === 0
+        ) {
+          unreadable = true;
+          continue;
+        }
+        if (at < input.after.getTime() || at > input.before.getTime()) continue;
+        if (!models.some((name) => name.toLowerCase() === model)) continue;
+        if (
+          input.imageSize &&
+          typeof row.image_size === "string" &&
+          row.image_size &&
+          row.image_size.toUpperCase() !== input.imageSize.toUpperCase()
+        )
+          continue;
+        if (
+          typeof row.user_agent === "string" &&
+          row.user_agent &&
+          !isOwnUserAgent(row.user_agent)
+        )
+          continue;
+        const id = row.request_id.replace(/^client:/, "");
+        if (input.exclude.has(id)) continue;
+        const usageId = Number(row.id);
+        const cost = Number(row.actual_cost);
+        candidates.push({
+          usageId: Number.isSafeInteger(usageId) ? usageId : null,
+          actualCost: Number.isFinite(cost) ? cost : null,
+          requestId: row.request_id.startsWith("client:") ? id : null,
+        });
+      }
+      if (unreadable) reportWireDrift("usage.list", "shape_fields_missing");
+      const pages = Number(result.pages);
+      const total = Number(result.total);
+      const last =
+        items.length === 0 ||
+        (Number.isInteger(pages) && pages > 0
+          ? page >= pages
+          : Number.isInteger(total) && total >= 0
+            ? page * pageSize >= total
+            : items.length < pageSize);
+      if (last) {
+        if (candidates.length > 1)
+          return { kind: "ambiguous", candidates: candidates.length };
+        if (candidates.length === 1) return { kind: "found", ...candidates[0]! };
+        return unreadable ? { kind: "incomplete" } : { kind: "absent" };
+      }
     }
     return { kind: "incomplete" };
   }

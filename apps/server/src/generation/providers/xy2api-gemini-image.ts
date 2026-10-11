@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Part, ThinkingLevel } from "@google/genai";
+import { type Part, ThinkingLevel } from "@google/genai";
 import sharp from "sharp";
 import {
   type ImageModel,
@@ -9,12 +9,12 @@ import {
 import {
   BillingGuardError,
   GatewayError,
+  type GatewayDiagnostics,
+  gatewayDiagnostics,
   mapGatewayError,
-  neverSent,
-  record,
-  sanitizeGatewayError,
   withRequestId,
 } from "../../features/xy2api/errors.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 import type {
   GeneratedImage,
   ImageCallContext,
@@ -82,16 +82,6 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
       quality: params.quality,
       aspectRatio: params.aspectRatio,
     });
-    const client = new GoogleGenAI({
-      apiKey: ctx.apiKey,
-      httpOptions: {
-        baseUrl: ctx.baseUrl,
-        timeout: 600000,
-        // The pinned SDK uses a single fetch when retryOptions is omitted.
-        // Setting attempts: 1 discards non-2xx response bodies in this version.
-        headers: { "User-Agent": "LoomicServer/1.0" },
-      },
-    });
     const parts: Part[] = params.edit
       ? await beforeSending("xy2api-gemini", () =>
           maskEditParts(params, resolved.aspectRatio, ctx),
@@ -105,20 +95,64 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
     // xy2api's id for this call, kept on every failure after it answered so a
     // 待核对 job can be matched to its usage row.
     let requestId: string | undefined;
+    let diagnostics: GatewayDiagnostics | undefined;
+    const startedAt = Date.now();
     try {
-      const response = await client.models.generateContent({
-        model: params.model,
-        contents: [{ role: "user", parts }],
-        config: {
-          ...(ctx.signal ? { abortSignal: ctx.signal } : {}),
-          responseModalities: ["IMAGE"],
-          ...geminiImageConfig(model, resolved),
+      // Plain REST rather than @google/genai: the SDK hides the response
+      // headers of a failed call, and without X-Client-Request-ID a 5xx from
+      // xy2api cannot be told from Cloudflare cutting a slow 4K request
+      // (G7). One request, no retries, same wire format as the SDK
+      // (https://ai.google.dev/api/generate-content).
+      const timeout = AbortSignal.timeout(600000);
+      const response = await fetch(
+        `${ctx.baseUrl.replace(/\/+$/, "")}/v1beta/models/${encodeURIComponent(params.model)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "x-goog-api-key": ctx.apiKey,
+            "Content-Type": "application/json",
+            "User-Agent": XY2API_USER_AGENT,
+          },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts }],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
+              ...geminiImageConfig(model, resolved),
+            },
+          }),
+          signal: ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout,
+          redirect: "error",
         },
-      });
-      const candidate = response.candidates?.[0];
-      requestId = response.sdkHttpResponse?.headers?.["x-client-request-id"];
+      );
+      requestId = response.headers.get("x-client-request-id") ?? undefined;
+      const text = await response.text();
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = undefined;
+      }
+      if (!response.ok) {
+        diagnostics = gatewayDiagnostics({
+          status: response.status,
+          headers: response.headers,
+          body: json,
+          text,
+          requestId,
+          startedAt,
+        });
+        throw new GatewayError(
+          mapGatewayError({
+            status: response.status,
+            body: json,
+            answeredByXy2api: Boolean(requestId),
+          }),
+        );
+      }
+      const answer = json as GeminiAnswer | undefined;
+      const candidate = answer?.candidates?.[0];
       if (
-        response.promptFeedback?.blockReason ||
+        answer?.promptFeedback?.blockReason ||
         /SAFETY|PROHIBITED|RECITATION/.test(candidate?.finishReason ?? "")
       )
         throw new GatewayError({
@@ -130,46 +164,49 @@ export class Xy2apiGeminiImageProvider implements ImageProvider {
           userMessage:
             "内容未通过审核，请修改提示词，并到主站用量页核对这次的结果",
         });
-      const inline = candidate?.content?.parts?.find(
+      const data = candidate?.content?.parts?.find(
         (part) => part.inlineData?.data,
       )?.inlineData;
-      if (!inline?.data) throw new GatewayError(mapGatewayError({}));
-      const bytes = Buffer.from(inline.data, "base64");
+      if (!data?.data) throw new GatewayError(mapGatewayError({}));
+      const bytes = Buffer.from(data.data, "base64");
       const metadata = await sharp(bytes).metadata();
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
-      const mimeType = inline.mimeType ?? "image/png";
+      const mimeType = data.mimeType ?? "image/png";
       return {
-        url: `data:${mimeType};base64,${inline.data}`,
+        url: `data:${mimeType};base64,${data.data}`,
         mimeType,
         width: metadata.width,
         height: metadata.height,
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
-      if (error instanceof GatewayError) throw withRequestId(error, requestId);
-      if (error instanceof BillingGuardError) throw error;
-      // Never left this server (refused, DNS, TLS): not charged.
-      if (neverSent(error)) throw sanitizeGatewayError(error);
-      const e = record(error);
-      let body: unknown;
-      try {
-        body = JSON.parse(typeof e.message === "string" ? e.message : "");
-      } catch {
-        body = undefined;
-      }
+      if (
+        error instanceof BillingGuardError &&
+        !(error instanceof GatewayError)
+      )
+        throw error;
+      // Never left this server (refused, DNS, TLS): not charged. Anything
+      // after that stays 待核对 with the request id when there is one.
       throw withRequestId(
-        new GatewayError(
-          mapGatewayError({
-            status: typeof e.status === "number" ? e.status : undefined,
-            body,
-          }),
-        ),
+        error,
         requestId,
+        diagnostics ?? { elapsedMs: Date.now() - startedAt },
       );
     }
   }
 }
+
+/** The parts of a generateContent answer this provider reads. */
+type GeminiAnswer = {
+  candidates?: {
+    finishReason?: string;
+    content?: {
+      parts?: { inlineData?: { data?: string; mimeType?: string } }[];
+    };
+  }[];
+  promptFeedback?: { blockReason?: string };
+};
 
 function inline(image: { bytes: Buffer; mimeType: string }): Part {
   return {

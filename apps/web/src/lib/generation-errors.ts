@@ -75,6 +75,16 @@ const CATALOG: Record<string, IssueSpec> = {
     weight: "toast",
     maybeCharged: false,
   },
+  // xy2api has no upstream account in the Key's group that serves this model
+  // ("No available ... accounts supporting model"). Retrying does not help
+  // until the main site adds one; nothing was sent upstream.
+  model_unavailable: {
+    title: "这个模型暂时出不了图",
+    message: "主站这个分组现在没有能出这个模型的账号。换一个模型，或换一个其他分组的 Key 再试。",
+    action: "keys",
+    weight: "toast",
+    maybeCharged: false,
+  },
   concurrency_limit: {
     title: "同时最多生成 2 张",
     message: "等前面的任务完成后再提交。",
@@ -111,8 +121,8 @@ const CATALOG: Record<string, IssueSpec> = {
     maybeCharged: false,
   },
   safety_filter: {
-    title: "内容未通过审核",
-    message: "修改提示词或参考图后再试。",
+    title: "内容审核没通过",
+    message: "主站的内容审核拦下了这次请求，有时是误判。改一下提示词或参考图再试。",
     action: "none",
     weight: "toast",
     maybeCharged: false,

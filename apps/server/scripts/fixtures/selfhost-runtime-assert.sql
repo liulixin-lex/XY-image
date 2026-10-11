@@ -86,6 +86,10 @@ do $$ begin
     or to_regclass('public.background_jobs_billing_reconcile_idx') is null then
     raise exception 'billing reconcile column or index missing';
   end if;
+  -- 20261011000004: id-less 待核对 jobs are swept too (FINDINGS R1).
+  if pg_get_indexdef('public.background_jobs_billing_reconcile_idx'::regclass) like '%xy2api_request_id%' then
+    raise exception 'billing reconcile index still skips jobs without a request id';
+  end if;
 end $$;
 select 'billing_reconcile_checks_passed' as result;
 

@@ -12,6 +12,7 @@ import {
   BillingGuardError,
   DeliveryPendingError,
   GatewayError,
+  describeDiagnostics,
   mapGatewayError,
 } from "./errors.js";
 import {
@@ -145,6 +146,17 @@ export async function executeImageJob(
           : error instanceof BillingGuardError
             ? { code: error.code, billing: "not_charged" as const }
             : mapGatewayError({});
+      // L1: what the main site (or whatever answered for it) actually said.
+      // No key, no prompt; the message is cut to 200 scrubbed characters.
+      console.warn(
+        `[image-runner] job ${jobId} ${payload.model} ${payload.resolution}/${payload.quality} key ${row.xy2api_key_id} failed: ${failure.code} billing=${failure.billing} request=${("requestId" in failure && failure.requestId) || "none"} ${
+          error instanceof GatewayError
+            ? describeDiagnostics(error.failure.diagnostics)
+            : error instanceof BillingGuardError
+              ? ""
+              : describeErrorForLog(error)
+        }`.trimEnd(),
+      );
       checkStoreError(
         (
           await db

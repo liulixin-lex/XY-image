@@ -27,6 +27,7 @@ import { createMainAgentTools } from "./tools/index.js";
 import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
+import { XY2API_USER_AGENT } from "../utils/user-agent.js";
 
 export type LoomicAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -183,7 +184,7 @@ export function createStreamingChatModel(
       throw new Error("Invalid chat gateway URL");
     const headers = new Headers(init?.headers);
     headers.set("Authorization", `Bearer ${credentials.apiKey}`);
-    headers.set("User-Agent", "LoomicServer/1.0");
+    headers.set("User-Agent", XY2API_USER_AGENT);
     try {
       const response = (await httpFetch(url, {
         ...init,

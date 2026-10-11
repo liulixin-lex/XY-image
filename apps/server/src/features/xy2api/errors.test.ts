@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  GatewayError,
+  describeDiagnostics,
   extractXy2apiErrorId,
+  gatewayDiagnostics,
   mapGatewayError,
   neverSent,
   sanitizeGatewayError,
+  withRequestId,
 } from "./errors.js";
 
 describe("gateway errors", () => {
@@ -230,5 +234,127 @@ describe("gateway errors", () => {
     // 520 and 524: the origin got the request.
     for (const status of [520, 524, 502, 504])
       expect(mapGatewayError({ status })).toMatchObject({ billing: "unknown" });
+  });
+  // gguuai.com group 20, 2026-10-11 (FINDINGS G1): OpenAI's own refusal
+  // passed through as a plain 400 invalid_request_error.
+  it.each([
+    "非常抱歉，该提示可能违反了我们的内容政策。如果你认为此判断有误，请重试或修改提示语。",
+    "Your request was rejected as a result of our safety system.",
+    "This request violates our content policy.",
+    "policy_violation: image rejected",
+  ])("maps an upstream moderation 400 to safety_filter: %s", (message) => {
+    expect(
+      mapGatewayError({
+        status: 400,
+        body: {
+          error: { code: "400", message, type: "invalid_request_error" },
+        },
+        answeredByXy2api: true,
+      }),
+    ).toMatchObject({ code: "safety_filter", billing: "not_charged" });
+  });
+
+  // gguuai.com group 74, 2026-10-11 (FINDINGS G2).
+  it("calls a group without an account for the model model_unavailable, not busy", () => {
+    const failure = mapGatewayError({
+      status: 503,
+      body: {
+        error: {
+          type: "api_error",
+          message:
+            "No available Gemini accounts: no available accounts supporting model: gemini-nano-banana-2.1 (channel pricing restriction)",
+        },
+      },
+      answeredByXy2api: true,
+    });
+    expect(failure).toMatchObject({
+      code: "model_unavailable",
+      retryable: false,
+      billing: "not_charged",
+    });
+    expect(failure.userMessage).toContain("换一个模型");
+    // Every account cooling down after upstream errors: passes, stays busy.
+    expect(
+      mapGatewayError({
+        status: 503,
+        body: {
+          error: { message: "No available compatible accounts", type: "api_error" },
+        },
+        answeredByXy2api: true,
+      }),
+    ).toMatchObject({ code: "upstream_busy", retryable: true });
+  });
+
+  // gguuai.com 2026-10-11 (FINDINGS G7): a 4K request cut after ~125 s came
+  // back as a JSON 5xx without xy2api's request id; xy2api finished 73 s
+  // later and billed $0.10.
+  it("keeps a 5xx that did not come from xy2api 待核对", () => {
+    const body = { error: { message: "Bad gateway", type: "upstream_error" } };
+    for (const status of [500, 502, 503, 504])
+      expect(
+        mapGatewayError({ status, body, answeredByXy2api: false }),
+      ).toMatchObject({
+        code: "upstream_unknown",
+        billing: "unknown",
+        retryable: false,
+      });
+    // xy2api's own 5xx (its id came back): a refusal, nothing billed.
+    expect(
+      mapGatewayError({ status: 502, body, answeredByXy2api: true }),
+    ).toMatchObject({ code: "upstream_busy", billing: "not_charged" });
+    // 520 / 524 reached the origin whatever the body says.
+    for (const status of [520, 524])
+      expect(
+        mapGatewayError({ status, body: {}, answeredByXy2api: false }),
+      ).toMatchObject({ code: "upstream_unknown", billing: "unknown" });
+    // Definite 4xx refusals stay not charged even through an intermediary.
+    expect(
+      mapGatewayError({ status: 429, body: {}, answeredByXy2api: false }),
+    ).toMatchObject({ code: "rate_limited", billing: "not_charged" });
+  });
+
+  it("logs the failed answer without keys and keeps it on the failure", () => {
+    const diagnostics = gatewayDiagnostics({
+      status: 502,
+      headers: new Headers({
+        "cf-ray": "8f00aa11bb22cc33-SJC",
+        server: "cloudflare",
+        "content-type": "application/json; charset=utf-8",
+      }),
+      body: {
+        error: {
+          message: `upstream failed for sk-${"a".repeat(40)} ${"x".repeat(300)}`,
+          type: "upstream_error",
+        },
+      },
+      startedAt: Date.now() - 125_100,
+    });
+    expect(diagnostics).toMatchObject({
+      status: 502,
+      errorId: "upstream_error",
+      cfRay: "8f00aa11bb22cc33-SJC",
+      server: "cloudflare",
+      answeredByXy2api: false,
+    });
+    expect(diagnostics.message).not.toMatch(/sk-a{6}/);
+    expect(diagnostics.message?.length).toBeLessThanOrEqual(200);
+    const line = describeDiagnostics(diagnostics);
+    expect(line).toMatch(
+      /^status=502 id=upstream_error no-xy2api-request-id cf-ray=8f00aa11bb22cc33-SJC server=cloudflare type=application\/json after=12\d\.\ds msg="upstream failed for sk-\*\*\*/,
+    );
+    const failure = withRequestId(
+      new GatewayError(
+        mapGatewayError({ status: 502, body: {}, answeredByXy2api: false }),
+      ),
+      undefined,
+      diagnostics,
+    ).failure;
+    expect(failure.diagnostics).toBe(diagnostics);
+    expect(failure.billing).toBe("unknown");
+    // HTML error pages are kept as text.
+    expect(
+      gatewayDiagnostics({ status: 524, text: "<html>A timeout occurred</html>" })
+        .message,
+    ).toBe("<html>A timeout occurred</html>");
   });
 });
