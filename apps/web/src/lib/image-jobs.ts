@@ -264,6 +264,23 @@ function dayKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * True when a finished picture came back in a smaller 画质 tier than was
+ * asked for, by long edge (the main site's rule: up to 1024 px is 1K, up to
+ * 2048 px 2K, larger 4K). On the pre-launch site the main site's gpt group
+ * answered 4K with 1085×1450 while its gpt-4k group delivered 2480×3312; the
+ * card shows the real size instead of only "4K". Edits follow their source
+ * picture's size and are left out.
+ */
+export function undersized(
+  job: Pick<ImageJobView, "width" | "height" | "resolution" | "edit">,
+): boolean {
+  if (job.edit || !job.width || !job.height) return false;
+  const long = Math.max(job.width, job.height);
+  const delivered = long <= 1024 ? 0 : long <= 2048 ? 1 : 2;
+  return delivered < ["1K", "2K", "4K"].indexOf(job.resolution);
+}
+
 /** Width / height of a result, from its pixels or its requested ratio. */
 export function jobAspect(job: Pick<ImageJobView, "width" | "height" | "aspectRatio">) {
   if (job.width && job.height) return job.width / job.height;

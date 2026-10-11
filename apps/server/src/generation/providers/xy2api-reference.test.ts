@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSupabaseFetch } from "../../supabase/transport.js";
-import { fetchReferenceImage } from "./xy2api-reference.js";
+import sharp from "sharp";
+import { fetchReferenceImage, shrinkForSending } from "./xy2api-reference.js";
 
 const env = {
   supabaseUrl: "https://db.example.test",
@@ -112,5 +114,64 @@ describe("reference image download", () => {
     expect(line).toContain("/storage/v1/object/sign/brand-kit-assets/");
     expect(line).not.toContain("synthetic-signed-token");
     expect(line).not.toContain("logo.png");
+  });
+
+  it("shrinks a large result instead of refusing it as a reference", async () => {
+    // A 4K result (pre-launch site: 3584x4800 JPEG, 12.4 MB) used to be
+    // refused, so 以此为参考 / 局部重绘 on it failed with invalid_input.
+    // Random pixels compress like a detailed photo (patterns would not).
+    const noise = randomBytes(1200 * 1600 * 3);
+    const photo = await sharp(noise, {
+      raw: { width: 1200, height: 1600, channels: 3 },
+    })
+      .png()
+      .toBuffer();
+    const small = await shrinkForSending(
+      { bytes: photo, mimeType: "image/png" },
+      photo.length - 1,
+    );
+    expect(small.mimeType).toBe("image/jpeg");
+    expect(small.bytes.length).toBeLessThan(photo.length);
+    const meta = await sharp(small.bytes).metadata();
+    expect([meta.width, meta.height]).toEqual([1200, 1600]);
+    // Under the limit nothing changes; transparency keeps PNG.
+    const same = { bytes: photo, mimeType: "image/png" };
+    expect(await shrinkForSending(same)).toBe(same);
+    const rgba = randomBytes(3600 * 300 * 4);
+    const logo = await sharp(rgba, {
+      raw: { width: 3600, height: 300, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+    const fitted = await shrinkForSending(
+      { bytes: logo, mimeType: "image/png" },
+      logo.length - 1,
+    );
+    expect(fitted.mimeType).toBe("image/png");
+    expect((await sharp(fitted.bytes).metadata()).width).toBe(3072);
+  });
+
+  it("refuses a download that announces more than 40 MB without reading it", async () => {
+    const cancel = vi.fn(async () => {});
+    const assetFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "content-type": "image/png",
+        "content-length": String(41 * 1024 * 1024),
+      }),
+      body: { cancel },
+      arrayBuffer: vi.fn(),
+    }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(
+      fetchReferenceImage(object, {
+        apiKey: "",
+        baseUrl: "https://gateway.example.test",
+        assetOrigin: env.supabaseUrl,
+        assetFetch: assetFetch as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(cancel).toHaveBeenCalled();
   });
 });

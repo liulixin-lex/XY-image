@@ -1,18 +1,70 @@
+import sharp from "sharp";
 import { BillingGuardError } from "../../features/xy2api/errors.js";
 import { describeErrorForLog } from "../../utils/error-sanitizer.js";
 import type { ImageCallContext } from "../types.js";
 
+// 4K results are 12–15 MB (pre-launch site: Gemini 3584x4800 JPEG 12.4 MB,
+// gpt-image-2 2480x3312 PNG 15.2 MB). With a 10 MB cap on references,
+// 以此为参考, 变体, 局部重绘, 扩图 and the assistant all refused them.
+// Read up to 40 MB; anything over 8 MB is shrunk before it is sent on.
+const READ_LIMIT = 40 * 1024 * 1024;
+const SEND_LIMIT = 8 * 1024 * 1024;
+
+type ReferenceImage = { bytes: Buffer; mimeType: string };
+
+/**
+ * A reference small enough to send: unchanged up to `limit`, otherwise
+ * auto-oriented and fitted inside 3072 px (then 2048 px) on the long edge.
+ * Photos become JPEG; pictures with transparency stay PNG. Masks are scaled
+ * to their source after this (mask-edit.ts), so edits stay aligned.
+ */
+export async function shrinkForSending(
+  image: ReferenceImage,
+  limit = SEND_LIMIT,
+): Promise<ReferenceImage> {
+  if (image.bytes.length <= limit) return image;
+  const { hasAlpha } = await sharp(image.bytes).metadata();
+  let out = image;
+  for (const edge of [3072, 2048]) {
+    const resized = sharp(image.bytes)
+      .rotate()
+      .resize(edge, edge, { fit: "inside", withoutEnlargement: true });
+    out = hasAlpha
+      ? { bytes: await resized.png().toBuffer(), mimeType: "image/png" }
+      : {
+          bytes: await resized.jpeg({ quality: 90 }).toBuffer(),
+          mimeType: "image/jpeg",
+        };
+    if (out.bytes.length <= limit) break;
+  }
+  console.info(
+    `[reference] shrank a ${(image.bytes.length / 1048576).toFixed(1)} MB ${image.mimeType} to ${(out.bytes.length / 1048576).toFixed(1)} MB ${out.mimeType}`,
+  );
+  if (out.bytes.length > limit)
+    throw new Error("still too large after shrinking");
+  return out;
+}
+
 export async function fetchReferenceImage(
   source: string,
   ctx: ImageCallContext,
-): Promise<{ bytes: Buffer; mimeType: string }> {
+): Promise<ReferenceImage> {
   const inline =
     /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(source);
   if (inline) {
     const bytes = Buffer.from(inline[2] ?? "", "base64");
-    if (bytes.length > 10 * 1024 * 1024)
+    if (bytes.length > READ_LIMIT) throw new BillingGuardError("invalid_input");
+    try {
+      return await shrinkForSending({
+        bytes,
+        mimeType: inline[1] ?? "image/png",
+      });
+    } catch (error) {
+      console.warn(
+        `[reference] inline image unusable: ${describeErrorForLog(error)}`,
+      );
       throw new BillingGuardError("invalid_input");
-    return { bytes, mimeType: inline[1] ?? "image/png" };
+    }
   }
   let url: URL;
   try {
@@ -54,9 +106,13 @@ export async function fetchReferenceImage(
       await response.body?.cancel();
       throw new Error(`status ${response.status}, type ${mimeType || "none"}`);
     }
+    if (Number(response.headers.get("content-length")) > READ_LIMIT) {
+      await response.body?.cancel();
+      throw new Error("larger than 40 MB");
+    }
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > 10 * 1024 * 1024) throw new Error("larger than 10 MB");
-    return { bytes, mimeType };
+    if (bytes.length > READ_LIMIT) throw new Error("larger than 40 MB");
+    return await shrinkForSending({ bytes, mimeType });
   } catch (error) {
     // Path only: signed URLs carry a token in the query.
     console.warn(

@@ -131,6 +131,49 @@ describe("image billing lifecycle", () => {
       );
     },
   );
+  it("tells operators when a picture comes back under the 画质 asked for", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fixture = setup();
+    const job = fixture.tables.background_jobs?.[0] as {
+      payload: Record<string, unknown>;
+    };
+    job.payload = {
+      model: "gpt-image-2",
+      prompt: "test image",
+      resolution: "4K",
+      quality: "low",
+      aspect_ratio: "3:4",
+    };
+    // Pre-launch site, main-site group gpt: 4K asked, 1085x1450 returned.
+    fixture.generate.mockResolvedValueOnce({
+      url: "data:image/png;base64,aW1hZ2U=",
+      mimeType: "image/png",
+      width: 1085,
+      height: 1450,
+      requestId: "request-4k",
+    });
+    await fixture.execute();
+    expect(warn).toHaveBeenCalledWith(
+      "[image-runner] job job-1 asked 4K of gpt-image-2 (key 7), got 1085x1450",
+    );
+    warn.mockClear();
+    const real = setup();
+    const realJob = real.tables.background_jobs?.[0] as {
+      payload: Record<string, unknown>;
+    };
+    realJob.payload = { ...job.payload };
+    real.generate.mockResolvedValueOnce({
+      url: "data:image/png;base64,aW1hZ2U=",
+      mimeType: "image/png",
+      width: 2480,
+      height: 3312,
+      requestId: "request-4k-real",
+    });
+    await real.execute();
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("[image-runner] job job-1 asked"),
+    );
+  });
   it("does not use another user's key", async () => {
     const fixture = setup();
     const key = fixture.tables.xy2api_api_keys?.[0];

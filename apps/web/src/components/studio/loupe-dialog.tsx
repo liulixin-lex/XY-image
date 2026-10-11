@@ -12,7 +12,14 @@ import {
 
 import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, isActiveJob, isFailedJob, jobLabel, jobStatusLabel } from "@/lib/image-jobs";
+import {
+  type ImageJobView,
+  isActiveJob,
+  isFailedJob,
+  jobLabel,
+  jobStatusLabel,
+  undersized,
+} from "@/lib/image-jobs";
 import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
 
@@ -122,6 +129,11 @@ export function LoupeDialog({
                   <dd className="text-fg tabular">
                     {job.resolution} · {job.aspectRatio ?? "默认比例"}
                     {job.width && job.height ? ` · ${job.width}×${job.height}` : ""}
+                    {undersized(job) ? (
+                      <span className="mt-1 block text-[12px] text-warn">
+                        比所选 {job.resolution} 小：这条主站渠道可能不支持 {job.resolution}。
+                      </span>
+                    ) : null}
                   </dd>
                   {job.quality ? (
                     <>

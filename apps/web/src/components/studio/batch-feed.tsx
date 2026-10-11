@@ -27,6 +27,7 @@ import {
   isUnsentJob,
   jobAspect,
   listImage,
+  undersized,
 } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
@@ -258,6 +259,14 @@ function PictureCard({
         ) : (
           <BillingBadge status={job.billing} />
         )}
+        {undersized(job) ? (
+          <span
+            className="inline-flex h-[22px] shrink-0 items-center rounded-[7px] bg-warn-wash px-2 text-[11.5px] font-semibold leading-none whitespace-nowrap text-warn tabular"
+            title={`选的是 ${job.resolution}，实际返回 ${job.width}×${job.height}。这条主站渠道可能不支持 ${job.resolution}。`}
+          >
+            实际 {job.width}×{job.height}
+          </span>
+        ) : null}
         {job.requestId ? (
           <span className="ml-auto truncate data-label text-fg-muted" title={`请求 ID ${job.requestId}`}>
             {shortId(job.requestId)}
