@@ -52,6 +52,41 @@ describe("reference image download", () => {
     expect(assetFetch).not.toHaveBeenCalled();
   });
 
+  it("accepts Supabase served under a path on the site's own domain", async () => {
+    // Pre-launch site: SUPABASE_URL=https://2.lexzerone.xyz/supabase; every
+    // reference was refused with 「请先上传参考图到当前工作区」.
+    const sub = {
+      supabaseUrl: "https://site.example.test/supabase",
+      supabaseInternalUrl: "http://api-gw:8000",
+    };
+    const internal = vi.fn(async () => png());
+    const ctx = {
+      apiKey: "",
+      baseUrl: "https://gateway.example.test",
+      assetOrigin: sub.supabaseUrl,
+      assetFetch: createSupabaseFetch(sub, internal as unknown as typeof fetch),
+    };
+    await expect(
+      fetchReferenceImage(
+        `${sub.supabaseUrl}/storage/v1/object/public/project-assets/u/ref.png`,
+        ctx,
+      ),
+    ).resolves.toMatchObject({ mimeType: "image/png" });
+    expect(internal).toHaveBeenCalledWith(
+      "http://api-gw:8000/storage/v1/object/public/project-assets/u/ref.png",
+      expect.anything(),
+    );
+    for (const source of [
+      "https://site.example.test/storage/v1/object/public/project-assets/u/ref.png",
+      `${sub.supabaseUrl}/rest/v1/projects`,
+      `${sub.supabaseUrl}/storage/v1/object/public/project-assets/..%2f..%2f..%2frest/v1/projects`,
+    ])
+      await expect(fetchReferenceImage(source, ctx)).rejects.toMatchObject({
+        code: "invalid_input",
+      });
+    expect(internal).toHaveBeenCalledTimes(1);
+  });
+
   it("logs why a reference was unreadable without the signed token", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const assetFetch = vi.fn(

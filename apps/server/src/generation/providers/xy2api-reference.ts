@@ -20,10 +20,19 @@ export async function fetchReferenceImage(
   } catch {
     throw new BillingGuardError("invalid_input");
   }
+  // ctx.assetOrigin is SUPABASE_URL, which may carry a path: a single-domain
+  // deployment serves Supabase under /supabase (the pre-launch site did, and
+  // every reference was refused here). Same rule as /api/proxy-image.
+  const base = ctx.assetOrigin ? new URL(ctx.assetOrigin) : null;
+  const basePath = base?.pathname.replace(/\/$/, "") ?? "";
+  const objectPath = url.pathname.slice(basePath.length);
   if (
-    !ctx.assetOrigin ||
-    url.origin !== new URL(ctx.assetOrigin).origin ||
-    !url.pathname.startsWith("/storage/v1/object/")
+    !base ||
+    url.origin !== base.origin ||
+    !url.pathname.startsWith(`${basePath}/storage/v1/object/`) ||
+    // Encoded dots, slashes and backslashes could step out of the object
+    // route once a proxy in front of Storage decodes them.
+    /%2e|%2f|%5c|\\/i.test(url.pathname)
   )
     throw new BillingGuardError(
       "invalid_input",
@@ -51,7 +60,7 @@ export async function fetchReferenceImage(
   } catch (error) {
     // Path only: signed URLs carry a token in the query.
     console.warn(
-      `[reference] ${url.pathname.split("/").slice(0, 6).join("/")}/… unreadable: ${describeErrorForLog(error)}`,
+      `[reference] ${objectPath.split("/").slice(0, 6).join("/")}/… unreadable: ${describeErrorForLog(error)}`,
     );
     throw new BillingGuardError(
       "invalid_input",

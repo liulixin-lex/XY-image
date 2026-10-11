@@ -4,7 +4,7 @@
 
 ## 架构与边界
 
-- 前端静态站、XY API 和 Supabase 公共入口各用一个 HTTPS 域名；域名由部署方提供，模板的 `example.com` 不能当作实际配置。
+- 前端静态站、XY API 和 Supabase 公共入口各用一个 HTTPS 域名；域名由部署方提供，模板的 `example.com` 不能当作实际配置。也可以全部放在一个域名下，见下文「单域名部署」。
 - PostgreSQL、Auth、Storage、PostgREST、Realtime、Studio 等采用官方 Supabase Docker 配置，固定至 `ff80bb14991e68667c04f74248b954e8babe6fde`。来源、SHA-256 和 Apache-2.0 LICENSE 在 `deploy/selfhost/vendor/`。`compose.base.json` 是该版本 YAML 的等价 JSON，不含自定义秘密。
 - 当前固定版本默认网关为 Envoy；不沿用旧版本 Kong 的服务名假设。镜像有固定版本标签，升级时重新审核官方变更并固定 image digest；不能自动追随 master/latest。官方镜像实际拉取、目标架构和 Docker 构建仍待验收。
 - API 与 Worker 同镜像，API 固定单实例。Supabase 网关绑定宿主机 `127.0.0.1:18000`，XY API 绑定 `127.0.0.1:3101`；数据库无宿主机端口。可选 Supavisor 置于 `pooler` profile，默认不启动、不暴露端口。API/Worker 使用 Docker 内网直连 DB。
@@ -76,6 +76,50 @@ pnpm typecheck
 配置Nginx证书、安装生成的 `nginx.conf`，运行 `nginx -t` 后按运维方式 reload。静态站使用 `web.env` 的 `NEXT_PUBLIC_*` 构建，交给前端agent执行；构建会改变现有预览产物，须先认领。当前本轮未修改 apps/web、未覆盖4100/3001预览。
 
 上线验收必须包括影子用户登录、主站TOTP/Turnstile、Auth refresh/expired、Storage上传与公网/签名URL、Realtime用户隔离、PGMQ租约、正常/故障停机、第三方模型工具调用。每个会收费的请求需用户明确允许，并核对 request ID 与主站费用。通过 `ready` 不能代替业务验收。
+
+## 单域名部署（预上线服务器的实际用法，10-11 agent01）
+
+预上线服务器 2.lexzerone.xyz 只用一个域名，由宿主机 Caddy 分流：
+
+- `/supabase/*` 去掉前缀后转给 Supabase 网关，放行规则和 Nginx 模板相同：受限 Auth、对象 GET/HEAD；
+- `/api/*` 转给 XY API；
+- 其余路径是静态站。
+
+`prepare.mjs` 目前只生成三个域名的配置，单域名需要手工改下列变量（值以预上线服务器为例）：
+
+| 文件 | 变量 | 值 |
+| --- | --- | --- |
+| `.env` | `SUPABASE_PUBLIC_URL` | `https://2.lexzerone.xyz/supabase` |
+| `.env` | `API_EXTERNAL_URL` | `https://2.lexzerone.xyz/supabase/auth/v1` |
+| `.env` | `SITE_URL` / `ADDITIONAL_REDIRECT_URLS` | `https://2.lexzerone.xyz` / `…/auth/callback` |
+| `server.env` | `SUPABASE_URL` / `SUPABASE_JWT_ISSUER` | `https://2.lexzerone.xyz/supabase` / `…/supabase/auth/v1` |
+| `server.env` | `LOOMIC_WEB_ORIGIN` | `https://2.lexzerone.xyz` |
+| `web.env` | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SERVER_BASE_URL` | `https://2.lexzerone.xyz/supabase` / `https://2.lexzerone.xyz` |
+
+带路径的 `SUPABASE_URL` 已在代码里支持（服务端参考图下载、`/api/proxy-image`、内部转发、前端识别自家存储地址）。10-11 之前服务端下载参考图时只认根路径 `/storage/v1/object/`，单域名部署下所有参考图（以此为参考、变体、上传的参考图）都被拒绝，提示「请先上传参考图到当前工作区」，不扣费。
+
+静态站要加安全头和缓存头。预上线服务器在 Caddy 站点块里加的配置如下。`defer` 加 `?` 的作用：API 自己设过的头（例如 `/api/proxy-image` 的 CSP）不会被覆盖。
+
+```caddy
+header {
+	defer
+	Strict-Transport-Security "max-age=31536000"
+	X-Content-Type-Options "nosniff"
+	?Referrer-Policy "strict-origin-when-cross-origin"
+	?X-Frame-Options "DENY"
+	?Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+	?Permissions-Policy "camera=(), microphone=(), geolocation=()"
+}
+@hashed path /_next/static/*
+header @hashed Cache-Control "public, max-age=31536000, immutable"
+@assets path /fonts/* /images/* /providers/* /favicon.svg /logo.svg /apple-touch-icon.png /og-image.png
+header @assets Cache-Control "public, max-age=604800"
+@pages not path /_next/static/* /fonts/* /images/* /providers/* /favicon.svg /logo.svg /apple-touch-icon.png /og-image.png /api/* /supabase/*
+header @pages Cache-Control "no-cache"
+```
+
+- 带哈希的 `/_next/static` 可以永久缓存。页面用 `no-cache`，发版后浏览器会重新验证，拿到新页面。
+- CSP 暂时只限制被嵌入、`base`、插件和表单提交，没有限制脚本来源：Next 静态导出带内联脚本，要收紧得先改成 nonce 或 hash。
 
 ## 备份与恢复
 

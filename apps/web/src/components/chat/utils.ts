@@ -5,20 +5,24 @@
  * and to allow tree-shaking of unused helpers.
  */
 
-import { getSupabaseOrigin } from "../../lib/env";
+import { getSupabaseBase } from "../../lib/env";
 
 /** Regex patterns for detecting image URLs in markdown content */
 const IMAGE_URL_RE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
 /** Public, signed and transformed object paths of Supabase storage. */
 const STORAGE_OBJECT_PATH_RE = /^\/storage\/v1\/(object|render\/image)\//;
 
-/** An object URL on the configured Supabase storage (any domain, self-hosted included). */
+/** An object URL on the configured Supabase storage (any domain or path, self-hosted included). */
 function isOwnStorageUrl(url: string): boolean {
-  const origin = getSupabaseOrigin();
-  if (!origin) return false;
+  const base = getSupabaseBase();
+  if (!base) return false;
   try {
     const parsed = new URL(url);
-    return parsed.origin === origin && STORAGE_OBJECT_PATH_RE.test(parsed.pathname);
+    return (
+      parsed.origin === base.origin &&
+      parsed.pathname.startsWith(`${base.path}/`) &&
+      STORAGE_OBJECT_PATH_RE.test(parsed.pathname.slice(base.path.length))
+    );
   } catch {
     return false;
   }
