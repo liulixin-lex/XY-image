@@ -16,10 +16,14 @@ interface ColorPickerPopoverProps {
 }
 
 const HEX_RE = /^[0-9A-Fa-f]{6}$/;
+const SHORT_HEX_RE = /^[0-9A-Fa-f]{3}$/;
 
-function normalizeHex(raw: string): string | null {
-  const cleaned = raw.replace(/^#/, "");
+/** "#e8553d", "E8553D" and "f60" (→ #FF6600) are all accepted. */
+export function normalizeHex(raw: string): string | null {
+  const cleaned = raw.trim().replace(/^#/, "");
   if (HEX_RE.test(cleaned)) return `#${cleaned.toUpperCase()}`;
+  if (SHORT_HEX_RE.test(cleaned))
+    return `#${[...cleaned].map((c) => c + c).join("").toUpperCase()}`;
   return null;
 }
 
@@ -73,7 +77,8 @@ export function ColorPickerPopover({
 
   const handleHexInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const raw = e.target.value;
+      // Pasted values usually carry the "#"; the field shows it separately.
+      const raw = e.target.value.trim().replace(/^#/, "");
       setHexInput(raw);
       const normalized = normalizeHex(raw);
       if (normalized) setHex(normalized);
@@ -81,11 +86,14 @@ export function ColorPickerPopover({
     [],
   );
 
+  // A half-typed value would otherwise save the previous colour silently.
+  const hexValid = normalizeHex(hexInput) !== null;
   const handleSave = useCallback(() => {
+    if (!hexValid) return;
     const trimmedName = name.trim() || hex;
     onSave(trimmedName, hex);
     onClose();
-  }, [name, hex, onSave, onClose]);
+  }, [hexValid, name, hex, onSave, onClose]);
 
   if (!open) return null;
 
@@ -123,8 +131,12 @@ export function ColorPickerPopover({
             type="text"
             value={hexInput}
             onChange={handleHexInputChange}
-            maxLength={6}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSave();
+            }}
+            maxLength={7}
             aria-label="颜色值"
+            aria-invalid={!hexValid}
             className="numeral w-full bg-transparent text-[13px] text-fg uppercase caret-acc outline-none"
           />
         </div>
@@ -142,7 +154,8 @@ export function ColorPickerPopover({
         <button
           type="button"
           onClick={handleSave}
-          className="h-8 cursor-pointer rounded-[9px] bg-acc px-3.5 text-[13px] font-semibold text-acc-ink transition-colors hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+          disabled={!hexValid}
+          className="h-8 cursor-pointer rounded-[9px] bg-acc px-3.5 text-[13px] font-semibold text-acc-ink transition-colors hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted"
         >
           {mode === "create" ? "添加" : "保存"}
         </button>
