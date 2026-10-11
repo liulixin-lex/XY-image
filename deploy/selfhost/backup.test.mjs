@@ -117,6 +117,32 @@ test("backup stops writers, includes files and secrets, verifies hashes, then re
     await rm(root, { recursive: true, force: true });
   }
 });
+test("a hot backup keeps writers running and dumps the database before Storage", async () => {
+  const { root, deploy, env } = await setup();
+  try {
+    const output = path.join(root, "backup-hot");
+    const result = await run(
+      path.join(here, "backup.mjs"),
+      ["--dir", deploy, "--output", output, "--hot"],
+      env,
+    );
+    assert.equal(result.code, 0, result.err);
+    const verify = await run(path.join(here, "verify-backup.mjs"), [output], env);
+    assert.equal(verify.code, 0, verify.err);
+    const calls = (await readFile(env.TEST_DOCKER_LOG, "utf8"))
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(!calls.some((a) => a.includes("stop") || a.includes("start")));
+    const dump = calls.findIndex((a) => a.includes("pg_dump"));
+    const storage = calls.findIndex((a) => a.includes("storage") && a.includes("tar"));
+    assert.ok(dump >= 0 && storage > dump, "pg_dump runs before the Storage archive");
+    const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
+    assert.equal(manifest.mode, "hot");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 test("backup failure keeps writers stopped and records recovery list without secrets", async () => {
   const { root, deploy, env } = await setup();
   try {

@@ -14,8 +14,17 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { acquireLock } from "./operation-lock.mjs";
+// --hot: writers keep running (FINDINGS O1, daily backups via
+// hot-backup.mjs). pg_dump reads one consistent snapshot; Storage is
+// archived after it, so every object a dumped row names is in the archive
+// (objects created later are extra, harmless). Without --hot: the
+// maintenance backup, writers stopped for an exactly matching pair.
 const { values } = parseArgs({
-  options: { dir: { type: "string" }, output: { type: "string" } },
+  options: {
+    dir: { type: "string" },
+    output: { type: "string" },
+    hot: { type: "boolean", default: false },
+  },
 });
 if (!values.dir || !values.output)
   throw new Error(
@@ -121,7 +130,7 @@ try {
   if (running.includes("xy-migrate")) throw new Error("A migration is active");
   await mkdir(output, { mode: 0o700 }); // Fail rather than overwrite a backup.
   // Stop every writer, including Auth/Storage/Realtime/Studio. PostgreSQL stays up for dump.
-  const writers = running.filter((s) => s !== "db");
+  const writers = values.hot ? [] : running.filter((s) => s !== "db");
   await writeFile(
     path.join(output, "resume.json"),
     JSON.stringify(
@@ -249,7 +258,12 @@ try {
   await writeFile(
     path.join(output, "manifest.json"),
     `${JSON.stringify(
-      { format: 1, createdAt: new Date().toISOString(), files: hashes },
+      {
+        format: 1,
+        createdAt: new Date().toISOString(),
+        mode: values.hot ? "hot" : "maintenance",
+        files: hashes,
+      },
       null,
       2,
     )}\n`,
