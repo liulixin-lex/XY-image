@@ -246,7 +246,8 @@ export async function runImageGenerate(
     );
   };
 
-  // Resolve assetId references in inputImages to base64 data URIs
+  // Resolve assetId references in inputImages to the attachment's Storage
+  // URL (a data URI only when it arrived inline; see buildAttachmentRefMap)
   if (input.inputImages?.length && attachmentMap) {
     input = {
       ...input,

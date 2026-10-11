@@ -32,6 +32,39 @@ export type ReadyAttachment = {
   name?: string;
 };
 
+/**
+ * Images selected on the canvas, as attachments for the next message. Each
+ * keeps its Storage URL (the agent's image job fetches it from there) and its
+ * canvas caption as the chip name; images already attached are skipped.
+ */
+export function canvasSelectionAttachments(
+  elements: ReadonlyArray<{
+    id: string;
+    type: string;
+    fileId?: string;
+    storageUrl?: string;
+    dataUrl?: string;
+    title?: string;
+  }>,
+  attachedIds: ReadonlySet<string>,
+): ReadyAttachment[] {
+  return elements
+    .filter(
+      (el) =>
+        el.type === "image" &&
+        el.fileId &&
+        (el.storageUrl || el.dataUrl) &&
+        !attachedIds.has(el.id),
+    )
+    .map((el, i) => ({
+      assetId: el.id,
+      url: (el.storageUrl || el.dataUrl) as string,
+      mimeType: "image/png",
+      source: "canvas-ref" as const,
+      name: el.title ?? `画布图片 ${i + 1}`,
+    }));
+}
+
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MiB, the API's per-image limit
 // Generation accepts PNG / JPEG / WebP references only (no GIF).
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);

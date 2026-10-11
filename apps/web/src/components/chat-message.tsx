@@ -135,7 +135,7 @@ const UserMessage = React.memo(function UserMessage({
                   src={(block as { url: string }).url}
                   name={
                     (block as { name?: string }).name ??
-                    `image-${idx + 1}`
+                    `图片 ${idx + 1}`
                   }
                 />
               ))}
@@ -163,7 +163,7 @@ const UserMessage = React.memo(function UserMessage({
               key={idx}
               src={(block as { url: string }).url}
               name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
+                (block as { name?: string }).name ?? `图片 ${idx + 1}`
               }
             />
           ))}

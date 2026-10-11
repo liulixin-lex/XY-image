@@ -69,7 +69,9 @@ export async function registerJobRoutes(
           payload: { ...input, ...canvasPlacement(payload, 0) },
         });
       });
-      return reply.code(201).send(jobResponseSchema.parse({ job }));
+      return reply
+        .code(201)
+        .send(jobResponseSchema.parse({ job: forClient(job) }));
     } catch (error) {
       if (error instanceof JobServiceError)
         return sendJobError(error, reply, "job_create_failed");
@@ -148,7 +150,7 @@ export async function registerJobRoutes(
         imageBatchResponseSchema.parse({
           batch_id: batchId,
           requested: count,
-          jobs,
+          jobs: jobs.map(forClient),
         }),
       );
     } catch (error) {
@@ -193,7 +195,9 @@ export async function registerJobRoutes(
       const { jobId } = request.params as { jobId: string };
       const job = await options.jobService.getJob(user, jobId);
 
-      return reply.code(200).send(jobResponseSchema.parse({ job }));
+      return reply
+        .code(200)
+        .send(jobResponseSchema.parse({ job: forClient(job) }));
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
     }
@@ -214,7 +218,9 @@ export async function registerJobRoutes(
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
       const jobs = await options.jobService.listJobs(user, filters);
 
-      return reply.code(200).send(jobListResponseSchema.parse({ jobs }));
+      return reply
+        .code(200)
+        .send(jobListResponseSchema.parse({ jobs: jobs.map(forClient) }));
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
     }
@@ -229,7 +235,9 @@ export async function registerJobRoutes(
       const { jobId } = request.params as { jobId: string };
       const job = await options.jobService.cancelJob(user, jobId);
 
-      return reply.code(200).send(jobResponseSchema.parse({ job }));
+      return reply
+        .code(200)
+        .send(jobResponseSchema.parse({ job: forClient(job) }));
     } catch (error) {
       return sendJobError(error, reply, "job_cancel_failed");
     }
@@ -237,6 +245,30 @@ export async function registerJobRoutes(
 }
 
 const batchParamsSchema = z.object({ batchId: z.string().uuid() });
+
+/**
+ * A job as the browser gets it. Inline reference images (data URIs) are cut
+ * to their header: the page only counts them, and one 2K reference is about
+ * 3 MB that every /api/jobs poll would download again. The worker reads the
+ * full payload from the database, not from here.
+ */
+function forClient(job: BackgroundJob): BackgroundJob {
+  const images = job.payload?.input_images;
+  const inline = (value: unknown): value is string =>
+    typeof value === "string" && value.startsWith("data:");
+  if (!Array.isArray(images) || !images.some(inline)) return job;
+  return {
+    ...job,
+    payload: {
+      ...job.payload,
+      input_images: images.map((value) =>
+        inline(value)
+          ? value.slice(0, value.indexOf(",") + 1) || "data:"
+          : value,
+      ),
+    },
+  };
+}
 
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(

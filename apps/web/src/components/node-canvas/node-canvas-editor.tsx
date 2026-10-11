@@ -162,6 +162,8 @@ export type CanvasSelectedElement = {
   dataUrl?: string;
   /** Storage URL; preferred over dataUrl for message attachments. */
   storageUrl?: string;
+  /** The image's caption on the canvas (the job title), shown on the chat chip. */
+  title?: string;
 };
 
 export type NodeCanvasHandle = {
@@ -651,6 +653,8 @@ function EditorInner({
           if (typeof el.text === "string" && el.text) item.text = el.text;
           if (el.type === "image" && typeof el.fileId === "string") {
             item.fileId = el.fileId;
+            const title = el.customData?.title;
+            if (typeof title === "string" && title) item.title = title;
             const file = files[el.fileId];
             const stored = file?.storageUrl ?? el.customData?.storageUrl;
             if (typeof stored === "string" && stored) item.storageUrl = stored;
