@@ -525,7 +525,7 @@ export async function monitor(config, dependencies = {}) {
           "-v",
           "ON_ERROR_STOP=1",
           "-c",
-          `SELECT coalesce(error_code, status), count(*) FROM public.background_jobs WHERE job_type = 'image_generation' AND status IN ('succeeded', 'failed', 'dead_letter') AND updated_at > now() - interval '${Number(windowMinutes)} minutes' GROUP BY 1 ORDER BY 2 DESC`,
+          `SELECT coalesce(error_code, status::text), count(*) FROM public.background_jobs WHERE job_type = 'image_generation' AND status::text IN ('succeeded', 'failed', 'dead_letter') AND updated_at > now() - interval '${Number(windowMinutes)} minutes' GROUP BY 1 ORDER BY 2 DESC`,
         ]);
         const rows = text
           .trim()
