@@ -17,6 +17,17 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
+import {
+  beforeSending,
+  editPrompt,
+  frameFor,
+  geminiSource,
+  orientSource,
+  outpaintImages,
+  readPaintedMask,
+  xaiMaskPng,
+  xaiOutpaintMask,
+} from "../mask-edit.js";
 import { fetchReferenceImage } from "./xy2api-reference.js";
 
 /**
@@ -43,6 +54,7 @@ export function xaiImageRequest(
   prompt: string,
   resolved: { resolution: string; quality: string; aspectRatio: string },
   references: string[],
+  mask?: string,
 ) {
   const images = references.map((url) => ({
     url,
@@ -60,6 +72,60 @@ export function xaiImageRequest(
     ...(resolved.quality !== "auto" ? { quality: resolved.quality } : {}),
     ...(images.length ? { image: images[0] } : {}),
     ...(images.length > 1 ? { images } : {}),
+    ...(mask ? { mask: { url: mask, type: "image_url" as const } } : {}),
+  };
+}
+
+const dataUrl = (image: { bytes: Buffer; mimeType: string }) =>
+  `data:${image.mimeType};base64,${image.bytes.toString("base64")}`;
+
+/**
+ * 局部重绘 / 扩图 for Grok: the source (or the picture on its gray 扩图
+ * frame) plus a mask, white where the model may paint, and the prompt that
+ * says so. Built before the call, so a refusal here sends nothing.
+ */
+async function maskEditRequest(
+  params: ImageGenerateParams,
+  aspectRatio: string | undefined,
+  ctx: ImageCallContext,
+): Promise<{ prompt: string; image: string; mask: string }> {
+  const edit = params.edit;
+  const sourceUrl = params.inputImages?.[0];
+  if (!edit || !sourceUrl || params.inputImages?.length !== 1)
+    throw new BillingGuardError("invalid_input");
+  const fetched = await fetchReferenceImage(sourceUrl, ctx);
+  const source = await orientSource(fetched.bytes, fetched.mimeType);
+  const prompt = editPrompt(edit, params.prompt, "xai");
+  if (edit.mode === "inpaint") {
+    const painted = await readPaintedMask(
+      (await fetchReferenceImage(edit.mask, ctx)).bytes,
+      source.width,
+      source.height,
+    );
+    console.info(
+      `[xy2api-xai] inpaint ${source.width}x${source.height}, ${(painted.coverage * 100).toFixed(1)}% painted`,
+    );
+    return {
+      prompt,
+      image: dataUrl(await geminiSource(source)),
+      mask: dataUrl({
+        bytes: await xaiMaskPng(painted),
+        mimeType: "image/png",
+      }),
+    };
+  }
+  const frame = frameFor(source, aspectRatio, edit);
+  const { framed, mask } = await outpaintImages(source, frame);
+  console.info(
+    `[xy2api-xai] outpaint ${source.width}x${source.height} -> ${frame.width}x${frame.height} (${edit.anchor}, x${edit.scale})`,
+  );
+  return {
+    prompt,
+    image: dataUrl({ bytes: framed, mimeType: "image/jpeg" }),
+    mask: dataUrl({
+      bytes: await xaiOutpaintMask(mask),
+      mimeType: "image/png",
+    }),
   };
 }
 
@@ -83,25 +149,33 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
     });
     if ((params.inputImages?.length ?? 0) > XAI_MAX_EDIT_IMAGES)
       throw new BillingGuardError("invalid_input");
-    const references = await Promise.all(
-      (params.inputImages ?? []).map(async (source) => {
-        const image = await fetchReferenceImage(source, ctx);
-        return `data:${image.mimeType};base64,${image.bytes.toString("base64")}`;
-      }),
-    );
-    const body = xaiImageRequest(
-      params.model,
-      params.prompt,
-      resolved,
-      references,
-    );
+    let body: ReturnType<typeof xaiImageRequest>;
+    if (params.edit) {
+      const edit = await beforeSending("xy2api-xai", () =>
+        maskEditRequest(params, resolved.aspectRatio, ctx),
+      );
+      body = xaiImageRequest(
+        params.model,
+        edit.prompt,
+        resolved,
+        [edit.image],
+        edit.mask,
+      );
+    } else {
+      const references = await Promise.all(
+        (params.inputImages ?? []).map(async (source) =>
+          dataUrl(await fetchReferenceImage(source, ctx)),
+        ),
+      );
+      body = xaiImageRequest(params.model, params.prompt, resolved, references);
+    }
     // xy2api's id for this call, kept on every failure after it answered so a
     // 待核对 job can be matched to its usage row.
     let requestId: string | undefined;
     try {
       const timeout = AbortSignal.timeout(600000);
       const response = await fetch(
-        `${ctx.baseUrl}/v1/images/${references.length ? "edits" : "generations"}`,
+        `${ctx.baseUrl}/v1/images/${"image" in body ? "edits" : "generations"}`,
         {
           method: "POST",
           headers: {

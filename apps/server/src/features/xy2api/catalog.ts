@@ -230,15 +230,14 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
   {
     id: "grok-imagine-image-2.0",
     displayName: "Grok Imagine 2.0",
-    description: "xAI 图像生成",
+    description: "xAI 图像生成与编辑",
     protocol: "xai-images",
     platforms: ["grok", "composite"],
-    // TODO(agent01): xAI edits take JSON `image: {url, type: "image_url"}`
-    // (docs.x.ai …/images/editing). The lab gateway mock has no grok path, so
-    // edits stay off until a real xy2api grok group is verified; then set
-    // supportsEdit: true and maxInputImages: 3 (xy2api's limit per edit).
-    supportsEdit: false,
-    maxInputImages: 0,
+    // Edits take JSON `image` (+ `images`, + `mask`), verified through the
+    // pre-launch main site (xy2api 0.2.6) on 2026-10-11: one and two source
+    // images, and a mask. xAI allows five sources; xy2api caps an edit at 3.
+    supportsEdit: true,
+    maxInputImages: 3,
   },
   {
     id: "gemini-3.1-flash-image",
@@ -274,9 +273,9 @@ export function loadImageCatalog(json?: string): ImageModel[] {
 }
 
 /**
- * 局部重绘 / 扩图 (generation/mask-edit.ts): OpenAI takes the source and a
- * mask; Gemini takes the source plus a highlighted copy, so it needs room
- * for two images. xAI edits are off (see the Grok entry).
+ * 局部重绘 / 扩图 (generation/mask-edit.ts): OpenAI and xAI take the source
+ * and a mask; Gemini takes the source plus a highlighted copy, so it needs
+ * room for two images.
  */
 export function supportsMaskEdit(
   model: Pick<ImageModel, "protocol" | "supportsEdit" | "maxInputImages">,
@@ -284,6 +283,7 @@ export function supportsMaskEdit(
   if (!model.supportsEdit) return false;
   if (model.protocol === "openai-images") return model.maxInputImages >= 1;
   if (model.protocol === "gemini") return model.maxInputImages >= 2;
+  if (model.protocol === "xai-images") return model.maxInputImages >= 1;
   return false;
 }
 

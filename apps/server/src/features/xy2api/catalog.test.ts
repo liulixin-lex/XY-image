@@ -105,7 +105,8 @@ describe("image catalog", () => {
       vendor: "xai",
       resolutions: ["1K", "2K"],
       qualities: ["auto", "low", "medium"],
-      supportsEdit: false,
+      supportsEdit: true,
+      maxInputImages: 3,
     });
   });
   it("adds a model from LOOMIC_IMAGE_MODELS with protocol defaults", () => {
@@ -195,10 +196,16 @@ describe("局部重绘 / 扩图 support", () => {
     if (!found) throw new Error(`no ${id}`);
     return found;
   };
-  it("is on for OpenAI and Gemini editors and off for Grok", () => {
+  it("is on for OpenAI, Gemini and Grok editors", () => {
     expect(supportsMaskEdit(model("gpt-image-2"))).toBe(true);
     expect(supportsMaskEdit(model("nano-banana-pro"))).toBe(true);
-    expect(supportsMaskEdit(model("grok-imagine-image-2.0"))).toBe(false);
+    expect(supportsMaskEdit(model("grok-imagine-image-2.0"))).toBe(true);
+    expect(
+      supportsMaskEdit({
+        ...model("grok-imagine-image-2.0"),
+        supportsEdit: false,
+      }),
+    ).toBe(false);
   });
   it("needs room for two images on Gemini (source + highlighted copy)", () => {
     expect(
@@ -209,9 +216,12 @@ describe("局部重绘 / 扩图 support", () => {
     ).toBe(false);
   });
   it("refuses an unsupported model or anything but one source", () => {
-    expect(() => checkMaskEdit(model("grok-imagine-image-2.0"), 1)).toThrow(
-      "不支持局部重绘和扩图",
-    );
+    expect(() =>
+      checkMaskEdit(
+        { ...model("grok-imagine-image-2.0"), supportsEdit: false },
+        1,
+      ),
+    ).toThrow("不支持局部重绘和扩图");
     expect(() => checkMaskEdit(model("gpt-image-2"), 2)).toThrow(
       "一次只改一张图",
     );

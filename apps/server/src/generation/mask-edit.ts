@@ -21,6 +21,13 @@ import { BillingGuardError } from "../features/xy2api/errors.js";
  * - Gemini: no mask parameter. Inpaint sends the source plus a copy with the
  *   area highlighted in magenta; outpaint sends the picture on a flat gray
  *   frame. The prompt explains both.
+ * - xAI (Grok): JSON `images/edits` with `image` and a `mask` image, white
+ *   where the model may paint. xy2api 0.2.5+ forwards `mask` as is (its
+ *   grok_media.go); xAI's guides do not document it, but on the pre-launch
+ *   site a white box asking for a fox got the fox inside the box. Like every
+ *   Grok edit the whole picture is redrawn, so the prompt asks to keep the
+ *   rest. Outpaint sends the picture on the gray frame with the frame white
+ *   in the mask.
  */
 
 /** Highlight for the Gemini copy: a colour pictures rarely contain. */
@@ -113,7 +120,11 @@ export async function readPaintedMask(
     );
   }
   if (read.coverage < MIN_COVERAGE)
-    throw new BillingGuardError("invalid_input", 400, "先在图上涂出要修改的地方");
+    throw new BillingGuardError(
+      "invalid_input",
+      400,
+      "先在图上涂出要修改的地方",
+    );
   return { ...read, width, height };
 }
 
@@ -133,6 +144,35 @@ export async function openaiMaskPng(mask: PaintedMask): Promise<Buffer> {
     .joinChannel(alpha, {
       raw: { width: mask.width, height: mask.height, channels: 1 },
     })
+    .png()
+    .toBuffer();
+}
+
+/**
+ * xAI mask: white where the model may paint, black elsewhere, scaled like
+ * geminiSource scales the source so the two stay the same size.
+ */
+export async function xaiMaskPng(mask: PaintedMask): Promise<Buffer> {
+  const png = await sharp(mask.painted, {
+    raw: { width: mask.width, height: mask.height, channels: 1 },
+  })
+    .png()
+    .toBuffer();
+  return sharp(png)
+    .resize(GEMINI_MAX_EDGE, GEMINI_MAX_EDGE, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .png()
+    .toBuffer();
+}
+
+/** xAI 扩图 mask from the OpenAI one: white where OpenAI's is transparent. */
+export async function xaiOutpaintMask(openaiMask: Buffer): Promise<Buffer> {
+  return sharp(openaiMask)
+    .ensureAlpha()
+    .extractChannel("alpha")
+    .negate()
     .png()
     .toBuffer();
 }
@@ -190,7 +230,8 @@ export async function highlightedCopy(
 }
 
 /** Shown when the pictures could not be prepared; nothing was sent. */
-export const EDIT_PREPARE_FAILED = "原图或涂抹区域处理失败，这次没有发出，可以重试";
+export const EDIT_PREPARE_FAILED =
+  "原图或涂抹区域处理失败，这次没有发出，可以重试";
 
 /**
  * Runs the local half of an edit: reading the source and the mask, building
@@ -207,7 +248,10 @@ export async function beforeSending<T>(
   } catch (error) {
     if (error instanceof BillingGuardError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw error;
-    console.error(`[${module}] preparing the edit failed, nothing was sent`, error);
+    console.error(
+      `[${module}] preparing the edit failed, nothing was sent`,
+      error,
+    );
     throw new BillingGuardError("invalid_input", 400, EDIT_PREPARE_FAILED);
   }
 }
@@ -310,8 +354,12 @@ export async function outpaintImages(
 export function editPrompt(
   edit: ImageEdit,
   userPrompt: string,
-  vendor: "openai" | "gemini",
+  vendor: "openai" | "gemini" | "xai",
 ): string {
+  if (vendor === "xai")
+    return edit.mode === "inpaint"
+      ? `Edit only the area that is white in the mask image. Keep everything else exactly as it is, with the same framing, colours and lighting.\nChange requested: ${userPrompt}`
+      : `The image shows a picture on a flat gray frame; the mask is white over the gray. Replace all of the gray by extending the scene outward so the picture fills the whole frame. Keep the original part unchanged and continue its scene, perspective, lighting and style seamlessly. Return the complete picture with no gray border.\nFor the new area: ${userPrompt}`;
   if (edit.mode === "inpaint")
     return vendor === "openai"
       ? `Edit only the transparent (masked) area of the image. Keep everything outside it exactly as it is, with the same framing and lighting.\nChange requested: ${userPrompt}`
