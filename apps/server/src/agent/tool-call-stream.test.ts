@@ -1,6 +1,6 @@
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
-import { ChatOpenAICompletions } from "@langchain/openai";
+import { ChatOpenAI, ChatOpenAICompletions } from "@langchain/openai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ import {
 } from "./glued-tool-calls.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import {
+  createResponsesArgumentFiller,
   createToolCallIndexer,
   separateToolCallIndexes,
   streamEventError,
@@ -441,5 +442,117 @@ describe("errors reported inside a stream", () => {
     );
     await expect(response.text()).rejects.toMatchObject({ code: "upstream_busy" });
     warn.mockRestore();
+  });
+});
+
+// FINDINGS A4 retest (production 2026-10-11, gpt-6.1-sol through gguuai.com):
+// three parallel calls came with no argument deltas, only the whole
+// arguments in `….done` / `output_item.done`; LangChain reads deltas only.
+describe("Responses function calls without argument deltas", () => {
+  const drawing = tool(async () => "", {
+    name: "generate_image",
+    description: "Draw one picture",
+    schema: z.object({ title: z.string(), prompt: z.string() }),
+  });
+  const args = ["面包", "蛋糕", "咖啡"].map((title) =>
+    JSON.stringify({ title, prompt: `${title}，奶油白背景，暖光` }),
+  );
+  const item = (i: number, withArgs: boolean) => ({
+    type: "function_call",
+    id: `fc_${i}`,
+    call_id: `call_${i}`,
+    name: "generate_image",
+    arguments: withArgs ? args[i] : "",
+  });
+  const productionEvents = [
+    { type: "response.created", response: { id: "resp_1", model: "gpt-6.1-sol" } },
+    ...args.flatMap((full, i) => [
+      { type: "response.output_item.added", output_index: i, item: item(i, false) },
+      { type: "response.function_call_arguments.done", output_index: i, item_id: `fc_${i}`, arguments: full },
+      { type: "response.output_item.done", output_index: i, item: item(i, true) },
+    ]),
+    {
+      type: "response.completed",
+      response: {
+        id: "resp_1",
+        model: "gpt-6.1-sol",
+        status: "completed",
+        output: args.map((_, i) => item(i, true)),
+        usage: { input_tokens: 10, output_tokens: 90, total_tokens: 100 },
+      },
+    },
+  ];
+  const model = (wrap: (response: Response) => Response) =>
+    new ChatOpenAI({
+      model: "gpt-6.1-sol",
+      apiKey: "test",
+      configuration: {
+        baseURL: "https://gw.test/v1",
+        fetch: async () => wrap(sse(productionEvents, { split: true })),
+      },
+      streaming: true,
+      maxRetries: 0,
+      useResponsesApi: true,
+    });
+  async function calls(chat: ChatOpenAI) {
+    let merged: AIMessageChunk | undefined;
+    for await (const chunk of await chat.bindTools([drawing]).stream("三张图")) {
+      merged = merged ? merged.concat(chunk) : chunk;
+    }
+    return merged?.tool_calls?.map((c) => [c.id, c.args]);
+  }
+
+  it("arrive as {} without the fix (the bug)", async () => {
+    expect(await calls(model((r) => r))).toEqual([
+      ["call_0", {}],
+      ["call_1", {}],
+      ["call_2", {}],
+    ]);
+  });
+
+  it("arrive whole once the final arguments are passed on as a delta", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await calls(model(separateToolCallIndexes))).toEqual(
+      args.map((full, i) => [`call_${i}`, JSON.parse(full)]),
+    );
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("leaves a stream whose deltas add up byte for byte", async () => {
+    const streamed = [
+      { type: "response.output_item.added", output_index: 0, item: item(0, false) },
+      { type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_0", delta: args[0]!.slice(0, 5) },
+      { type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_0", delta: args[0]!.slice(5) },
+      { type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_0", arguments: args[0] },
+      { type: "response.output_item.done", output_index: 0, item: item(0, true) },
+    ];
+    const original = await sse(streamed).text();
+    expect(await separateToolCallIndexes(sse(streamed, { split: true })).text()).toBe(original);
+  });
+
+  it("sends only what is missing, and settles each call once", () => {
+    const fill = createResponsesArgumentFiller();
+    expect(fill({ type: "response.output_item.added", output_index: 0, item: item(0, false) })).toBeNull();
+    expect(fill({ type: "response.function_call_arguments.delta", item_id: "fc_0", delta: args[0]!.slice(0, 4) })).toBeNull();
+    expect(
+      fill({ type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_0", arguments: args[0] }),
+    ).toEqual({
+      type: "response.function_call_arguments.delta",
+      item_id: "fc_0",
+      output_index: 0,
+      delta: args[0]!.slice(4),
+    });
+    expect(fill({ type: "response.output_item.done", output_index: 0, item: item(0, true) })).toBeNull();
+    // Only output_item.done: it settles the call instead.
+    expect(fill({ type: "response.output_item.added", output_index: 1, item: item(1, false) })).toBeNull();
+    expect(fill({ type: "response.output_item.done", output_index: 1, item: item(1, true) })).toMatchObject({
+      item_id: "fc_1",
+      delta: args[1],
+    });
+    // Deltas that do not match the final text are left alone.
+    expect(fill({ type: "response.output_item.added", output_index: 2, item: item(2, false) })).toBeNull();
+    expect(fill({ type: "response.function_call_arguments.delta", item_id: "fc_2", delta: "{\"x" })).toBeNull();
+    expect(fill({ type: "response.function_call_arguments.done", item_id: "fc_2", arguments: args[2] })).toBeNull();
   });
 });

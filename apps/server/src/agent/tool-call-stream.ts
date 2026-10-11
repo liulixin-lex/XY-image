@@ -11,6 +11,15 @@
  * byte; anything that is not JSON with `choices[].delta.tool_calls` is left
  * alone (the Responses API stream has no `choices`).
  *
+ * Responses API streams can lose function call arguments the other way: on
+ * production (2026-10-11, gpt-6.1-sol through gguuai.com) a turn with three
+ * parallel calls sent no `response.function_call_arguments.delta` at all,
+ * only the whole arguments in `….done` / `output_item.done`, which LangChain
+ * does not read. All three generate_image calls arrived as `{}`, were
+ * rejected (no title, no prompt) and the model had to redo them one by one
+ * (FINDINGS A4 retest). A single call in the same stream gets deltas. The
+ * missing arguments are passed on as one delta just before `….done`.
+ *
  * It also turns an error the gateway reports inside a 200 stream into a
  * thrown error. LangChain's Responses converter ignores `error` and
  * `response.failed` events, so production (2026-10-11, gpt-6-luna, an
@@ -75,6 +84,52 @@ export function createToolCallIndexer() {
 }
 
 /**
+ * Returns a function that, for a Responses API event, gives the delta event
+ * to send before it when a function call's arguments were not (fully)
+ * streamed: the part of the final arguments not yet received. Calls whose
+ * deltas already add up, or whose deltas do not match the final text, get
+ * nothing.
+ */
+export function createResponsesArgumentFiller() {
+  /** item id → arguments received so far (output_item.added + deltas) */
+  const received = new Map<string, string>();
+  return (payload: unknown): Record<string, unknown> | null => {
+    const event = record(payload);
+    const item = record(event.item);
+    if (event.type === "response.output_item.added") {
+      if (item.type === "function_call" && typeof item.id === "string")
+        received.set(item.id, typeof item.arguments === "string" ? item.arguments : "");
+      return null;
+    }
+    if (event.type === "response.function_call_arguments.delta") {
+      const id = event.item_id;
+      if (typeof id === "string" && received.has(id))
+        received.set(id, `${received.get(id)}${typeof event.delta === "string" ? event.delta : ""}`);
+      return null;
+    }
+    // `….done` normally comes first; `output_item.done` covers gateways that
+    // skip it. Whichever arrives first settles the call.
+    const final =
+      event.type === "response.function_call_arguments.done"
+        ? { id: event.item_id, args: event.arguments }
+        : event.type === "response.output_item.done" && item.type === "function_call"
+          ? { id: item.id, args: item.arguments }
+          : null;
+    if (!final || typeof final.id !== "string" || typeof final.args !== "string") return null;
+    const got = received.get(final.id);
+    if (got === undefined) return null;
+    received.delete(final.id);
+    if (got === final.args || !final.args.startsWith(got)) return null;
+    return {
+      type: "response.function_call_arguments.delta",
+      item_id: final.id,
+      output_index: event.output_index,
+      delta: final.args.slice(got.length),
+    };
+  };
+}
+
+/**
  * The error a stream event reports, if it is one: Responses API `error` /
  * `response.failed`, or a chat-completions chunk carrying `error`.
  */
@@ -106,10 +161,12 @@ export function separateToolCallIndexes(response: Response): Response {
   const type = response.headers.get("content-type") ?? "";
   if (!response.body || !type.includes("text/event-stream")) return response;
   const renumber = createToolCallIndexer();
+  const fillArguments = createResponsesArgumentFiller();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
   let warned = false;
+  let filled = 0;
   let failed: GatewayError | null = null;
   const rewrite = (line: string) => {
     if (!line.startsWith("data:")) return line;
@@ -128,6 +185,15 @@ export function separateToolCallIndexes(response: Response): Response {
         `[chat-stream] the provider reported an error inside the stream: ${streamError.code}`,
       );
       return line;
+    }
+    const missing = fillArguments(payload);
+    if (missing) {
+      // Its own event, ahead of the one that carried the whole arguments.
+      if (filled++ === 0)
+        console.warn(
+          "[tool-calls] the chat provider sent function call arguments without deltas; passed them on as one delta",
+        );
+      return `data: ${JSON.stringify(missing)}\n\n${line}`;
     }
     if (!renumber(payload)) return line;
     if (!warned) {
