@@ -350,6 +350,15 @@ test(
     const upstream = http.createServer((incoming, response) => {
       incoming.resume();
       forwarded.push({ method: incoming.method, url: incoming.url });
+      // The media check (auth_request): it sees the image's address in
+      // X-Original-URI; "denied" in it stands for a visitor without access.
+      if (incoming.url === "/api/media/authorize") {
+        const original = String(incoming.headers["x-original-uri"] ?? "");
+        forwarded.at(-1).originalUri = original;
+        response.writeHead(original.includes("denied") ? 401 : 204);
+        response.end();
+        return;
+      }
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(forwarded.at(-1)));
     });
@@ -432,7 +441,15 @@ test(
           200,
           `${method} /supabase${url} must remain usable`,
         );
-        assert.equal(forwarded.length, count + 1);
+        // Workspace images are asked of the API first (FINDINGS S2).
+        const gated = url.startsWith("/storage/v1/object/public/project-assets/");
+        assert.equal(forwarded.length, count + (gated ? 2 : 1));
+        if (gated)
+          assert.deepEqual(forwarded[count], {
+            method: "GET",
+            url: "/api/media/authorize",
+            originalUri: `/supabase${url}`,
+          });
         assert.deepEqual(
           JSON.parse(result.body),
           { method, url },
@@ -442,6 +459,18 @@ test(
           result.headers["strict-transport-security"],
           "max-age=31536000",
         );
+      }
+      {
+        const count = forwarded.length;
+        const denied = await request(
+          nginxPort,
+          "GET",
+          "/supabase/storage/v1/object/public/project-assets/denied.png",
+          host,
+        );
+        assert.equal(denied.status, 401, "No media cookie: the image is refused");
+        assert.equal(forwarded.length, count + 1, "Only the check ran, not Storage");
+        assert.equal(forwarded.at(-1).url, "/api/media/authorize");
       }
       const realtime = await request(
         nginxPort,
