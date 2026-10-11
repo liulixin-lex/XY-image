@@ -43,7 +43,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 单元和集成测试 | typecheck 8/8；server 618、web 251、shared 60、workspace 10、selfhost 21 |
+| 单元和集成测试 | typecheck 8/8；server 621、web 251、shared 60、workspace 10、selfhost 21 |
 | 全量回归 | `regress.sh` 20 项全部通过（2026-10-11 12:31–12:51 UTC，实验环境部署的就是 v0.0.4 的构建，`/api/health` 返回 `0.0.4`），项目和 v0.0.3 相同；API 和 Worker 没有错误级日志。之前一轮（12:19 开始，部署的是 #47 之前的构建）`06-chat` 失败：主站以内容审核拒绝对话时只显示「请求处理失败」，#47 修复后通过 |
 
 ### 上线前仍须完成
