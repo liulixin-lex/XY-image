@@ -3,6 +3,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 import { createStreamingChatModel } from "../../agent/deep-agent.js";
 import type { ServerEnv } from "../../config/env.js";
+import { findCause } from "../../utils/error-chain.js";
 import { describeErrorForLog } from "../../utils/error-sanitizer.js";
 import { createCustomChatModel } from "../chat-providers/chat-model.js";
 import { findChatProviderError } from "../chat-providers/errors.js";
@@ -158,15 +159,13 @@ export function cleanPrompt(raw: string): string {
 function toClientError(error: unknown, custom: boolean) {
   const provider = findChatProviderError(error);
   if (provider) return provider;
-  let current: unknown = error;
-  for (let i = 0; i < 8 && current && typeof current === "object"; i++) {
-    if (
-      current instanceof BillingGuardError &&
-      current.code !== "upstream_unknown"
-    )
-      return current;
-    current = "cause" in current ? current.cause : undefined;
-  }
+  const refusal = findCause(
+    error,
+    (candidate): candidate is BillingGuardError =>
+      candidate instanceof BillingGuardError &&
+      candidate.code !== "upstream_unknown",
+  );
+  if (refusal) return refusal;
   return new BillingGuardError(
     "upstream_busy",
     502,

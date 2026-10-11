@@ -1,3 +1,5 @@
+import { causeChain, findCause } from "../../utils/error-chain.js";
+
 const messages = {
   provider_auth_failed: "服务商 API Key 无效或没有权限，请检查设置",
   provider_model_not_found:
@@ -30,11 +32,11 @@ export class ChatProviderError extends Error {
 export function findChatProviderError(
   error: unknown,
 ): ChatProviderError | undefined {
-  let current = error;
-  for (let i = 0; i < 8 && current && typeof current === "object"; i++) {
-    if (current instanceof ChatProviderError) return current;
-    current = "cause" in current ? current.cause : undefined;
-  }
+  return findCause(
+    error,
+    (candidate): candidate is ChatProviderError =>
+      candidate instanceof ChatProviderError,
+  );
 }
 export function mapProviderStatus(status: number, body = "", models = false) {
   const code: ChatProviderErrorCode =
@@ -56,8 +58,7 @@ export function mapProviderStatus(status: number, body = "", models = false) {
 export function mapProviderConnectionError(error: unknown): ChatProviderError {
   const known = findChatProviderError(error);
   if (known) return known;
-  let current = error;
-  for (let i = 0; i < 8 && current && typeof current === "object"; i++) {
+  for (const current of causeChain(error)) {
     const code = "code" in current ? current.code : undefined;
     const name = "name" in current ? current.name : undefined;
     if (
@@ -66,7 +67,6 @@ export function mapProviderConnectionError(error: unknown): ChatProviderError {
       (typeof code === "string" && /TIMEOUT|TIMEDOUT/.test(code))
     )
       return new ChatProviderError("provider_unavailable");
-    current = "cause" in current ? current.cause : undefined;
   }
   return new ChatProviderError("provider_unreachable");
 }
