@@ -12,7 +12,7 @@ import {
 
 import { useAccount } from "@/lib/account-context";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, isActiveJob, isFailedJob, jobStatusLabel } from "@/lib/image-jobs";
+import { type ImageJobView, isActiveJob, isFailedJob, jobLabel, jobStatusLabel } from "@/lib/image-jobs";
 import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
 
@@ -38,7 +38,8 @@ export function LoupeDialog({
   modelName: string;
   onClose: () => void;
   onReuse: (job: ImageJobView) => void;
-  onUseAsReference: (job: ImageJobView) => void;
+  /** Absent when no model on the key takes reference images. */
+  onUseAsReference?: (job: ImageJobView) => void;
   onDownload: (job: ImageJobView) => void;
   /** 局部重绘 / 扩图; absent when no model on the key can do it. */
   onEdit?: (job: ImageJobView, mode: ImageEditMode) => void;
@@ -63,7 +64,7 @@ export function LoupeDialog({
               {job.url ? (
                 <img
                   src={job.url}
-                  alt={job.prompt || "生成结果"}
+                  alt={jobLabel(job) || "生成结果"}
                   className="max-h-[78dvh] w-auto max-w-full rounded-[12px] object-contain shadow-lit"
                 />
               ) : (
@@ -178,7 +179,7 @@ export function LoupeDialog({
                   <RotateCcwIcon strokeWidth={1.75} />
                   做同款
                 </Button>
-                {job.url && job.assetId ? (
+                {onUseAsReference && job.url && job.assetId ? (
                   <Button variant="outline" onClick={() => onUseAsReference(job)}>
                     <ImagePlusIcon strokeWidth={1.75} />
                     用作参考图

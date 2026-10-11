@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAmbientImage } from "@/components/ambient/ambient-provider";
 import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
-import { type ImageJobView, listImage, toImageJobView } from "@/lib/image-jobs";
+import { type ImageJobView, jobLabel, listImage, toImageJobView } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -101,7 +101,7 @@ export function RecentPrints() {
               <Link
                 href="/studio"
                 className="group block w-[156px] rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc"
-                title={job.prompt}
+                title={jobLabel(job)}
               >
                 <span
                   className={cn(
@@ -114,7 +114,7 @@ export function RecentPrints() {
                   {/* biome-ignore lint/performance/noImgElement: public storage URL */}
                   <img
                     src={listImage(job) ?? ""}
-                    alt={job.prompt || "生成结果"}
+                    alt={jobLabel(job) || "生成结果"}
                     loading="lazy"
                     className="size-full object-cover"
                   />

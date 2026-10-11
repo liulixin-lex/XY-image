@@ -17,6 +17,7 @@ import { useNow } from "@/hooks/use-now";
 import { describeIssue } from "@/lib/generation-errors";
 import {
   type ImageJobView,
+  jobLabel,
   type JobGroup,
   describeOutcome,
   formatElapsed,
@@ -37,10 +38,13 @@ import { BillingBadge } from "../billing/billing-badge";
 export type FeedActions = {
   onSelect: (job: ImageJobView) => void;
   onOpen: (job: ImageJobView) => void;
-  /** 以此为参考: add the picture to the references, keep the current text. */
-  onReference: (job: ImageJobView) => void;
-  /** 变体: this picture's text and settings, with the picture as a reference. Nothing is sent. */
-  onVariant: (job: ImageJobView) => void;
+  /**
+   * 以此为参考: add the picture to the references, keep the current text.
+   * Absent when no model on the key takes reference images (Grok).
+   */
+  onReference?: (job: ImageJobView) => void;
+  /** 变体: this picture's text and settings, with the picture as a reference. Nothing is sent. Absent like onReference. */
+  onVariant?: (job: ImageJobView) => void;
   onDownload: (job: ImageJobView) => void;
   /** Put a failed job's text and settings back into the composer. */
   onReuse: (job: ImageJobView) => void;
@@ -136,7 +140,7 @@ function BatchBlock({
       <header className="mb-4 flex flex-col gap-x-6 gap-y-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 max-w-[52em] flex-1">
           <h3 id={titleId} className="line-clamp-2 font-display text-[20px] leading-[1.35] font-normal text-fg">
-            {lead.prompt || "（无描述）"}
+            {jobLabel(lead) || "（无描述）"}
           </h3>
           <p className="mt-1.5 data-label text-[12px] text-fg-muted">{meta}</p>
         </div>
@@ -229,7 +233,7 @@ function PictureCard({
               onClick={() => actions.onSelect(job)}
               onDoubleClick={() => actions.onOpen(job)}
               aria-pressed={selected}
-              aria-label={`第 ${index + 1} 张${selected ? "（已选中）" : ""}：${job.prompt}`}
+              aria-label={`第 ${index + 1} 张${selected ? "（已选中）" : ""}：${jobLabel(job)}`}
               className="absolute inset-0 block focus-visible:outline-none"
             >
               <RevealImage src={listImage(job) ?? job.url} alt="" reveal={reveal} className="h-full w-full" />
@@ -290,16 +294,16 @@ function Toolbar({
           : "pointer-events-none opacity-0 group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100 pointer-fine:group-hover/card:pointer-events-auto pointer-fine:group-hover/card:opacity-100",
       )}
     >
-      {job.assetId ? (
-        <button type="button" onClick={() => actions.onReference(job)} className={cn(toolClass, "bg-acc text-acc-ink hover:bg-acc-hover")}>
+      {actions.onReference && job.assetId ? (
+        <button type="button" onClick={() => actions.onReference?.(job)} className={cn(toolClass, "bg-acc text-acc-ink hover:bg-acc-hover")}>
           <ImagePlusIcon strokeWidth={1.8} />
           以此为参考
         </button>
       ) : null}
-      {job.assetId ? (
+      {actions.onVariant && job.assetId ? (
         <button
           type="button"
-          onClick={() => actions.onVariant(job)}
+          onClick={() => actions.onVariant?.(job)}
           title="变体：用它的描述和设置，并把它作为参考图"
           className={cn(toolClass, "hover:bg-white/15 @max-[260px]/card:w-8 @max-[260px]/card:justify-center @max-[260px]/card:px-0")}
         >

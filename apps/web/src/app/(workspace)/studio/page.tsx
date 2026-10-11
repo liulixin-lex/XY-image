@@ -16,7 +16,7 @@ import { useStudioJobs } from "@/hooks/use-studio-jobs";
 import { useAccount, useImageModels } from "@/lib/account-context";
 import { downloadImage } from "@/lib/download";
 import { type ImageJobView, type JobGroup, downloadName, groupByBatch, listImage } from "@/lib/image-jobs";
-import { findModelMeta } from "@/lib/image-model-meta";
+import { findModelMeta, modelCapabilities } from "@/lib/image-model-meta";
 import { type PendingDraft, takePendingDraft } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +48,10 @@ export default function StudioPage() {
   const [editing, setEditing] = useState<EditTarget | null>(null);
   // 局部重绘 / 扩图 only when a model on the key can do it.
   const canEdit = useMemo(() => Boolean(models.data?.some((m) => m.maskEdit)), [models.data]);
+  const canReference = useMemo(
+    () => Boolean(models.data?.some((m) => modelCapabilities(m).maxInputImages > 0)),
+    [models.data],
+  );
 
   // A prompt typed on the landing page before login lands here, unsent.
   useEffect(() => {
@@ -129,12 +133,14 @@ export default function StudioPage() {
   const addAsReference = useCallback(
     (job: ImageJobView) => {
       if (!job.url || !job.assetId) return;
-      composer.current?.addReference({ url: job.url, assetId: job.assetId, name: "之前的作品" });
+      const added = composer.current?.addReference({ url: job.url, assetId: job.assetId, name: "之前的作品" });
       setLoupe(null);
       focusComposer();
-      success("已加入参考图");
+      // Grok on the pre-launch site: 「已加入参考图」 next to a greyed-out 生成.
+      if (added?.limit === 0) toast(`已加入参考图，但 ${added.model} 不能用参考图，换个模型再生成`);
+      else success("已加入参考图");
     },
-    [focusComposer, success],
+    [focusComposer, success, toast],
   );
 
   const variant = useCallback(
@@ -177,15 +183,14 @@ export default function StudioPage() {
     () => ({
       onSelect: (job) => setSelectedId(job.id),
       onOpen: setLoupe,
-      onReference: addAsReference,
-      onVariant: variant,
+      ...(canReference ? { onReference: addAsReference, onVariant: variant } : {}),
       onDownload: download,
       onReuse: reuse,
       onCancelJob: (job) => void studio.cancel(job.id),
       onCancelBatch: (batchId) => void cancelBatch(batchId),
       ...(canEdit ? { onEdit: openEditor } : {}),
     }),
-    [addAsReference, canEdit, cancelBatch, download, openEditor, reuse, studio, variant],
+    [addAsReference, canEdit, canReference, cancelBatch, download, openEditor, reuse, studio, variant],
   );
 
   const jump = useCallback((group: JobGroup) => {
@@ -280,7 +285,7 @@ export default function StudioPage() {
         modelName={loupe ? modelName(loupe.model) : ""}
         onClose={() => setLoupe(null)}
         onReuse={reuse}
-        onUseAsReference={addAsReference}
+        {...(canReference ? { onUseAsReference: addAsReference } : {})}
         onDownload={download}
         {...(canEdit ? { onEdit: openEditor } : {})}
       />
