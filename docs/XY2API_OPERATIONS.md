@@ -77,6 +77,8 @@ node --env-file=../../.env.local --import tsx scripts/xy2api-preflight.ts
 
 主站 xy2api 0.2.5 的生图计档规则（读源码确认，`image_billing_size.go` 等）：OpenAI 按返回图长边计档，≤1024 为 1K，≤2048 为 2K，更大为 4K；Gemini 按请求的 `imageConfig.imageSize`，缺省按 2K；Grok 读请求的 `size`（`1k` / `2k`），缺省按 2K。核对用量时用脚本输出的实际尺寸对照档位。
 
+**4K 取决于主站渠道（2026-10-11 预上线实测，主站 0.2.6）**：同样请求 gpt-image-2 4K（3:4 发 2880x3840 以内的尺寸），分组 `gpt` 的渠道返回 1085x1450，分组 `gpt-4k` 的渠道返回 2480x3312；两次主站用量都记为 4K。也就是说，渠道不支持 4K 时主站不会拒绝，只会返回小图并照 4K 记账。生图站的处理：卡片显示「实际 宽×高」、大图里写明「比所选 4K 小」，Worker 打一行 `[image-runner] job … asked 4K of … (key N), got WxH`。看到这行就该把对应分组换成支持 4K 的渠道，或者告诉用户用支持 4K 的 Key。
+
 若 `/v1/models` 省略生图模型，额外设置 PREFLIGHT_KEY_PLATFORM 为真实分组平台（openai/grok/gemini/antigravity/composite），使脚本与 Key 同步的平台回退规则一致。不要凭猜测选平台。Key 不支持全部协议时分别用各协议内测 Key 执行。
 
 每次运行后到主站用量页核对生成次数、实际费用、余额和 `client:<X-Client-Request-ID>`。出现 upstream_too_large 时，由主站负责人调整响应上限或在 LOOMIC_IMAGE_MODELS 中把对应模型的 `resolutions` 去掉最高一档，再重新做受影响模型验收。

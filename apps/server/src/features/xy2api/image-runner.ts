@@ -185,6 +185,21 @@ export async function executeImageJob(
           .eq("id", jobId)
       ).error,
     );
+    // A channel that cannot make the 画质 asked for answers smaller and the
+    // main site still records the requested size (pre-launch site: group gpt
+    // returned 1085x1450 for 4K, group gpt-4k 2480x3312). The studio flags the
+    // picture; this line tells operators which channel to fix.
+    const long = Math.max(generated.width, generated.height);
+    const delivered = long <= 1024 ? "1K" : long <= 2048 ? "2K" : "4K";
+    if (
+      !payload.edit &&
+      generated.width &&
+      ["1K", "2K", "4K"].indexOf(delivered) <
+        ["1K", "2K", "4K"].indexOf(payload.resolution)
+    )
+      console.warn(
+        `[image-runner] job ${jobId} asked ${payload.resolution} of ${payload.model} (key ${row.xy2api_key_id}), got ${generated.width}x${generated.height}`,
+      );
     const bytes = Buffer.from(generated.url.split(",", 2)[1] ?? "", "base64");
     const extension =
       generated.mimeType === "image/jpeg"
