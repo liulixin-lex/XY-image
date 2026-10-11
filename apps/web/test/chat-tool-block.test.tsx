@@ -142,6 +142,26 @@ describe("ToolBlockView", () => {
     expect(screen.queryByText(/元素: 3|elements: 3/)).not.toBeInTheDocument();
   });
 
+  it("shows the assistant reading a skill note as one Chinese line, without the file text", () => {
+    // Seen on the pre-launch site: 「Read File」 plus numbered SKILL.md lines.
+    render(
+      <ToolBlockView
+        block={{
+          type: "tool",
+          toolCallId: "t2",
+          toolName: "read_file",
+          status: "completed",
+          input: { file_path: "/skills/json-image-prompt/SKILL.md" },
+          outputSummary: "1 2 --- 3 name: json-image-prompt",
+          output: { content: "1\t---\n2\tname: json-image-prompt" },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("查阅资料")).toBeInTheDocument();
+    expect(screen.queryByText(/Read File|json-image-prompt/)).not.toBeInTheDocument();
+  });
+
   it("opens image results from a real button and offers a labelled download", () => {
     render(
       <ToolBlockView

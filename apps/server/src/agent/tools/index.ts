@@ -39,15 +39,15 @@ export { createManipulateCanvasTool } from "./manipulate-canvas.js";
 //   task        — 分发子任务到 subagent
 //   write_todos — 管理 TODO 列表
 //
-// 我们使用 LocalShellBackend 作为 CompositeBackend 的 default backend，
-// 它实现了 SandboxBackendProtocol，因此 execute 工具自动可用。
-// 代码执行无需额外自定义工具。
+// 生产环境的 default backend 是 StateBackend（backends/prod.ts），没有
+// shell，execute 工具不会出现；LocalShellBackend 只在 backends/dev.ts 里用，
+// 且 createAgentBackend 拒绝 filesystem 模式。
 //
 // CompositeBackend 路由互不干扰：
 //   /workspace/  → StoreBackend (PostgresStore) — 文件持久化
 //   /memories/   → StoreBackend (PostgresStore) — agent 记忆
 //   /skills/     → FilesystemBackend            — 系统 skills
-//   default      → LocalShellBackend            — execute + 临时文件
+//   default      → StateBackend                 — 临时文件（无 shell）
 // ---------------------------------------------------------------------------
 
 export function createMainAgentTools(
