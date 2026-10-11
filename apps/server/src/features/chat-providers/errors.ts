@@ -1,6 +1,7 @@
 const messages = {
   provider_auth_failed: "服务商 API Key 无效或没有权限，请检查设置",
-  provider_model_not_found: "服务商没有这个模型，请刷新模型列表后重新选择",
+  provider_model_not_found:
+    "服务商说没有这个模型。换一个模型再试，或刷新模型列表",
   provider_rate_limited: "服务商请求过于频繁，请稍后再试",
   provider_tools_unsupported:
     "这个模型不支持设计助手所需的工具调用，请更换模型",
