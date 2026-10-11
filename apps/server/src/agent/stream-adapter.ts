@@ -54,6 +54,11 @@ export async function* adaptDeepAgentStream(
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  // Whether the user saw anything (text or a tool). A run that ends with
+  // neither used to report "completed" and leave the chat blank.
+  let produced = false;
+  /** Tool calls the model sent but LangChain could not parse. */
+  const invalidToolCalls: string[] = [];
 
   yield {
     conversationId: options.conversationId,
@@ -131,6 +136,7 @@ export async function* adaptDeepAgentStream(
                     : "";
               if (text) {
                 seenStreamedMessageIds.add(messageId);
+                produced = true;
                 yield {
                   type: "message.delta" as const,
                   runId: options.runId,
@@ -149,6 +155,7 @@ export async function* adaptDeepAgentStream(
         if (!delta) continue;
 
         seenStreamedMessageIds.add(messageId);
+        produced = true;
         yield {
           delta,
           messageId,
@@ -170,6 +177,8 @@ export async function* adaptDeepAgentStream(
         ) {
           const msg = output as AIMessage | AIMessageChunk;
           const messageId = msg.id ?? `message_${options.runId}`;
+          for (const call of msg.invalid_tool_calls ?? [])
+            invalidToolCalls.push(call.name ?? "unknown");
 
           // Skip if this was a tool call message (tool lifecycle via on_tool_*)
           if ((msg.tool_calls?.length ?? 0) > 0) continue;
@@ -178,6 +187,7 @@ export async function* adaptDeepAgentStream(
           const delta = extractChunkText(msg);
           if (!delta) continue;
 
+          produced = true;
           yield {
             delta,
             messageId,
@@ -210,6 +220,7 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.add(toolCallId);
         }
 
+        produced = true;
         yield {
           runId: options.runId,
           timestamp: now(),
@@ -310,6 +321,26 @@ export async function* adaptDeepAgentStream(
 
     yield {
       error: failure,
+      runId: options.runId,
+      timestamp: now(),
+      type: "run.failed",
+    };
+    return;
+  }
+
+  if (!produced) {
+    // Names only: tool arguments can carry the user's text.
+    console.warn("[stream-adapter] Run ended without any output", {
+      runId: options.runId,
+      invalidToolCalls,
+    });
+    yield {
+      error: {
+        code: "run_failed",
+        message: invalidToolCalls.length
+          ? "模型返回的工具调用格式不对，这一轮没有结果。请重试，或换一个模型"
+          : "模型这次没有返回内容。请重试，或换一个模型",
+      },
       runId: options.runId,
       timestamp: now(),
       type: "run.failed",

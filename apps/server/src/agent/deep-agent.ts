@@ -17,12 +17,14 @@ import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import { createGluedToolCallMiddleware } from "./glued-tool-calls.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
 } from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
+import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
@@ -117,9 +119,11 @@ export function createLoomicDeepAgent(options: {
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
-    // Innermost tool-call middleware: tool errors go back to the model
-    // instead of ending the run (tool-errors.ts).
-    middleware: [createToolErrorMiddleware()],
+    // Glued parallel tool calls from some gateways are split back into
+    // separate calls (glued-tool-calls.ts). Innermost tool-call middleware:
+    // tool errors go back to the model instead of ending the run
+    // (tool-errors.ts).
+    middleware: [createGluedToolCallMiddleware(), createToolErrorMiddleware()],
     model: resolvedModel,
     name: "loomic",
     ...(options.store ? { store: options.store } : {}),
@@ -186,7 +190,8 @@ export function createStreamingChatModel(
           mapGatewayError({ status: response.status, body }),
         );
       }
-      return response;
+      // The main site relays other vendors too; see tool-call-stream.ts.
+      return separateToolCallIndexes(response);
     } catch (error) {
       if (error instanceof GatewayError) throw error;
       throw new Error("对话连接中断，请稍后再试");
