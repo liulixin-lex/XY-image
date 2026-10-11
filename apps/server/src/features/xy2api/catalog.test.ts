@@ -4,6 +4,7 @@ import {
   findImageModel,
   loadImageCatalog,
   matchImageModels,
+  pickChatModels,
   resolveImageParams,
   supportsMaskEdit,
 } from "./catalog.js";
@@ -21,6 +22,33 @@ describe("image catalog", () => {
     expect(
       findImageModel(catalog, "gemini-3-pro-image-preview")?.protocol,
     ).toBe("gemini");
+  });
+  it("offers the key's chat models: listed order after the preferred ones", () => {
+    // Group 「对话模型」 on the pre-launch main site, 2026-10-11.
+    const listed = [
+      "codex-auto-review",
+      "gpt-5.6-sol",
+      "gpt-6-sol",
+      "gpt-image-2",
+      "gemini-nano-banana-2.1",
+      "text-embedding-3-small",
+      "gpt-4o-mini-tts",
+    ];
+    expect(
+      pickChatModels(catalog, ["gpt-5.4", "gpt-6-sol", "*"], listed),
+    ).toEqual(["gpt-6-sol", "codex-auto-review", "gpt-5.6-sol"]);
+  });
+  it("treats the chat list as a strict allowlist without *", () => {
+    expect(
+      pickChatModels(
+        catalog,
+        ["gpt-5.4", "gpt-6-sol"],
+        ["gpt-5.6-sol", "gpt-6-sol"],
+      ),
+    ).toEqual(["gpt-6-sol"]);
+    expect(pickChatModels(catalog, ["*"], ["grok-imagine-image-2.0"])).toEqual(
+      [],
+    );
   });
   it("falls back by platform only when no image model is advertised", () => {
     expect(matchImageModels(catalog, "grok", ["gpt-4.1"])).toEqual([

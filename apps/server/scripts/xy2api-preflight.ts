@@ -3,6 +3,7 @@ import { loadServerEnv } from "../src/config/env.js";
 import {
   loadImageCatalog,
   matchImageModels,
+  pickChatModels,
 } from "../src/features/xy2api/catalog.js";
 import { Xy2apiClient } from "../src/features/xy2api/client.js";
 import {
@@ -96,7 +97,7 @@ async function main() {
       }),
     );
   }
-  const model = env.chatModels.find((id) => models.includes(id));
+  const model = pickChatModels(catalog, env.chatModels, models)[0];
   if (!model) throw new BillingGuardError("model_not_accessible");
   const sdk = new OpenAI({
     apiKey,

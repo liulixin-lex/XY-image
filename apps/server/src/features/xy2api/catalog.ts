@@ -315,6 +315,33 @@ export function matchImageModels(
         .map((model) => model.id);
 }
 
+// Names that are clearly not chat models even when absent from the catalog.
+const NON_CHAT_MODEL =
+  /image|imagine|banana|dall-e|sora|veo|video|seedream|seedance|kling|flux|midjourney|embed|tts|whisper|audio|transcri|realtime|moderation|rerank/i;
+
+/**
+ * Chat models offered for a key, in LOOMIC_CHAT_MODELS order. A `*` entry
+ * adds every other model the key lists that is not an image/media model, so
+ * chat models the main site adds later show up without a redeploy; without
+ * `*` the list is a strict allowlist.
+ */
+export function pickChatModels(
+  catalog: ImageModel[],
+  wanted: string[],
+  listed: string[],
+): string[] {
+  const named = wanted.filter((id) => id !== "*" && listed.includes(id));
+  if (!wanted.includes("*")) return named;
+  const imageIds = new Set(catalog.flatMap((m) => [m.id, ...m.aliases]));
+  return [
+    ...named,
+    ...listed.filter(
+      (id) =>
+        !named.includes(id) && !imageIds.has(id) && !NON_CHAT_MODEL.test(id),
+    ),
+  ];
+}
+
 /**
  * The 画质 / 质量 / 比例 actually sent for a catalog model; the rules live in
  * @loomic/shared so the pickers show exactly what the server will send.

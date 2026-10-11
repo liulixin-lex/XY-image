@@ -3,9 +3,10 @@ import { z } from "zod";
 
 export const DEFAULT_AGENT_BACKEND_MODE = "state";
 export const DEFAULT_AGENT_MODEL = "gpt-5.4";
-// Offered when the key's /v1/models also lists them (see KeyService.syncRow).
+// Offered when the key's /v1/models also lists them, in this order; `*` adds
+// the key's other non-image models (pickChatModels in xy2api/catalog.ts).
 export const DEFAULT_CHAT_MODELS =
-  "gpt-5.4,gpt-6-luna,gpt-6-sol,gpt-5.4-mini,gpt-4.1,gpt-4o-mini";
+  "gpt-5.4,gpt-6-luna,gpt-6-sol,gpt-5.4-mini,gpt-4.1,gpt-4o-mini,*";
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
 export type AgentBackendMode = "filesystem" | "state";
