@@ -49,6 +49,16 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   get_brand_kit: { label: "读取品牌套件", icon: "palette", showCard: true },
   project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
+  // deepagents' built-in file tools: the assistant reading skill notes or
+  // keeping scratch files. Raw file text means nothing to the user, so only
+  // the status line shows.
+  read_file: { label: "查阅资料", icon: "tool", showCard: false },
+  ls: { label: "查看资料", icon: "tool", showCard: false },
+  glob: { label: "查找资料", icon: "search", showCard: false },
+  grep: { label: "搜索资料", icon: "search", showCard: false },
+  write_file: { label: "记笔记", icon: "tool", showCard: false },
+  edit_file: { label: "记笔记", icon: "tool", showCard: false },
+  write_todos: { label: "规划步骤", icon: "tool", showCard: false },
 };
 
 export function getToolConfig(toolName: string): ToolDisplayConfig {

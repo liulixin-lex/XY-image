@@ -6,6 +6,7 @@ import {
   type ImageModel,
   findImageModel,
   matchImageModels,
+  pickChatModels,
 } from "./catalog.js";
 import type { RemoteKey, Xy2apiClient } from "./client.js";
 import { isMaskedKey } from "./compat.js";
@@ -321,7 +322,7 @@ export class KeyService {
       image_models: imageModels,
       chat_models:
         group?.status === "active"
-          ? this.env.chatModels.filter((id) => chatSource.includes(id))
+          ? pickChatModels(this.catalog, this.env.chatModels, chatSource)
           : [],
       quota: key.quota ?? 0,
       quota_used: key.quota_used ?? 0,
