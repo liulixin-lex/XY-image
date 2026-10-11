@@ -146,6 +146,33 @@ describe("personal chat providers", () => {
       lastError: null,
     });
   });
+  it("offers only chat models from a fetched list; manual lists stay as typed", async () => {
+    const f = fixture();
+    // o10.top on the pre-launch site listed an image model next to chat ones.
+    f.listModels.mockResolvedValue([
+      "gemini-3.1-pro",
+      "gemini-3.1-flash-image",
+      "text-embedding-3-small",
+      "gemini-3.8-flash",
+    ]);
+    const p = await f.service.create(userId, input);
+    expect(p.models).toEqual(["gemini-3.1-pro", "gemini-3.8-flash"]);
+    expect(await f.service.refresh(userId, p.id)).toMatchObject({
+      models: ["gemini-3.1-pro", "gemini-3.8-flash"],
+    });
+    // Nothing but media models: keep them rather than leave an empty provider.
+    f.listModels.mockResolvedValue(["flux-dev-image"]);
+    expect(await f.service.refresh(userId, p.id)).toMatchObject({
+      models: ["flux-dev-image"],
+    });
+    const manual = await f.service.create(userId, {
+      ...input,
+      name: "Manual",
+      models: ["gemini-3.1-flash-image"],
+    });
+    expect(manual.models).toEqual(["gemini-3.1-flash-image"]);
+  });
+
   it("enforces the ten-provider limit for concurrent creates and enforces per-user unique names", async () => {
     const f = fixture();
     const results = await Promise.allSettled(

@@ -319,6 +319,11 @@ export function matchImageModels(
 const NON_CHAT_MODEL =
   /image|imagine|banana|dall-e|sora|veo|video|seedream|seedance|kling|flux|midjourney|embed|tts|whisper|audio|transcri|realtime|moderation|rerank/i;
 
+/** False for ids that name an image, video, speech or embedding model. */
+export function looksLikeChatModel(id: string): boolean {
+  return !NON_CHAT_MODEL.test(id);
+}
+
 /**
  * Chat models offered for a key, in LOOMIC_CHAT_MODELS order. A `*` entry
  * adds every other model the key lists that is not an image/media model, so

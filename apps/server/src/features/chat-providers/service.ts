@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { looksLikeChatModel } from "../xy2api/catalog.js";
 import type { SecretBox } from "../xy2api/secret-box.js";
 import { ChatProviderError } from "./errors.js";
 import type { ProviderNetwork } from "./network.js";
@@ -129,7 +130,7 @@ export class ChatProviderService {
     }
     return manual
       ? { models: manual, models_source: "manual" as const }
-      : { models: fetched, models_source: "fetched" as const };
+      : { models: chatModelsOnly(fetched), models_source: "fetched" as const };
   }
   async create(userId: string, raw: CreateInput) {
     const input = createProviderSchema.parse(raw);
@@ -209,7 +210,9 @@ export class ChatProviderService {
       const checked = new Date().toISOString();
       let models: string[];
       try {
-        models = await this.network.listModels(row.base_url, this.open(row));
+        models = chatModelsOnly(
+          await this.network.listModels(row.base_url, this.open(row)),
+        );
       } catch (error) {
         const safe =
           error instanceof ChatProviderError
@@ -237,4 +240,15 @@ export class ChatProviderService {
       await this.store.delete(userId, id);
     });
   }
+}
+
+/**
+ * A fetched model list without the image, video and speech models many
+ * gateways list next to chat ones (o10.top lists gemini-3.1-flash-image):
+ * the list only feeds the design assistant and 优化提示词. A provider that
+ * lists nothing else keeps its whole list; manual lists are kept as typed.
+ */
+export function chatModelsOnly(models: string[]): string[] {
+  const chat = models.filter(looksLikeChatModel);
+  return chat.length ? chat : models;
 }

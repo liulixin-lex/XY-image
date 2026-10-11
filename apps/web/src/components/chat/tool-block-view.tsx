@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { ChatImage } from "./image-lightbox";
 import { type MediaOutcome, describeMediaOutcome } from "./media-outcome";
 import {
+  describeToolResult,
   formatModelDisplayName,
   formatOutputPreview,
   formatParamName,
@@ -99,12 +100,17 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasDetails = hasOutput || hasInput;
 
+  const described = isCompleted
+    ? describeToolResult(block.toolName, block.output)
+    : null;
   const hasReadableSummary =
-    !!block.outputSummary && isHumanReadable(block.outputSummary);
+    !!described ||
+    (!!block.outputSummary && isHumanReadable(block.outputSummary));
   const cardTitle =
-    hasReadableSummary && block.outputSummary
+    described ??
+    (hasReadableSummary && block.outputSummary
       ? block.outputSummary
-      : config.label;
+      : config.label);
 
   const previewLines = hasOutput ? formatOutputPreview(block.output!) : [];
   const showCard =

@@ -33,6 +33,47 @@ describe("chat tool formatting", () => {
 describe("ToolBlockView", () => {
   afterEach(() => cleanup());
 
+  it("describes canvas tools in Chinese, never with the model-facing English", () => {
+    render(
+      <>
+        <ToolBlockView
+          block={{
+            type: "tool",
+            toolCallId: "c1",
+            toolName: "inspect_canvas",
+            status: "completed",
+            output: { canvasId: "2831bb72", elementCount: 0, matchedCount: 0 },
+            outputSummary: '{"canvasId":"2831bb72","elementCount":0}',
+          }}
+        />
+        <ToolBlockView
+          block={{
+            type: "tool",
+            toolCallId: "c2",
+            toolName: "screenshot_canvas",
+            status: "completed",
+            output: { width: 793, height: 1024 },
+            outputSummary: "Canvas screenshot captured (793x1024, mode: full)",
+          }}
+        />
+        <ToolBlockView
+          block={{
+            type: "tool",
+            toolCallId: "c3",
+            toolName: "manipulate_canvas",
+            status: "completed",
+            output: { success: true, applied: 2, errors: ["[error] move: x"] },
+            outputSummary: "Moved el_1; Resized el_2",
+          }}
+        />
+      </>,
+    );
+    expect(screen.getByText("画布还是空的")).toBeInTheDocument();
+    expect(screen.getByText("截取了画布（793×1024）")).toBeInTheDocument();
+    expect(screen.getByText("改了 2 处，1 处没有成功")).toBeInTheDocument();
+    expect(screen.queryByText(/Canvas screenshot|canvas id|Moved el_1/i)).toBeNull();
+  });
+
   it("says 「没生成出来」 once, with the reason, when the job settled with nothing charged", () => {
     render(
       <ToolBlockView

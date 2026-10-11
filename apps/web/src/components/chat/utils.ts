@@ -154,7 +154,55 @@ export function isHumanReadable(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) return false;
-  return true;
+  // Tool summaries in English are written for the model ("Canvas screenshot
+  // captured (793x1024, mode: full)"); they stay in 查看详情.
+  return /[\u4e00-\u9fff]/.test(trimmed);
+}
+
+/**
+ * The card line for a finished canvas or search tool, in plain Chinese, read
+ * from the tool's output (counts and sizes). Null when the output does not
+ * say; the card then shows the tool's label.
+ */
+export function describeToolResult(
+  toolName: string,
+  output: Record<string, unknown> | undefined,
+): string | null {
+  if (!output) return null;
+  const count = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const failed = typeof output.error === "string";
+  switch (toolName) {
+    case "inspect_canvas": {
+      const total = count(output.elementCount);
+      if (total === null) return null;
+      if (total === 0) return "画布还是空的";
+      const matched = count(output.matchedCount);
+      return matched !== null && matched !== total
+        ? `画布上有 ${total} 个元素，符合条件的 ${matched} 个`
+        : `画布上有 ${total} 个元素`;
+    }
+    case "screenshot_canvas": {
+      if (failed) return "没有截到画布";
+      const width = count(output.width);
+      const height = count(output.height);
+      return width && height ? `截取了画布（${width}×${height}）` : "截取了画布";
+    }
+    case "manipulate_canvas": {
+      if (failed) return "画布改动没有保存上";
+      const applied = count(output.applied) ?? 0;
+      const errors = Array.isArray(output.errors) ? output.errors.length : 0;
+      if (!applied && errors) return `${errors} 处改动没有成功`;
+      return errors ? `改了 ${applied} 处，${errors} 处没有成功` : `改了 ${applied} 处`;
+    }
+    case "project_search": {
+      const matches = count(output.matchCount);
+      if (matches === null) return null;
+      return matches === 0 ? "没有找到相关资料" : `找到 ${matches} 处相关资料`;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Format first 3 entries of tool output as preview lines */
