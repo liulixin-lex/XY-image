@@ -51,7 +51,6 @@ export function createDevelopmentBackend(
     env: {
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
       HOME: process.env.HOME ?? "/tmp",
-      FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",
     },
   });
