@@ -238,8 +238,11 @@ export async function logoutXy2api(accessToken: string, timeoutMs = 4000) {
 
 export async function fetchAccount(
   accessToken: string,
+  options?: { fresh?: boolean },
 ): Promise<AccountResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/account`, {
+  // fresh: skip the server's 15 s balance cache (right after a charge).
+  const query = options?.fresh ? "?fresh=1" : "";
+  const response = await fetch(`${getServerBaseUrl()}/api/account${query}`, {
     headers: authHeaders(accessToken),
   });
   return readJson(response, { authExpiry: true, source: "account" });

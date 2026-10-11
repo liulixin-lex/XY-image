@@ -69,7 +69,7 @@ interface AccountContextValue {
   imageModels: Slot<ImageModelInfo[]>;
   chatModels: ChatModelsSlot;
   config: AuthConfig | null;
-  refreshAccount: (options?: { force?: boolean }) => Promise<void>;
+  refreshAccount: (options?: { force?: boolean; fresh?: boolean }) => Promise<void>;
   refreshKeys: () => Promise<void>;
   ensureImageModels: () => void;
   refreshImageModels: () => Promise<void>;
@@ -119,7 +119,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     lastAccountFetch.current = 0;
   }, [userId]);
 
-  const refreshAccount = useCallback(async (options?: { force?: boolean }) => {
+  const refreshAccount = useCallback(async (options?: { force?: boolean; fresh?: boolean }) => {
     const current = tokenRef.current;
     if (!current) return;
     const now = Date.now();
@@ -128,7 +128,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     lastAccountFetch.current = now;
     setAccount((prev) => ({ ...prev, loading: true }));
     try {
-      const data = await fetchAccount(current);
+      const data = await fetchAccount(current, options?.fresh ? { fresh: true } : undefined);
       setAccount({ data, loading: false, error: null });
     } catch (error) {
       console.warn("[account] refresh failed", error);
@@ -234,7 +234,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   );
 
   const notifyGenerationSettled = useCallback(() => {
-    void refreshAccount({ force: true });
+    // A picture just settled: read past the server's balance cache so its
+    // charge shows now; the follow-up below still catches late ledger writes.
+    void refreshAccount({ force: true, fresh: true });
     if (followUpTimer.current) clearTimeout(followUpTimer.current);
     followUpTimer.current = setTimeout(() => {
       void refreshAccount({ force: true });

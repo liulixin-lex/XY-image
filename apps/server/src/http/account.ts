@@ -44,7 +44,7 @@ export function registerAccountRoutes(
 ) {
   const balances = new Map<
     string,
-    { usage: Usage; until: number; keyId: number }
+    { usage: Usage; until: number; at: number; keyId: number }
   >();
   const prefsSchema = z
     .object({
@@ -72,23 +72,28 @@ export function registerAccountRoutes(
         source: string;
         planName: string;
       } | null = null;
+      // ?fresh=1: the page asks right after a picture settles, so its charge
+      // shows at once instead of after the 15 s cache (a batch's second
+      // picture used to show the balance one charge behind). The 2 s floor
+      // per user keeps it from becoming a way to hammer the main site.
+      const fresh =
+        (request.query as { fresh?: unknown } | undefined)?.fresh === "1";
       try {
         const credential = await options.keys.resolveImageCredential(user.id);
         const cached = balances.get(user.id);
-        const usage =
+        const now = Date.now();
+        const reuse =
           cached &&
-          cached.until > Date.now() &&
-          cached.keyId === credential.keyId
-            ? cached.usage
-            : await options.client.getUsage(credential.apiKey);
-        if (
-          !cached ||
-          cached.until <= Date.now() ||
-          cached.keyId !== credential.keyId
-        )
+          cached.keyId === credential.keyId &&
+          (fresh ? now - cached.at < 2000 : cached.until > now);
+        const usage = reuse
+          ? cached.usage
+          : await options.client.getUsage(credential.apiKey);
+        if (!reuse)
           balances.set(user.id, {
             usage,
-            until: Date.now() + 15000,
+            until: now + 15000,
+            at: now,
             keyId: credential.keyId,
           });
         const amount = usage.balance ?? usage.remaining;
