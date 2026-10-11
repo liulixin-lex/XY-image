@@ -36,6 +36,7 @@ import {
   isFailedJob,
   isSavingJob,
   isUnsentJob,
+  jobLabel,
   jobStatusLabel,
   toImageJobView,
 } from "../src/lib/image-jobs";
@@ -220,6 +221,36 @@ describe("image job views", () => {
     expect(view.getAllByText("结果未知，请先核对用量")).toHaveLength(1);
     expect(view.getByText("已生成，但没拿到图片")).toBeInTheDocument();
     expect(view.getByText("没生成出来")).toBeInTheDocument();
+  });
+
+  it("calls an assistant picture by its title, not its JSON prompt, and drops reference actions on keys without them", () => {
+    // Pre-launch site: the json-image-prompt skill's JSON became the studio heading.
+    const prompt = '{\n  "subject": { "type": "specialty coffee shop opening poster" }\n}';
+    const agent = toImageJobView({
+      ...base,
+      status: "succeeded",
+      billing_status: "charged",
+      error_code: null,
+      payload: { prompt, title: "清爽日系精品咖啡店开业海报", model: "gemini-nano-banana-2.1" },
+      result: { signed_url: "https://example.com/a.png", asset_id: "a1" },
+    } as unknown as BackgroundJob);
+    expect(jobLabel(agent)).toBe("清爽日系精品咖啡店开业海报");
+    expect(jobLabel(toImageJobView(base))).toBe("雨夜的霓虹街");
+    const { onReference: _r, onVariant: _v, ...grokActions } = noActions;
+    const view = render(
+      <BatchFeed
+        groups={groupByBatch([agent])}
+        selectedId={agent.id}
+        justFinished={new Set()}
+        modelName={() => "Grok Imagine 2.0"}
+        usageUrl={null}
+        actions={grokActions}
+      />,
+    );
+    expect(view.getByText("清爽日系精品咖啡店开业海报")).toBeInTheDocument();
+    expect(view.queryByText(/specialty coffee/)).not.toBeInTheDocument();
+    expect(view.queryByText("以此为参考")).not.toBeInTheDocument();
+    expect(view.queryByText("变体")).not.toBeInTheDocument();
   });
 
   it("groups a studio batch in order and offers to cancel only its unsent pictures", () => {

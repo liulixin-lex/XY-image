@@ -25,6 +25,8 @@ export type ImageJobView = {
   billing: BillingStatus;
   requestId: string | null;
   prompt: string;
+  /** Short title the design assistant gives its pictures; null for studio jobs. */
+  title: string | null;
   model: string | null;
   /** 画质 asked for (older jobs: read from their single quality field). */
   resolution: ImageResolution;
@@ -77,6 +79,7 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     billing: (job.billing_status ?? "none") as BillingStatus,
     requestId: job.xy2api_request_id ?? null,
     prompt: str(payload.prompt) ?? "",
+    title: str(payload.title),
     model: str(payload.model),
     resolution: params.resolution,
     quality: legacy ? null : params.quality,
@@ -100,6 +103,16 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     batchSize: num(payload.batch_size) ?? 1,
     edit: editMode(payload.edit),
   };
+}
+
+/**
+ * What to call a picture in feeds, rails and lists. The assistant writes its
+ * prompts as structured JSON (json-image-prompt skill), which made a poor
+ * heading on the pre-launch site, so its own title wins; the full prompt
+ * stays in the details view.
+ */
+export function jobLabel(job: Pick<ImageJobView, "title" | "prompt">): string {
+  return job.title ?? job.prompt;
 }
 
 /**

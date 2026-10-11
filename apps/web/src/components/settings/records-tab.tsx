@@ -11,7 +11,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, useImageModels } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import { describeIssue } from "@/lib/generation-errors";
-import { type ImageJobView, isActiveJob, isFailedJob, isSavingJob, toImageJobView } from "@/lib/image-jobs";
+import {
+  type ImageJobView,
+  isActiveJob,
+  isFailedJob,
+  isSavingJob,
+  jobLabel,
+  toImageJobView,
+} from "@/lib/image-jobs";
 import { describeImageParams, findModelMeta } from "@/lib/image-model-meta";
 import { fetchJobs } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -167,7 +174,7 @@ export function RecordsTab() {
                       </td>
                       <td className="max-w-[320px] px-4 py-3">
                         <p className="line-clamp-2 text-fg" title={job.prompt}>
-                          {job.prompt || "（无提示词）"}
+                          {jobLabel(job) || "（无提示词）"}
                         </p>
                         {issue ? (
                           <p className="mt-1 text-[12px] text-alert">{issue.title}</p>

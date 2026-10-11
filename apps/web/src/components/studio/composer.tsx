@@ -69,8 +69,15 @@ export type ComposerHandle = {
     quality?: ImageQuality | null;
     aspectRatio?: string | null;
   }) => void;
-  /** Use an existing image (a previous result) as a reference. */
-  addReference: (ref: { url: string; assetId: string; name?: string }) => void;
+  /**
+   * Use an existing image (a previous result) as a reference. Returns the
+   * current model's name and reference limit so the caller can say when the
+   * model cannot use it (the reference stays, for switching models).
+   */
+  addReference: (ref: { url: string; assetId: string; name?: string }) => {
+    model: string;
+    limit: number;
+  };
   setPrompt: (prompt: string) => void;
   focus: () => void;
 };
@@ -253,6 +260,7 @@ export const Composer = forwardRef<
           mimeType: "image/png",
           ...(refImage.name ? { name: refImage.name } : {}),
         });
+        return { model: current?.displayName ?? "当前模型", limit: refLimit };
       },
       setPrompt: (value) => {
         setPrompt(value);
@@ -260,7 +268,7 @@ export const Composer = forwardRef<
       },
       focus: () => textareaRef.current?.focus({ preventScroll: true }),
     }),
-    [addCanvasRef, models],
+    [addCanvasRef, models, current?.displayName, refLimit],
   );
 
   // Auto-size the prompt.

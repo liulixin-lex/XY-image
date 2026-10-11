@@ -2,7 +2,7 @@
 
 import { CircleAlertIcon, ImageOffIcon } from "lucide-react";
 
-import { type JobGroup, describeOutcome, isActiveJob, listImage } from "@/lib/image-jobs";
+import { type JobGroup, describeOutcome, isActiveJob, jobLabel, listImage } from "@/lib/image-jobs";
 import { cn } from "@/lib/utils";
 
 import { groupAnchor } from "./batch-feed";
@@ -39,8 +39,8 @@ export function HistoryRail({
                 type="button"
                 onClick={() => onJump(group)}
                 aria-current={group.key === activeKey ? "true" : undefined}
-                aria-label={`${group.lead.prompt || "无描述"}${state}`}
-                title={group.lead.prompt}
+                aria-label={`${jobLabel(group.lead) || "无描述"}${state}`}
+                title={jobLabel(group.lead)}
                 className={cn(
                   "block size-[54px] overflow-hidden rounded-[12px] transition-[box-shadow,scale] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
                   group.key === activeKey ? "ring-picked" : "shadow-[0_6px_14px_-8px_var(--shadow-2)] hover:scale-[1.04]",
