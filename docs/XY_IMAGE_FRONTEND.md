@@ -17,7 +17,8 @@
 | `/register` | 只给出主站注册链接，本站不建账号 | `app/register/page.tsx` |
 | `/home` | 工作台首页：交给助手（新建画布并带上提示词）、起手式、余额和 Key 状态、最近生成、最近画布 | `app/(workspace)/home/page.tsx` |
 | `/studio` | 生图：左边是设置（`composer.tsx`：模型、提示词和「优化提示词」、参考图、比例、画质、质量、张数），中间是按请求分组的结果（`batch-feed.tsx`，一次多张的每张单独显示状态），右边是记录栏（`history-rail.tsx`），大图和详情在 `loupe-dialog.tsx`，局部重绘和扩图在 `edit-dialog.tsx` | `app/(workspace)/studio/page.tsx`、`hooks/use-studio-jobs.ts`、`components/studio/*` |
-| `/projects` | 画布项目列表 | `app/(workspace)/projects/page.tsx` |
+| `/history` | 最近生成：所有出过的图（生图、画布节点、设计助手），按日期分组，滚动加载（`next_before`），按来源筛选；再来一次、以此为参考把参数带到生图页（`pending-prompt`），不发请求。顶栏「作品 ▾」两层菜单进入它和画布项目（`components/works/*`） | `app/(workspace)/history/page.tsx`、`hooks/use-job-history.ts` |
+| `/projects` | 画布项目列表（顶部「作品」页签） | `app/(workspace)/projects/page.tsx` |
 | `/canvas?id=` | 节点画布（React Flow）：提示词卡片、生成节点、图片、文字、形状、画框；右侧设计助手 | `app/canvas/page.tsx`、`components/node-canvas/*`、`lib/node-canvas/*` |
 | `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对） | `components/settings/*` |
 | `/brand-kit`、`/skills` | 上游功能，已汉化并接入统一的错误处理 | `components/brand-kit/*`、`app/(workspace)/skills/page.tsx` |
@@ -108,6 +109,8 @@
 - **代码结构**：`lib/node-canvas/` 是不依赖 React 的部分：`adapter.ts`（元素 ⇄ 节点和连线）、`store.ts`（一块画布一个 store，React Flow 受控于它）、`merge.ts`（合并服务端的副本：同一 id 版本高的赢，平局留页面的，页面删掉的不复活）、`history.ts`（撤销只撤自己的操作，Worker 放上来的图和设计助手的改动不会被撤掉）、`runtime.ts`（生成节点的请求和任务跟踪）、`layout.ts`（出图位置）、`render.ts`（缩略图和给设计助手的截图用的 2D 渲染）。`components/node-canvas/` 是编辑器、各种节点、工具栏、图层和「生成的图片」面板、保存状态。日志前缀 `[node-canvas]`、`[node-canvas/runtime]`。
 - **节点和工具**：左侧工具栏：选择 V、拖动画布 H、提示词卡片 P、生成节点 G、上传图片 U（也可以粘贴、拖进来）、文字 T、画框 F、撤销 ⌘Z、重做 ⇧⌘Z / ⌘Y，⌘D 复制，⌘A 全选；图层面板能锁定节点（锁定后不能拖动和删除），「生成的图片」面板列出生成节点、设计助手和生图页放上来的图（不含上传的），可以定位和下载。删除键由编辑器自己处理（`deleteKeyCode={null}`）：React Flow 内部的选中状态比受控的 props 晚一拍，刚用 ⌘A 选中就按删除会删不掉。
 - **生成节点**：连到它的提示词卡片和文字按从上到下的顺序拼在它自己的描述前面，连到它的图片作参考图（只在页面上的先上传）。点一次「生成 N 张」发一个批量请求（`/api/jobs/image-generation/batch`，带 `canvas_id`、`canvas_source_id` 和每张图的位置 `canvas_slots`），请求在路上时节点锁定，不自动重发。每张图由 Worker 放进预留的位置，并加一条生成节点 → 图的连线；页面每 4 秒查一次任务状态，有任务结束就拉一次画布。生成节点还没保存上时 Worker 不加连线，图到了以后页面自己补上（`store.linkRunPictures`）。
+- **连线（v0.0.7）**：悬停或选中连线中间出现「断开」；拖连线一端到别的节点是改接（同一个 arrow 重新绑定，一步撤销），拖到空白处（画框里的空白也算）是断开（`store.onReconnect` / `endReconnect`）；新连线落在节点身上也能连上；会形成回路的连接被拒绝（`reaches`）。生成节点列出连入的每一项，× 断开、点一下定位。
+- **多 Key 和串联（v0.0.7）**：生成节点存 `keyId`，模型按 Key 分组选；节点连进另一个生成节点时，上游最近一次运行放上画布的图作为下游的参考图（`generatorInputs().upstream`，上游还没出图时下游不能生成），「接着生成」一键加下游节点；提示词卡连着两个以上生成节点时显示「全部生成」（`runtime.generateMany`，每个节点各发一批，位置互相预留）。节点和「全部生成」共用 `lib/node-canvas/generator-plan.ts` 决定发什么。
 - **保存**：最后一次改动 1.5 秒后保存，只带服务端还没有的文件数据（`lib/canvas-files.ts`、`lib/canvas-save.ts`），删掉的服务端放上来的图作为 `deletedElementIds` 发送；`missingFileIds` 里的文件带数据重发，每个最多 2 次；关页面时用 keepalive 发出没保存的改动（上限 64 KiB，所以不带文件数据）。保存失败按 5 秒起、最长 60 秒退避重试，网络恢复（`online`）或拉到服务端的画布时立刻再试。页头显示「已保存」「正在保存」「还没保存上，正在重试」（`save-status.tsx`）。
 - **同步**：`canvas.sync`（设计助手改了画布）和任务结束时，页面拉服务端的画布交给 `store.mergeRemote` 合并，不整份替换；只下载页面还没有的文件。服务端画布图片的存放规则没变：`project-assets/<工作区>/canvas-files/<画布>/<文件 ID>.<扩展名>`，节点直接用 `storageUrl` 显示；生成的图是指向生成记录的标记。
 - **主题**：React Flow 的 `colorMode` 跟随站点主题（`hooks/use-canvas-theme.ts`；next-themes 的 `resolvedTheme` 不理会 `forcedTheme`，所以读 `forcedTheme ?? resolvedTheme`）。缩略图和截图用同一主题的配色（`RENDER_PALETTES`）。
