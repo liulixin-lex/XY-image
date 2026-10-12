@@ -15,6 +15,11 @@ import {
   mapGatewayError,
   withRequestId,
 } from "../../features/xy2api/errors.js";
+import {
+  TASK_DEADLINE_MS,
+  imageTaskFetch,
+  imageTaskOutcome,
+} from "../../features/xy2api/image-task.js";
 import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 import type {
   GeneratedImage,
@@ -31,7 +36,10 @@ import {
   outpaintImages,
   readPaintedMask,
 } from "../mask-edit.js";
-import { fetchReferenceImage } from "./xy2api-reference.js";
+import {
+  downloadImageResult,
+  fetchReferenceImage,
+} from "./xy2api-reference.js";
 
 // Image API size rules for flexible-size models (gpt-image-2 and later):
 // both edges multiples of 16, longest edge at most 3840, long:short at most
@@ -135,14 +143,23 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
     // and to tell an xy2api refusal from a Cloudflare cut (G7).
     let diagnostics: GatewayDiagnostics | undefined;
     const startedAt = Date.now();
+    // Async (features/xy2api/image-task.ts): the SDK still builds and parses
+    // the call; this fetch turns it into a task and answers with its result.
+    const send = ctx.imageTask
+      ? imageTaskFetch(ctx.imageTask, {
+          apiKey: ctx.apiKey,
+          baseUrl: ctx.baseUrl,
+        })
+      : fetch;
     const client = new OpenAI({
       apiKey: ctx.apiKey,
       baseURL: `${ctx.baseUrl}/v1`,
-      timeout: 600000,
+      // A task is polled for up to TASK_DEADLINE_MS; one request, 10 minutes.
+      timeout: ctx.imageTask ? TASK_DEADLINE_MS + 5 * 60_000 : 600000,
       maxRetries: 0,
       defaultHeaders: { "User-Agent": XY2API_USER_AGENT },
       fetch: async (input, init) => {
-        const response = await fetch(input, init);
+        const response = await send(input, init);
         requestId = response.headers.get("x-client-request-id") ?? requestId;
         if (!response.ok) {
           const text = await response
@@ -214,17 +231,9 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       const output = result.data.data?.[0];
       let bytes: Buffer;
       if (output?.b64_json) bytes = Buffer.from(output.b64_json, "base64");
-      else if (output?.url) {
-        const url = new URL(output.url);
-        if (url.protocol !== "https:")
-          throw new Error("Invalid image response");
-        const response = await fetch(url, {
-          signal: AbortSignal.timeout(60000),
-          redirect: "error",
-        });
-        if (!response.ok) throw new Error("Image download failed");
-        bytes = Buffer.from(await response.arrayBuffer());
-      } else throw new GatewayError(mapGatewayError({}));
+      // Async results are always links to the main site's object storage.
+      else if (output?.url) bytes = await downloadImageResult(output.url);
+      else throw new GatewayError(mapGatewayError({}));
       const metadata = await sharp(bytes).metadata();
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
@@ -237,6 +246,11 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
+      // Thrown inside the async fetch, wrapped by the SDK: the fallback
+      // signal and parks go up as they are; a 待核对 keeps the task's id.
+      const outcome = imageTaskOutcome(error);
+      if (outcome) throw outcome;
+      requestId ??= ctx.imageTask?.handle?.requestId;
       const seen =
         diagnostics ??
         (error instanceof OpenAI.APIError

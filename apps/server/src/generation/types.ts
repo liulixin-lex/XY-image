@@ -3,6 +3,7 @@ import type {
   ImageQuality,
   ImageResolution,
 } from "@loomic/shared";
+import type { ImageTaskMode } from "../features/xy2api/image-task.js";
 
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
@@ -52,6 +53,12 @@ export type ImageCallContext = {
   apiKey: string;
   baseUrl: string;
   signal?: AbortSignal;
+  /**
+   * Make the call an xy2api image task (submit, then poll) instead of one
+   * long request. Only the OpenAI and Grok image providers honour it; see
+   * features/xy2api/image-task.ts.
+   */
+  imageTask?: ImageTaskMode;
   /** Public Supabase origin; reference URLs must be storage objects on it. */
   assetOrigin?: string;
   /**

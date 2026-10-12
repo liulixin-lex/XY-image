@@ -69,6 +69,11 @@ type IntegrationDatabase = {
           xy2api_request_id: string | null;
           estimated_cost_usd: number | null;
           billing_status: string;
+          /** Async image task at the main site (image-task.ts), set on its 202. */
+          xy2api_task_id: string | null;
+          xy2api_task_submitted_at: string | null;
+          /** Lease of whoever polls the task (image-runner.ts TASK_LEASE_MS). */
+          xy2api_task_polled_at: string | null;
         }
       >;
       user_chat_providers: Table<ChatProviderRow>;

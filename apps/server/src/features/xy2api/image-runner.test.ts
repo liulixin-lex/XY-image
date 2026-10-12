@@ -6,8 +6,14 @@ import {
   clearProviders,
   registerImageProvider,
 } from "../../generation/providers/registry.js";
-import { GatewayError, mapGatewayError } from "./errors.js";
-import { THUMB_EDGE, executeImageJob, thumbnailPath } from "./image-runner.js";
+import { BillingGuardError, GatewayError, mapGatewayError } from "./errors.js";
+import {
+  AsyncImageUnavailableError,
+  ImageTaskParkedError,
+  asyncImagesOff,
+  resetAsyncImagesOff,
+} from "./image-task.js";
+import { TASK_LEASE_MS, THUMB_EDGE, executeImageJob, thumbnailPath } from "./image-runner.js";
 import {
   MAX_DELIVERY_ATTEMPTS,
   type PendingDeliveryStore,
@@ -17,6 +23,7 @@ import { memoryDatabase, memoryPendingDeliveries } from "./test-support.js";
 
 afterEach(() => {
   clearProviders();
+  resetAsyncImagesOff();
   vi.restoreAllMocks();
 });
 function setup(billing = "none") {
@@ -477,5 +484,231 @@ describe("list thumbnails", () => {
     expect(result.thumb_url).toBeUndefined();
     expect(fixture.tables.background_jobs?.[0]?.billing_status).toBe("charged");
     expect(fixture.generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("async image tasks (FINDINGS G7 step 2)", () => {
+  function asyncSetup(
+    job: Record<string, unknown> = {},
+    envVars: Record<string, string> = {},
+  ) {
+    const env = loadServerEnv(
+      {},
+      {
+        XY2API_BASE_URL: "https://gateway.example.com",
+        LOOMIC_SECRET_KEY: randomBytes(32).toString("base64"),
+        SSO_EMAIL_DOMAIN: "sso.example.com",
+        XY2API_ASYNC_IMAGES: "on",
+        ...envVars,
+      },
+    );
+    const db = memoryDatabase({
+      background_jobs: [
+        {
+          id: "job-1",
+          created_by: "user-1",
+          workspace_id: "workspace-1",
+          xy2api_key_id: 7,
+          job_type: "image_generation",
+          status: "running",
+          billing_status: "none",
+          payload: {
+            model: "gpt-image-2",
+            prompt: "test image",
+            input_images: ["https://storage.example.com/ref.png"],
+          },
+          ...job,
+        },
+      ],
+      workspace_members: [{ user_id: "user-1", workspace_id: "workspace-1" }],
+      xy2api_accounts: [
+        { user_id: "user-1", session_state: "active", access_token_enc: "encrypted-fixture" },
+      ],
+    });
+    const xy2api = createXy2apiServices(env, () => db.admin);
+    db.tables.xy2api_api_keys = [
+      {
+        user_id: "user-1",
+        key_id: 7,
+        status: "active",
+        secret_enc: xy2api.box.sealSecret("synthetic-private-key"),
+        image_capable: true,
+        image_models: ["gpt-image-2"],
+        chat_models: [],
+        quota: 0,
+        quota_used: 0,
+        expires_at: null,
+        invalid_reason: null,
+        platform: "openai",
+      },
+    ];
+    const image = {
+      url: "data:image/jpeg;base64,aW1hZ2U=",
+      mimeType: "image/jpeg",
+      width: 100,
+      height: 100,
+    };
+    const generate = vi.fn(
+      async (
+        _params: import("../../generation/types.js").ImageGenerateParams,
+        ctx?: import("../../generation/types.js").ImageCallContext,
+      ) => {
+        const task = ctx?.imageTask;
+        if (task && !task.resume) {
+          task.handle = { taskId: "imgtask_1", requestId: "req-task", submittedAt: Date.now() };
+          await task.onAccepted?.(task.handle);
+        } else if (task?.resume) task.handle = task.resume;
+        return image;
+      },
+    );
+    registerImageProvider({
+      name: "xy2api-openai",
+      models: [{ id: "gpt-image-2", displayName: "Test", description: "Test" }],
+      generate,
+    });
+    const park = new AbortController();
+    return {
+      ...db,
+      generate,
+      park,
+      job: () => db.tables.background_jobs?.[0] as Record<string, unknown>,
+      execute: () =>
+        executeImageJob("job-1", {
+          env,
+          xy2api,
+          getAdminClient: () => db.admin,
+          park: park.signal,
+        }),
+    };
+  }
+  const old = () => new Date(Date.now() - 5 * 60_000).toISOString();
+
+  it("sends an OpenAI key's image as a task and stores the task before polling", async () => {
+    const fixture = asyncSetup();
+    await fixture.execute();
+    const ctx = fixture.generate.mock.calls[0]?.[1];
+    expect(ctx?.imageTask).toBeDefined();
+    expect(ctx?.imageTask?.park).toBe(fixture.park.signal);
+    expect(fixture.job()).toMatchObject({
+      billing_status: "charged",
+      xy2api_task_id: "imgtask_1",
+      xy2api_request_id: "req-task",
+    });
+    expect(fixture.job().xy2api_task_submitted_at).toEqual(expect.any(String));
+  });
+
+  it("stays synchronous when switched off or outside the canary list", async () => {
+    const off = asyncSetup({}, { XY2API_ASYNC_IMAGES: "off" });
+    await off.execute();
+    expect(off.generate.mock.calls[0]?.[1]?.imageTask).toBeUndefined();
+    clearProviders();
+    const canary = asyncSetup({}, { XY2API_ASYNC_IMAGE_USERS: "user-2, user-3" });
+    await canary.execute();
+    expect(canary.generate.mock.calls[0]?.[1]?.imageTask).toBeUndefined();
+    clearProviders();
+    const listed = asyncSetup({}, { XY2API_ASYNC_IMAGE_USERS: "user-1" });
+    await listed.execute();
+    expect(listed.generate.mock.calls[0]?.[1]?.imageTask).toBeDefined();
+  });
+
+  it("sends synchronously when the main site has no async tasks, and remembers", async () => {
+    const fixture = asyncSetup();
+    fixture.generate.mockImplementationOnce(async () => {
+      throw new AsyncImageUnavailableError("async image tasks are not enabled");
+    });
+    await fixture.execute();
+    expect(fixture.generate).toHaveBeenCalledTimes(2);
+    expect(fixture.generate.mock.calls[1]?.[1]?.imageTask).toBeUndefined();
+    expect(fixture.job().billing_status).toBe("charged");
+    expect(asyncImagesOff("openai")).toBe(true);
+  });
+
+  it("resumes a stored task without sending or reading references again", async () => {
+    const fixture = asyncSetup({
+      billing_status: "pending",
+      xy2api_task_id: "imgtask_9",
+      xy2api_request_id: "req-9",
+      xy2api_task_submitted_at: old(),
+      xy2api_task_polled_at: old(),
+    });
+    await fixture.execute();
+    expect(fixture.generate).toHaveBeenCalledTimes(1);
+    const [params, ctx] = fixture.generate.mock.calls[0] ?? [];
+    expect(ctx?.imageTask?.resume).toMatchObject({ taskId: "imgtask_9", requestId: "req-9" });
+    expect(params?.inputImages).toBeUndefined();
+    expect(fixture.job()).toMatchObject({ billing_status: "charged", xy2api_request_id: "req-9" });
+  });
+
+  it("leaves a task to the process still polling it", async () => {
+    const fixture = asyncSetup({
+      billing_status: "pending",
+      xy2api_task_id: "imgtask_9",
+      xy2api_task_submitted_at: old(),
+      xy2api_task_polled_at: new Date().toISOString(),
+    });
+    await expect(fixture.execute()).rejects.toBeInstanceOf(ImageTaskParkedError);
+    expect(fixture.generate).not.toHaveBeenCalled();
+    expect(fixture.job().billing_status).toBe("pending");
+  });
+
+  it("settles a task it can no longer read from the usage list, never as free", async () => {
+    const fixture = asyncSetup({
+      billing_status: "pending",
+      xy2api_task_id: "imgtask_9",
+      xy2api_request_id: "req-9",
+      xy2api_task_submitted_at: old(),
+      xy2api_task_polled_at: old(),
+    });
+    (fixture.tables.xy2api_api_keys?.[0] as Record<string, unknown>).status = "disabled";
+    const error = await fixture.execute().catch((caught) => caught);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect(error.failure).toMatchObject({ billing: "unknown", requestId: "req-9" });
+    expect(fixture.job()).toMatchObject({ billing_status: "unknown", xy2api_request_id: "req-9" });
+    expect(fixture.generate).not.toHaveBeenCalled();
+  });
+
+  it("never records a resumed task as not charged on a local refusal", async () => {
+    const fixture = asyncSetup({
+      billing_status: "pending",
+      xy2api_task_id: "imgtask_9",
+      xy2api_request_id: "req-9",
+      xy2api_task_submitted_at: old(),
+      xy2api_task_polled_at: old(),
+    });
+    fixture.generate.mockImplementationOnce(async () => {
+      throw new BillingGuardError("invalid_input");
+    });
+    await expect(fixture.execute()).rejects.toBeInstanceOf(GatewayError);
+    expect(fixture.job()).toMatchObject({ billing_status: "unknown", xy2api_request_id: "req-9" });
+  });
+
+  it("keeps the task's request id when the task fails", async () => {
+    const fixture = asyncSetup();
+    fixture.generate.mockImplementationOnce(async (_params, ctx) => {
+      const task = ctx?.imageTask;
+      if (task) {
+        task.handle = { taskId: "imgtask_1", requestId: "req-task", submittedAt: Date.now() };
+        await task.onAccepted?.(task.handle);
+      }
+      throw new Error("Image download failed");
+    });
+    await expect(fixture.execute()).rejects.toBeInstanceOf(GatewayError);
+    expect(fixture.job()).toMatchObject({ billing_status: "unknown", xy2api_request_id: "req-task", xy2api_task_id: "imgtask_1" });
+  });
+
+  it("parks on shutdown without touching billing", async () => {
+    const fixture = asyncSetup();
+    fixture.generate.mockImplementationOnce(async (_params, ctx) => {
+      const task = ctx?.imageTask;
+      if (task) {
+        task.handle = { taskId: "imgtask_1", requestId: "req-task", submittedAt: Date.now() };
+        await task.onAccepted?.(task.handle);
+      }
+      throw new ImageTaskParkedError();
+    });
+    await expect(fixture.execute()).rejects.toBeInstanceOf(ImageTaskParkedError);
+    expect(fixture.job()).toMatchObject({ billing_status: "pending", xy2api_task_id: "imgtask_1" });
+    // Handed over: the next worker takes the lease at once.
+    expect(Date.parse(String(fixture.job().xy2api_task_polled_at))).toBeLessThan(Date.now() - TASK_LEASE_MS);
   });
 });

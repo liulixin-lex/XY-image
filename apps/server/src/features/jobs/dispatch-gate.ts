@@ -52,9 +52,10 @@ export function dispatchRetrySeconds(reads: number): number {
 
 /**
  * A running job older than this is not in flight at the main site any more
- * (the provider gives up after ten minutes); it must not block the user's
- * queue for good if its process died before recording an outcome. The
- * reconciler and redelivery settle such jobs separately.
+ * (a synchronous call gives up after ten minutes; an async task counts for
+ * as long as its poller stamps xy2api_task_polled_at); it must not block the
+ * user's queue for good if its process died before recording an outcome.
+ * The reconciler and redelivery settle such jobs separately.
  */
 export const STALE_RUNNING_MINUTES = 15;
 
@@ -105,7 +106,11 @@ export function createDispatchGate(databaseUrl: string): DispatchGate {
               AND status = 'running'
               AND billing_status IN ('none', 'pending')
               AND id <> $2
-              AND coalesce(started_at, created_at) > now() - make_interval(mins => $3)`,
+              AND (coalesce(started_at, created_at) > now() - make_interval(mins => $3)
+                   -- An async task is polled for up to 35 minutes; it is in
+                   -- flight while someone still stamps its lease.
+                   OR (xy2api_task_id IS NOT NULL
+                       AND xy2api_task_polled_at > now() - interval '2 minutes'))`,
           [job.created_by, jobId, STALE_RUNNING_MINUTES],
         );
         const inFlight = counted[0]?.n ?? 0;

@@ -26,6 +26,12 @@ export type ExecutorContext = {
   deliveries?: PendingDeliveryStore;
   /** Per-user limit on image requests in flight at the main site (dispatch-gate.ts). */
   dispatchGate?: DispatchGate;
+  /**
+   * Aborted when the worker shuts down. Async image tasks stop being polled
+   * and are resumed by the next worker (xy2api/image-task.ts), so a deploy
+   * no longer waits minutes for pictures still generating.
+   */
+  park?: AbortSignal;
 };
 
 export type JobExecutor = (

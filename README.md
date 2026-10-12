@@ -42,11 +42,11 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 673 项
+pnpm --filter @loomic/server test # 716 项
 pnpm --filter @loomic/web test    # 254 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
-pnpm test:selfhost                # 27 项通过，2 项跳过（真实 nginx，在 CI 里跑）
+pnpm test:selfhost                # 32 项通过，2 项跳过（真实 nginx，在 CI 里跑）
 pnpm --filter @loomic/server dev  # 同时启动 API 和 Worker，需要 Supabase 和集成配置
 ```
 

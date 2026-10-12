@@ -93,6 +93,17 @@ do $$ begin
 end $$;
 select 'billing_reconcile_checks_passed' as result;
 
+-- 20261012000001: async image tasks (FINDINGS G7 step 2).
+do $$ begin
+  if (select count(*) from information_schema.columns
+       where table_schema='public' and table_name='background_jobs'
+         and column_name in ('xy2api_task_id','xy2api_task_submitted_at','xy2api_task_polled_at')) <> 3
+    or to_regclass('public.background_jobs_xy2api_task_idx') is null then
+    raise exception 'async image task columns or index missing';
+  end if;
+end $$;
+select 'async_image_task_checks_passed' as result;
+
 do $$ begin
   if exists (select 1 from pg_policies where schemaname='public' and tablename='workspace_members' and cmd in ('INSERT','UPDATE'))
     or has_table_privilege('authenticated','public.workspace_members','INSERT,UPDATE')

@@ -8,6 +8,7 @@ import {
   BillingGuardError,
   DeliveryPendingError,
 } from "./features/xy2api/errors.js";
+import { ImageTaskParkedError } from "./features/xy2api/image-task.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
 import { processMessage } from "./worker-message.js";
 
@@ -110,6 +111,17 @@ describe("worker completion and redelivery", () => {
     expect(f.ctx.pgmq.archive).not.toHaveBeenCalled();
     expect(f.ctx.pgmq.deleteMsg).not.toHaveBeenCalled();
     expect(f.job.status).toBe("queued");
+  });
+  it("leaves an async task running when its poller parks, to be polled again", async () => {
+    const f = fixture("running", "pending");
+    f.execute.mockRejectedValue(new ImageTaskParkedError(5));
+    await f.run();
+    expect(f.ctx.pgmq.setVt).toHaveBeenCalledWith("image_generation_jobs", 17, 5);
+    expect(f.ctx.jobService.markDeadLetter).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markRetrying).not.toHaveBeenCalled();
+    expect(f.ctx.pgmq.archive).not.toHaveBeenCalled();
+    expect(f.ctx.pgmq.deleteMsg).not.toHaveBeenCalled();
+    expect(f.job.status).toBe("running");
   });
   it("removes a held image only after its redelivered job is recorded as succeeded", async () => {
     const f = fixture("queued", "charged");

@@ -29,6 +29,7 @@ import {
   createReconcileStore,
 } from "./features/xy2api/billing-reconciler.js";
 import { createPendingDeliveryStore } from "./features/xy2api/pending-delivery.js";
+import { createTaskResumer } from "./features/xy2api/task-resumer.js";
 import { createXy2apiServices } from "./features/xy2api/services.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
@@ -117,6 +118,15 @@ async function main() {
         });
   purger?.start();
 
+  // Queues async image tasks whose poller (the API process) stopped
+  // (task-resumer.ts). Worker jobs resume through their own message.
+  const resumer = createTaskResumer(env.supabaseDbUrl);
+  resumer.start();
+
+  // Aborted on shutdown: async image tasks stop being polled and come back
+  // to the next worker (xy2api/image-task.ts ImageTaskParkedError).
+  const parking = new AbortController();
+
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
@@ -125,6 +135,7 @@ async function main() {
     env,
     deliveries,
     dispatchGate,
+    park: parking.signal,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {
@@ -173,6 +184,9 @@ async function main() {
     );
     running = false;
     if (heartbeatFile) await unlink(heartbeatFile).catch(() => {});
+    // Async image tasks are parked at once (their ids are stored); only
+    // synchronous calls still in flight are waited for.
+    parking.abort();
     // Leave enough time for one already-sent paid request to finish and persist.
     const deadline = setTimeout(() => process.exit(1), 700_000);
     deadline.unref();
@@ -181,6 +195,7 @@ async function main() {
       await Promise.allSettled(allTasks);
     }
     await reconciler?.stop();
+    await resumer.stop();
     await sweeper?.stop();
     await purger?.stop();
     await reconcileServices?.providers.network.close();

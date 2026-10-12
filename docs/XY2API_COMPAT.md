@@ -82,7 +82,7 @@ B 层用到的 Key 和用量接口：`GET /api/v1/keys`（列表）、`GET /api/
 
 两个版本的录制只有一处不同：Gemini 请求不存在的模型时，返回的状态码不一样（见下文）。
 
-**生产主站 gguuai.com 跑的是 0.2.5**（2026-10-09 读 `/api/v1/settings/public` 确认）。主站每次升级后都要重新读一次 `version`；如果不在列表里，先录制。
+**生产主站 gguuai.com 现在跑 0.2.6**（2026-10-12 读 `/api/v1/settings/public` 确认；10-09 时还是 0.2.5）。主站每次升级后都要重新读一次 `version`；如果不在列表里，先录制。
 
 同一接口还显示，生产主站开着 Turnstile、内容审计（`risk_control_enabled`）和 TOTP，两种国内验证码都没开。下面的"内容审计"和"Turnstile"两条与上线直接相关。
 
@@ -99,6 +99,7 @@ B 层用到的 Key 和用量接口：`GET /api/v1/keys`（列表）、`GET /api/
 - **用量**：新账号的 `/v1/usage` 不返回 `model_stats`（Go 的 omitempty）。
 - **内容审计（0.2.5，生产已开）**：提示词命中规则后，xy2api 在转发前拦截，不扣费。OpenAI 路径（生图、chat、responses）返回 `{"error":{"message":…,"type":"content_policy_violation"}}`；Gemini 路径只返回 `{"error":{"code":403,"message":…,"status":"PERMISSION_DENIED"}}`，只能靠消息识别。状态码默认 403，但管理员可以改成 400–599 之间任意值；提示文案也可以改，默认是"内容审计命中风险规则，请调整输入后重试"。主站可以开启自动封禁：同一用户被拦截满一定次数（默认 10 次）后停用账号。实验室用关键词 `xylabblockedword` 触发（`seed.mjs`），四条路径都有录制。
 - **Turnstile**：xy2api 只检查 `success`，不校验 hostname，`remoteip` 填的是请求方 IP。本站代用户登录时，这个 IP 是本站后端的出口 IP。Cloudflare 的 site key 设置里，hostname 白名单必须包含生图站域名，否则前端拿不到 token。上线验收时要实测一次。
+- **异步生图（0.2.2、0.2.5、0.2.6 的代码相同）**：`POST /v1/images/{generations,edits}/async` 收和同步一样的请求体，先做校验和内容审计，通过后返回 202 `{id, task_id, status: "processing", poll_url}`，带 `X-Client-Request-ID`、`Location`、`Retry-After: 3`。不是 202 就说明任务没建，按同步的答复处理。404 有两种：主站没开异步图片对象存储（"async image tasks are not enabled"），或分组平台不支持（"Images API is not supported for this platform"，Gemini 就是这种）。`GET /v1/images/tasks/<id>` 要用同一个 Key，返回 `processing`、`completed`（`result` 和同步响应一样，但 `b64_json` 换成对象存储里的 `url`）或 `failed`（`http_status` 和 `error`）。用量记录的 `request_id` 是 `client:<202 的 X-Client-Request-ID>`。图生成之后才失败的几种（`timeout_error`/504、"failed to store generated image to object storage"、"invalid image response"、"panicked"）可能已经扣费。主站调度模式是 `controlled` 时，后台任务会继承提交请求的连接状态，202 返回后立刻以 502 "upstream request failed: context canceled" 失败（不扣费）；`sub2api` 模式没有这个问题。本站的用法见 [运维手册](XY2API_OPERATIONS.md)「异步生图」。
 - **管理接口**：0.2.x 要先接受管理员合规承诺，否则返回 423 `ADMIN_COMPLIANCE_ACK_REQUIRED`。这只影响实验室建号。
 
 ## 回放发现并已修复的问题
@@ -120,3 +121,4 @@ B 层用到的 Key 和用量接口：`GET /api/v1/keys`（列表）、`GET /api/
 
 - 主站还没响应就超时的“待核对”任务没有请求 ID（xy2api 不接受客户端自带的 ID），仍需用户到主站核对。请求根本没发出去的（连接被拒、DNS、连接超时、TLS 失败、Cloudflare 521/522/523/525/526/530）从 2026-10-09 起直接记为未扣费（`xy2api_unavailable`），不再进待核对。若以后 xy2api 接受客户端请求 ID，可在发请求前生成并保存，再交给 `billing-reconciler.ts` 核对。
 - 每日契约 CI 已于 10-09 开启（仓库变量 `XY2API_LAB_ACCEPT_ADMIN_COMPLIANCE=1`）。
+- xy2api 在 `controlled` 调度模式下异步生图必失败（见上文“异步生图”；`beginDispatch` 检查的 `clientContext` 是提交请求的上下文，202 返回后就取消了）。生产是 `sub2api` 模式，不受影响。要修得改 xy2api（让异步任务的受控请求不继承提交连接的取消信号），需要主站负责人授权后另行发版。
