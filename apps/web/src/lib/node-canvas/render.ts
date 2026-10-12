@@ -29,7 +29,7 @@ export const RENDER_PALETTES: Record<"light" | "dark", RenderPalette> = {
     background: "#f5f2f3",
     panel: "#fbfafb",
     fg: "#24212b",
-    muted: "#6f6a78",
+    muted: "#66626f",
     line: "rgba(36,33,43,0.18)",
     accent: "#e5533d",
     tile: "#e6e1e4",

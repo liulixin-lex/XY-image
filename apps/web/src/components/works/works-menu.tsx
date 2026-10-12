@@ -55,7 +55,7 @@ export function WorksMenuItem({ active }: { active: boolean }) {
         onFocus={load}
         onClick={load}
         className={cn(
-          "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc lg:px-3.5",
+          "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-[background-color,color,translate] outline-none active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc lg:px-3.5",
           active
             ? "bg-fg text-ground"
             : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg data-popup-open:bg-tint/[0.08] data-popup-open:text-fg",

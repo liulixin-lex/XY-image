@@ -61,8 +61,8 @@ function useIsActive() {
 /**
  * Workspace navigation. Desktop and tablet: a top bar over the room
  * (wordmark, slanted section tabs with the current one inked, balance,
- * theme and account). It turns into a frosted strip once the page scrolls
- * under it. Phones: the same top bar without the tabs, plus a bottom tab bar.
+ * theme and account). Once the page scrolls under it, the page dissolves
+ * into it through a progressive blur instead of a hard frosted strip. Phones: the same top bar without the tabs, plus a bottom tab bar.
  *
  * (File name kept from the earlier side-rail layout so imports stay put.)
  */
@@ -80,11 +80,14 @@ export function AppSidebar() {
 
   return (
     <>
-      <header
-        data-scrolled={scrolled || undefined}
-        className="sticky top-0 z-40 transition-[background-color,box-shadow] duration-300 data-[scrolled]:bg-ground/78 data-[scrolled]:shadow-[0_1px_0_var(--line)] data-[scrolled]:backdrop-blur-xl"
-      >
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:px-8 md:h-[72px] lg:gap-8 lg:px-[clamp(20px,2.4vw,40px)]">
+      <header data-scrolled={scrolled || undefined} className="sticky top-0 z-40">
+        {/* The page dissolves into the bar as it scrolls under it (globals.css). */}
+        <div aria-hidden className="progressive-veil">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="relative mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:px-8 md:h-[72px] lg:gap-8 lg:px-[clamp(20px,2.4vw,40px)]">
           <Link href="/home" aria-label={`${BRAND.name} 首页`} className="shrink-0 rounded-md">
             <BrandLockup tagClassName="md:max-xl:hidden" />
           </Link>
@@ -102,7 +105,7 @@ export function AppSidebar() {
                       active={active}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc lg:px-3.5",
+                        "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-[background-color,color,translate] outline-none active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc lg:px-3.5",
                         active ? "bg-fg text-ground" : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
                       )}
                     >

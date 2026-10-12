@@ -388,7 +388,7 @@ function EmptyFeed({ onPick }: { onPick: (item: ShowcaseItem) => void }) {
                   className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                   style={{ objectPosition: item.focus }}
                 />
-                <span className="absolute top-2.5 left-2.5 rounded-[8px] bg-[rgb(28_24_32/0.62)] px-2 py-1 text-[11.5px] font-semibold text-white backdrop-blur-sm">
+                <span className="absolute top-2.5 left-2.5 rounded-[8px] glass-ink px-2 py-1 text-[11.5px] font-semibold">
                   {SAMPLE_ALT}
                 </span>
               </span>

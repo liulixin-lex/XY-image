@@ -319,7 +319,7 @@ function Toolbar({
   return (
     <div
       className={cn(
-        "absolute inset-x-2 bottom-2 flex items-center gap-1 rounded-[13px] bg-[rgb(28_24_32/0.72)] p-1.5 text-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.5)] backdrop-blur-md transition-opacity duration-200",
+        "absolute inset-x-2 bottom-2 flex items-center gap-1 rounded-[13px] glass-ink p-1.5 transition-opacity duration-200",
         compact ? "flex-nowrap gap-0.5 p-1" : "flex-wrap",
         selected
           ? "opacity-100"

@@ -10,6 +10,7 @@
  */
 import type { ImageJobSource } from "@loomic/shared";
 import {
+  ArrowUpIcon,
   ArrowUpRightIcon,
   DownloadIcon,
   ImagePlusIcon,
@@ -163,7 +164,7 @@ export default function HistoryPage() {
                 </div>
                 <ul className="columns-2 gap-4 sm:columns-3 lg:columns-4 2xl:columns-5">
                   {group.jobs.map((job) => (
-                    <li key={job.id} className="mb-4 break-inside-avoid">
+                    <li key={job.id} className="scroll-rise mb-4 break-inside-avoid">
                       <HistoryTile
                         job={job}
                         modelName={modelName(job)}
@@ -201,6 +202,8 @@ export default function HistoryPage() {
         ) : null}
       </div>
 
+      <BackToTop />
+
       <LoupeDialog
         job={loupe}
         modelName={loupe ? modelName(loupe) : ""}
@@ -237,7 +240,7 @@ function FilterBar({
     if (!el) return;
     // Stuck once its top reaches the sticky offset (the bar height + 8 px).
     const observer = new IntersectionObserver(([entry]) => setStuck((entry?.intersectionRatio ?? 1) < 1), {
-      rootMargin: "-81px 0px 0px 0px",
+      rootMargin: `-${window.matchMedia("(min-width: 768px)").matches ? 81 : 73}px 0px 0px 0px`,
       threshold: [1],
     });
     observer.observe(el);
@@ -247,7 +250,7 @@ function FilterBar({
     <div
       ref={bar}
       data-stuck={stuck || undefined}
-      className="sticky top-[80px] z-20 -mx-2 w-fit max-w-full rounded-[16px] px-2 py-2 transition-[background-color,box-shadow,backdrop-filter] duration-300 data-[stuck]:glass-strong data-[stuck]:shadow-[0_12px_32px_-20px_var(--shadow-2)] md:top-[80px]"
+      className="sticky top-[72px] z-20 -mx-2 w-fit max-w-full rounded-[16px] px-2 py-2 transition-[background-color,box-shadow] duration-300 data-[stuck]:glass-strong md:top-[80px]"
     >
       <div role="radiogroup" aria-label="来源" className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-[13px] text-fg-muted">来源</span>
@@ -293,7 +296,7 @@ function HistoryTile({
   const ratio = job.width && job.height ? `${job.width} / ${job.height}` : "4 / 5";
   const label = jobLabel(job) || "（无描述）";
   const action =
-    "flex size-8 items-center justify-center rounded-[9px] bg-[rgb(28_24_32/0.62)] text-white backdrop-blur-md transition-[background-color,scale] hover:bg-[rgb(28_24_32/0.82)] active:scale-95 focus-visible:outline-2 focus-visible:outline-white [&_svg]:size-4";
+    "flex size-8 items-center justify-center rounded-[9px] glass-ink transition-[filter,scale] hover:brightness-125 active:scale-95 focus-visible:outline-2 focus-visible:outline-white [&_svg]:size-4";
   return (
     <figure className="group/tile m-0">
       <div
@@ -365,6 +368,40 @@ function HistoryTile({
         )}
       </figcaption>
     </figure>
+  );
+}
+
+/**
+ * After a long scroll down the gallery, a way back to the filter and the
+ * newest pictures. Above the phone's bottom bar.
+ */
+function BackToTop() {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const update = () => setShown(window.scrollY > window.innerHeight * 1.5);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+  return (
+    <button
+      type="button"
+      aria-label="回到顶部"
+      title="回到顶部"
+      tabIndex={shown ? 0 : -1}
+      onClick={() =>
+        window.scrollTo({
+          top: 0,
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        })
+      }
+      className={cn(
+        "glass-float group fixed right-4 bottom-[calc(max(12px,env(safe-area-inset-bottom))+76px)] z-30 flex size-11 items-center justify-center rounded-full text-fg transition-[opacity,translate,scale] duration-300 ease-(--ease-out-expo) active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc md:right-8 md:bottom-8",
+        shown ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0",
+      )}
+    >
+      <ArrowUpIcon className="size-5 transition-transform duration-200 group-hover:-translate-y-0.5" strokeWidth={2} />
+    </button>
   );
 }
 
