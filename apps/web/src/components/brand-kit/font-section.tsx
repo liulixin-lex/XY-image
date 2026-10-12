@@ -118,7 +118,7 @@ export function FontSection({
             </button>
 
             {menuOpen && (
-              <div className="glass-strong absolute top-full left-0 z-50 mt-1.5 w-[188px] rounded-[14px] p-1.5">
+              <div className="glass-menu absolute top-full left-0 z-50 mt-1.5 w-[188px] rounded-[14px] p-1.5">
                 <button
                   type="button"
                   onClick={() => {

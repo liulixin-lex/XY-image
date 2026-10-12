@@ -184,6 +184,7 @@ order by created_at desc;
 - **Worker 重启**：Worker 停机时不等异步任务，把它们“挂起”：计费状态保持 pending，交出租约，队列消息 5 秒后回来，新 Worker 接着查同一个任务，不会重新发送。演练里 Worker 2 秒内重启完，6 秒后新 Worker 接上，主站只记一次用量。
 - **API 进程里的生图**（`POST /api/agent/generate-image`，没有队列消息）：API 中途退出时，Worker 里的任务恢复器（`features/xy2api/task-resumer.ts`，每分钟一次）把 2 分钟没人查、又没有队列消息的任务放回队列，由 Worker 接着查。
 - **租约**：正在查的进程每 15 秒更新 `xy2api_task_polled_at`；超过 60 秒没更新，其他进程才能接手。生图并发名额（dispatch gate）按租约计入还在查的异步任务。
+- **张数和并发（第 57 条起）**：默认不限。`LOOMIC_MAX_PENDING_IMAGE_JOBS`（每人排队加生成中的张数）和 `LOOMIC_MAX_CONCURRENT_JOBS`（每人同时发给主站的张数）默认 0 = 不限，自建站点可以设正数恢复限制；不限时 dispatch gate 仍负责把任务原子地从 queued 改成 running（防止刚取消的任务被发出），只是不计数。一个 Worker 同时处理 `WORKER_IMAGE_CONCURRENCY`（默认 32）张，所有用户合计；容器内存 3 GB。一次请求最多 500 张、50 个模型，只是防误输的结构上限。注意：不限张数时，一个用户一次排几百张会占满 Worker，其他用户的图要排在后面（先到先得）。
 - **关掉**：`XY2API_ASYNC_IMAGES=off` 后重建 API 和 Worker。已经提交的任务仍会查到结束（接着查不看开关）。
 
 日志关键字：`[image-task]`（`accepted: task … request …`、`completed after …s (N polls)`、`failed after`、`poll N failed (N in a row)`、`resuming task`、`not stored on the job`）、`parked for the next worker`、`async image tasks unavailable`、`[task-resumer]`（`queued for the worker` 是有任务被接回，`sweep failed` 是数据库不可用）。

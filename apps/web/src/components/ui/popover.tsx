@@ -32,7 +32,7 @@ export function PopoverContent({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "glass-strong rounded-xl text-fg outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0",
+            "glass-menu rounded-xl text-fg outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0",
             className,
           )}
         >

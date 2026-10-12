@@ -14,9 +14,12 @@
  * page cannot account for is 待核对.
  */
 import type { NodeProps } from "@xyflow/react";
+import { IMAGE_BATCH_MAX } from "@loomic/shared";
 import {
   ArrowRightIcon,
   ImageIcon,
+  MinusIcon,
+  PlusIcon,
   SparklesIcon,
   TextQuoteIcon,
   TypeIcon,
@@ -64,7 +67,6 @@ import { useNodeCanvas, useRuntimeState, useStoreState } from "./context";
 import { CardNode, NodeHandles } from "./node-parts";
 
 const PROMPT_MAX = 4000;
-const COUNTS = [1, 2, 3, 4] as const;
 
 const pickerClass =
   "nodrag h-7 min-w-[64px] border-transparent bg-transparent px-2 text-[13px] tabular hover:bg-tint/[0.06]";
@@ -313,31 +315,11 @@ export const GeneratorNode = memo(function GeneratorNode({
             />
           </Row>
           <Row label="数量">
-            <div
-              role="radiogroup"
-              aria-label="数量"
-              className="nodrag flex items-center gap-0.5"
-            >
-              {COUNTS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  // biome-ignore lint/a11y/useSemanticElements: a segmented control; buttons keep the room's button styling and focus ring
-                  role="radio"
-                  aria-checked={config.count === n}
-                  disabled={sending}
-                  onClick={() => update({ count: n })}
-                  className={cn(
-                    "flex size-7 items-center justify-center rounded-md text-[13px] tabular transition-colors focus-visible:outline-2 focus-visible:outline-acc disabled:cursor-not-allowed",
-                    config.count === n
-                      ? "bg-fg text-ground"
-                      : "text-fg-soft hover:bg-tint/[0.06]",
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+            <CountInput
+              value={config.count}
+              disabled={sending}
+              onChange={(count) => update({ count })}
+            />
           </Row>
           <Row label="参考图">
             <span
@@ -451,6 +433,80 @@ export const GeneratorNode = memo(function GeneratorNode({
     </>
   );
 });
+
+/**
+ * 数量: any number (第 57 条; IMAGE_BATCH_MAX only guards runaway input),
+ * typed or stepped. Settles on blur or Enter; one undo step per change.
+ */
+function CountInput({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(String(value));
+  }, [value]);
+  const settle = (raw: string) => {
+    const n = Number.parseInt(raw, 10);
+    const next = Number.isFinite(n) ? Math.min(IMAGE_BATCH_MAX, Math.max(1, n)) : value;
+    setText(String(next));
+    if (next !== value) onChange(next);
+  };
+  const step =
+    "flex size-6 items-center justify-center rounded-md text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div role="group" aria-label="数量" className="nodrag flex items-center gap-0.5">
+      <button
+        type="button"
+        aria-label="少一张"
+        disabled={disabled || value <= 1}
+        onClick={() => onChange(Math.max(1, value - 1))}
+        className={step}
+      >
+        <MinusIcon className="size-3.5" strokeWidth={2.4} />
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label="张数"
+        value={text}
+        disabled={disabled}
+        onFocus={(event) => {
+          editing.current = true;
+          event.currentTarget.select();
+        }}
+        onChange={(event) => setText(event.target.value.replace(/\D+/g, "").slice(0, 3))}
+        onBlur={(event) => {
+          editing.current = false;
+          settle(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        className="nowheel h-7 w-10 rounded-md bg-tint/[0.05] text-center text-[13px] font-semibold tabular text-fg outline-none focus-visible:ring-2 focus-visible:ring-acc/40 disabled:opacity-60"
+      />
+      <button
+        type="button"
+        aria-label="多一张"
+        disabled={disabled || value >= IMAGE_BATCH_MAX}
+        onClick={() => onChange(Math.min(IMAGE_BATCH_MAX, value + 1))}
+        className={step}
+      >
+        <PlusIcon className="size-3.5" strokeWidth={2.4} />
+      </button>
+    </div>
+  );
+}
 
 /** A short excerpt of a prompt card's text for the input list. */
 function linkText(text: unknown): string {

@@ -65,7 +65,9 @@ export function createDispatchGate(databaseUrl: string): DispatchGate {
     if (!pool) {
       pool = new pg.Pool({
         connectionString: databaseUrl,
-        max: 3,
+        // Claims are short; a worker handles up to WORKER_IMAGE_CONCURRENCY
+        // jobs, so a few more connections keep them from queuing here.
+        max: 6,
         idleTimeoutMillis: 30_000,
         connectionTimeoutMillis: 10_000,
         allowExitOnIdle: true,
@@ -94,6 +96,18 @@ export function createDispatchGate(databaseUrl: string): DispatchGate {
         if (!job || job.status !== "queued") {
           await client.query("ROLLBACK");
           return "not_queued";
+        }
+        // No per-user limit (0, the default since 第 57 条): nothing to
+        // count, only the queued → running step below.
+        if (limit <= 0) {
+          await client.query(
+            `UPDATE public.background_jobs
+                SET status = 'running', started_at = now()
+              WHERE id = $1`,
+            [jobId],
+          );
+          await client.query("COMMIT");
+          return "claimed";
         }
         await client.query(
           `SELECT pg_advisory_xact_lock(hashtextextended('xy-image-dispatch:' || $1::text, 0))`,

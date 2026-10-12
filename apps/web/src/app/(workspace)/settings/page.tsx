@@ -45,7 +45,7 @@ function SettingsView() {
   return (
     <div className="pb-20">
       <PageHeader title="设置" className="pb-5" />
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-[1600px] gutter-x">
         <PosterTabs
           value={active}
           onValueChange={select}

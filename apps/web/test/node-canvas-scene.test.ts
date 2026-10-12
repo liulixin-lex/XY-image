@@ -279,14 +279,14 @@ describe("elements ⇄ node canvas scene", () => {
 });
 
 describe("generator settings", () => {
-  it("reads junk as the defaults and keeps counts within a batch", () => {
+  it("reads junk as the defaults and keeps counts within the request guard", () => {
     const config = readGenerator(
       el("g", "generator", {
         customData: {
           generator: {
             aspectRatio: "7:3",
             resolution: "8K",
-            count: 99,
+            count: 9999,
             keyId: "7",
             run: { jobs: [{ jobId: 3 }] },
           },
@@ -299,7 +299,8 @@ describe("generator settings", () => {
       aspectRatio: "1:1",
       resolution: "2K",
       quality: "auto",
-      count: 4,
+      // No product limit (第 57 条); only the runaway guard.
+      count: 500,
       prompt: "",
     });
   });
@@ -464,6 +465,15 @@ describe("undo / redo", () => {
 
 describe("output slots", () => {
   const gen = { x: 0, y: 0, width: 296, height: 360 };
+
+  it("lays a big run out as a squarish grid (第 57 条)", () => {
+    const slots = outputSlots({ x: 0, y: 0, width: 296, height: 440 }, 50, "1:1", []);
+    expect(slots).toHaveLength(50);
+    const columns = new Set(slots.map((s) => s.x)).size;
+    const rows = new Set(slots.map((s) => s.y)).size;
+    expect(columns).toBe(8);
+    expect(rows).toBe(7);
+  });
 
   it("puts four 16:9 pictures in a 2×2 grid right of the generator", () => {
     const slots = outputSlots(gen, 4, "16:9", []);

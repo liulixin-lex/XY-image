@@ -124,7 +124,7 @@ export function MessageMentionPicker({
     return (
       <div
         ref={containerRef}
-        className="glass-strong absolute bottom-full left-3 mb-2 w-60 rounded-[14px] p-3"
+        className="glass-menu absolute bottom-full left-3 mb-2 w-60 rounded-[14px] p-3"
       >
         <p className="text-[12px] text-fg-soft">
           {items.length === 0 ? "还没有可以引用的图片" : `没有匹配「${query}」的内容`}
@@ -136,7 +136,7 @@ export function MessageMentionPicker({
   return (
     <div
       ref={containerRef}
-      className="glass-strong absolute bottom-full left-3 mb-2 max-h-72 w-72 overflow-y-auto rounded-[14px]"
+      className="glass-menu absolute bottom-full left-3 mb-2 max-h-72 w-72 overflow-y-auto rounded-[14px]"
     >
       <div className="p-2">
         {(

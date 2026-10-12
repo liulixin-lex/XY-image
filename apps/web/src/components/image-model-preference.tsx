@@ -83,7 +83,7 @@ export function ImageModelPreferencePopover({
         left: pos.left,
         width: POPOVER_WIDTH,
       }}
-      className="fixed z-[9999] rounded-lg glass-float shadow-float"
+      className="fixed z-[9999] rounded-lg glass-menu shadow-float"
     >
       <div className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-3">
         <div className="min-w-0">

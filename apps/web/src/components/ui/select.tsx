@@ -110,7 +110,7 @@ export function Picker({
         >
           <SelectPrimitive.Popup
             className={cn(
-              "glass-strong max-h-[min(360px,var(--available-height))] min-w-(--anchor-width) overflow-y-auto rounded-xl p-1.5 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0",
+              "glass-menu max-h-[min(360px,var(--available-height))] min-w-(--anchor-width) overflow-y-auto rounded-xl p-1.5 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0",
               popupClassName,
             )}
           >

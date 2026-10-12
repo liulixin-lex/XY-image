@@ -347,7 +347,7 @@ export default function SkillsPage() {
         description="给助手装上可复用的做法和工具，对话时会按需调用。"
         className="pb-5"
       />
-      <div className="mx-auto max-w-[1600px] px-4 pb-12 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-[1600px] pb-12 gutter-x">
       <PosterTabs
         value={activeTab}
         onValueChange={setActiveTab}
