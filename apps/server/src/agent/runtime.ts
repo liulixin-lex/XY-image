@@ -521,9 +521,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             model: chatSelection.ref,
           });
         try {
-          const imageCredential =
-            await options.xy2api.keys.resolveImageCredential(run.userId);
-          availableImageModels = imageCredential.imageModels.flatMap((id) => {
+          // Every model of the image keys that are on (第 56 条), once each;
+          // a request for one goes through the default key when it has the
+          // model, else the first key that does (resolveImageTarget).
+          const imageKeys = await options.xy2api.keys.imageKeys(run.userId);
+          const offered = [
+            ...new Set(imageKeys.flatMap((key) => key.imageModels)),
+          ];
+          availableImageModels = offered.flatMap((id) => {
             const model = findImageModel(options.xy2api.keys.catalog, id);
             return model
               ? [

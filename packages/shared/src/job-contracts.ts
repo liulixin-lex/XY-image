@@ -103,7 +103,24 @@ export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 
 // --- API Request schemas ---
 
+/** Most pictures of one model in one request. */
 export const IMAGE_BATCH_MAX = 4;
+/** Most models one request can run side by side (studio 多模型, 第 56 条). */
+export const IMAGE_MODELS_PER_REQUEST_MAX = 4;
+/**
+ * Most pictures one request can ask for, across its models. Each one is
+ * its own job and charge; the server's pending cap (8 by default) still
+ * decides how many a user can have queued at once.
+ */
+export const IMAGE_REQUEST_MAX = 8;
+
+/**
+ * A main-site key id (xy2api api_keys.id). Several of a user's keys can serve
+ * image generation at once; a request names the key whose model it uses.
+ * Without one the server picks the user's default key, or the first enabled
+ * key that has the model.
+ */
+export const xy2apiKeyIdSchema = z.number().int().positive();
 
 /**
  * Node canvas: a spot for a picture, in canvas coordinates (top-left corner
@@ -143,6 +160,8 @@ export const createImageJobRequestSchema = z.object({
   thread_id: z.string().optional(),
   prompt: z.string().min(1).max(4000),
   model: z.string().optional(),
+  /** The main-site key `model` is used through (see xy2apiKeyIdSchema). */
+  key_id: xy2apiKeyIdSchema.optional(),
   aspect_ratio: z.string().max(10).optional(),
   /** 画质: 1K / 2K / 4K. The server clamps to what the model supports. */
   resolution: imageResolutionSchema.optional(),
@@ -154,7 +173,7 @@ export const createImageJobRequestSchema = z.object({
   /** Node canvas (needs `canvas_id`): the generator node the pictures come from. */
   canvas_source_id: canvasElementIdSchema.optional(),
   /** Node canvas (needs `canvas_id`): one spot per picture, in batch order. */
-  canvas_slots: z.array(canvasSlotSchema).min(1).max(IMAGE_BATCH_MAX).optional(),
+  canvas_slots: z.array(canvasSlotSchema).min(1).max(IMAGE_REQUEST_MAX).optional(),
   /**
    * 局部重绘 / 扩图 on `input_images[0]` (exactly one source). Models without
    * mask edits are refused before anything is queued.
@@ -163,31 +182,95 @@ export const createImageJobRequestSchema = z.object({
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 
+/** One model of a 多模型 request and how many pictures it makes. */
+export const imageTargetSchema = z.object({
+  model: z.string().min(1).max(200),
+  key_id: xy2apiKeyIdSchema.optional(),
+  count: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+});
+export type ImageTarget = z.infer<typeof imageTargetSchema>;
+
 /**
- * Most pictures one studio request can ask for. Each picture is its own job
+ * Pictures from one description, in one request. Each picture is its own job
  * (and its own main-site charge); the jobs share `batch_id` in their payload.
+ *
+ * Either `count` pictures of `model` (via `key_id`), or `targets`: several
+ * models side by side, each with its own count (at most IMAGE_REQUEST_MAX in
+ * all). Pictures are numbered across the targets in order; `canvas_slots`,
+ * when given, has one slot per picture in that order.
  */
-export const createImageBatchRequestSchema = createImageJobRequestSchema.extend(
-  {
-    count: z.number().int().min(1).max(IMAGE_BATCH_MAX),
-  },
-);
+export const createImageBatchRequestSchema = createImageJobRequestSchema
+  .extend({
+    count: z.number().int().min(1).max(IMAGE_BATCH_MAX).optional(),
+    targets: z
+      .array(imageTargetSchema)
+      .min(1)
+      .max(IMAGE_MODELS_PER_REQUEST_MAX)
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.targets === undefined) {
+      if (value.count === undefined)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["count"],
+          message: "count or targets is required",
+        });
+      return;
+    }
+    if (value.count !== undefined || value.model || value.key_id)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targets"],
+        message: "targets replaces count, model and key_id",
+      });
+    const total = value.targets.reduce((sum, target) => sum + target.count, 0);
+    if (total > IMAGE_REQUEST_MAX)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targets"],
+        message: `at most ${IMAGE_REQUEST_MAX} pictures per request`,
+      });
+    const seen = new Set<string>();
+    for (const target of value.targets) {
+      const key = `${target.key_id ?? ""}:${target.model}`;
+      if (seen.has(key))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["targets"],
+          message: "each model appears once",
+        });
+      seen.add(key);
+    }
+  });
 export type CreateImageBatchRequest = z.infer<
   typeof createImageBatchRequestSchema
 >;
+
+/** The models of a batch request, as targets (one for the `count` form). */
+export function imageBatchTargets(request: CreateImageBatchRequest): ImageTarget[] {
+  if (request.targets) return request.targets;
+  return [
+    {
+      model: request.model ?? "",
+      ...(request.key_id ? { key_id: request.key_id } : {}),
+      count: request.count ?? 1,
+    },
+  ];
+}
 
 /** Batch fields the server adds to each job's payload. */
 export const imageBatchPayloadSchema = z.object({
   batch_id: z.string().uuid(),
   batch_index: z.number().int().min(0),
-  batch_size: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+  batch_size: z.number().int().min(1).max(IMAGE_REQUEST_MAX),
 });
 export type ImageBatchPayload = z.infer<typeof imageBatchPayloadSchema>;
 
 export const imageBatchResponseSchema = z.object({
   batch_id: z.string().uuid(),
   /** How many pictures were asked for; `jobs` can be shorter if submission stopped part way. */
-  requested: z.number().int().min(1).max(IMAGE_BATCH_MAX),
+  requested: z.number().int().min(1).max(IMAGE_REQUEST_MAX),
   jobs: z.array(backgroundJobSchema),
 });
 export type ImageBatchResponse = z.infer<typeof imageBatchResponseSchema>;
@@ -225,7 +308,15 @@ export const jobResponseSchema = z.object({
 });
 export type JobResponse = z.infer<typeof jobResponseSchema>;
 
+/** Most jobs one page of GET /api/jobs returns. */
+export const JOB_PAGE_MAX = 100;
+
 export const jobListResponseSchema = z.object({
   jobs: z.array(backgroundJobSchema),
+  /**
+   * Pass as `before` for the next (older) page; null on the last page.
+   * Absent from servers before 第 56 条, which return the newest 50 only.
+   */
+  next_before: z.string().nullable().optional(),
 });
 export type JobListResponse = z.infer<typeof jobListResponseSchema>;

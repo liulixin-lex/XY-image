@@ -47,6 +47,8 @@ export type PreferencesRow = {
   default_image_model: string | null;
   default_chat_model: string | null;
   default_chat_provider_id: string | null;
+  /** Keys switched off for image generation (第 56 条); empty = all on. */
+  disabled_image_key_ids: number[];
 };
 type Table<Row> = {
   Row: Row;

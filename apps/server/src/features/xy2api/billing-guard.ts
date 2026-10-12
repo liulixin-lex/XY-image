@@ -3,6 +3,8 @@ import {
   IMAGE_RESOLUTIONS,
   LEGACY_IMAGE_PARAMS,
   type ImageEdit,
+  type ImageQuality,
+  type ImageResolution,
   OUTPAINT_ANCHORS,
   OUTPAINT_MAX_SCALE,
   isLegacyImageQuality,
@@ -93,11 +95,13 @@ export class BillingGuard {
   }
   /**
    * Checks key, model, parameters, references and balance for `count` new
-   * image jobs, and returns the 画质 / 质量 / 比例 to store (moved to the
-   * model's closest supported values, see resolveImageParams). Also checks
-   * that the user stays within LOOMIC_MAX_PENDING_IMAGE_JOBS queued or in
-   * flight. How many actually reach the main site at once is the worker's
-   * dispatch gate (LOOMIC_MAX_CONCURRENT_JOBS); the rest wait unsent.
+   * image jobs, and returns the key and the 画质 / 质量 / 比例 to store (moved
+   * to the model's closest supported values, see resolveImageParams). The
+   * key is `input.key_id`, or the default key / the first enabled key that
+   * has the model (KeyService.resolveImageTarget, 第 56 条). Also checks that
+   * the user stays within LOOMIC_MAX_PENDING_IMAGE_JOBS queued or in flight.
+   * How many actually reach the main site at once is the worker's dispatch
+   * gate (LOOMIC_MAX_CONCURRENT_JOBS); the rest wait unsent.
    * `sendsNow` is for a route that sends from the API process without the
    * worker (the sync agent route): it keeps the old, stricter rule that the
    * user has fewer than LOOMIC_MAX_CONCURRENT_JOBS queued or running.
@@ -105,57 +109,98 @@ export class BillingGuard {
    */
   async prepareImageJob(
     user: Pick<AuthenticatedUser, "id">,
-    input: {
+    input: ImageJobInput & {
       model?: string | undefined;
-      resolution?: string | undefined;
-      quality?: string | undefined;
-      aspect_ratio?: string | undefined;
-      input_images?: string[] | undefined;
-      edit?: ImageEdit | undefined;
+      key_id?: number | undefined;
     },
     options: { count?: number; sendsNow?: boolean } = {},
-  ) {
-    const count = options.sendsNow ? 1 : (options.count ?? 1);
+  ): Promise<PreparedImageJob> {
+    const [prepared] = await this.prepareImageJobs(
+      user,
+      input,
+      [
+        {
+          model: input.model,
+          key_id: input.key_id,
+          count: options.sendsNow ? 1 : (options.count ?? 1),
+        },
+      ],
+      options.sendsNow ? { sendsNow: true } : {},
+    );
+    return prepared as PreparedImageJob;
+  }
+  /**
+   * prepareImageJob for several models side by side (studio 多模型): each
+   * target is checked on its own key and gets its own parameters; balance is
+   * read once per key and the pending limit counts every picture. Nothing is
+   * admitted unless all targets pass.
+   */
+  async prepareImageJobs(
+    user: Pick<AuthenticatedUser, "id">,
+    input: ImageJobInput,
+    targets: readonly {
+      model?: string | undefined;
+      key_id?: number | undefined;
+      count: number;
+    }[],
+    options: { sendsNow?: boolean } = {},
+  ): Promise<(PreparedImageJob & { count: number })[]> {
+    const count = targets.reduce((sum, target) => sum + target.count, 0);
     const limit = options.sendsNow
       ? this.env.maxConcurrentJobs
       : this.env.maxPendingImageJobs;
-    const credential = await this.keys.resolveImageCredential(user.id);
-    const prefs = await this.keys.preferences(user.id);
-    const model =
-      input.model || prefs.default_image_model || credential.imageModels[0];
-    const entry = model ? findImageModel(this.keys.catalog, model) : undefined;
-    if (!model || !entry || !credential.imageModels.includes(model))
-      throw new BillingGuardError("model_not_accessible", 403);
-    const references = input.input_images?.length ?? 0;
-    if (references > 0 && !entry.supportsEdit)
-      throw new BillingGuardError(
-        "invalid_input",
-        400,
-        `${entry.displayName} 不支持参考图，请换一个模型或去掉参考图`,
-      );
-    if (references > entry.maxInputImages)
-      throw new BillingGuardError(
-        "invalid_input",
-        400,
-        `${entry.displayName} 最多使用 ${entry.maxInputImages} 张参考图`,
-      );
-    if (input.edit) checkMaskEdit(entry, references);
-    const requested = normalizeImageParams(input);
-    const resolved = resolveImageParams(entry, {
-      resolution: requested.resolution,
-      quality: requested.quality,
-      aspectRatio: input.aspect_ratio,
-    });
-    if (resolved.adjusted.length)
-      console.info(
-        `[billing-guard] ${model}: adjusted ${resolved.adjusted.join(", ")}`,
-      );
-    try {
-      const usage = await this.client.getUsage(credential.apiKey);
-      if ((usage.balance ?? usage.remaining ?? 1) <= 0)
-        throw new BillingGuardError("insufficient_balance", 402);
-    } catch (error) {
-      if (error instanceof BillingGuardError) throw error;
+    const prepared: (PreparedImageJob & { count: number })[] = [];
+    const apiKeys = new Map<number, string>();
+    for (const target of targets) {
+      const credential = await this.keys.resolveImageTarget(user.id, {
+        keyId: target.key_id,
+        model: target.model,
+      });
+      const model = credential.model;
+      const entry = findImageModel(this.keys.catalog, model);
+      if (!entry) throw new BillingGuardError("model_not_accessible", 403);
+      const references = input.input_images?.length ?? 0;
+      if (references > 0 && !entry.supportsEdit)
+        throw new BillingGuardError(
+          "invalid_input",
+          400,
+          `${entry.displayName} 不支持参考图，请换一个模型或去掉参考图`,
+        );
+      if (references > entry.maxInputImages)
+        throw new BillingGuardError(
+          "invalid_input",
+          400,
+          `${entry.displayName} 最多使用 ${entry.maxInputImages} 张参考图`,
+        );
+      if (input.edit) checkMaskEdit(entry, references);
+      const requested = normalizeImageParams(input);
+      const resolved = resolveImageParams(entry, {
+        resolution: requested.resolution,
+        quality: requested.quality,
+        aspectRatio: input.aspect_ratio,
+      });
+      if (resolved.adjusted.length)
+        console.info(
+          `[billing-guard] ${model}: adjusted ${resolved.adjusted.join(", ")}`,
+        );
+      apiKeys.set(credential.keyId, credential.apiKey);
+      prepared.push({
+        keyId: credential.keyId,
+        model,
+        resolution: resolved.resolution,
+        quality: resolved.quality,
+        aspect_ratio: resolved.aspectRatio,
+        count: options.sendsNow ? 1 : target.count,
+      });
+    }
+    for (const apiKey of apiKeys.values()) {
+      try {
+        const usage = await this.client.getUsage(apiKey);
+        if ((usage.balance ?? usage.remaining ?? 1) <= 0)
+          throw new BillingGuardError("insufficient_balance", 402);
+      } catch (error) {
+        if (error instanceof BillingGuardError) throw error;
+      }
     }
     const { count: pending, error } = await this.getAdmin()
       .from("background_jobs")
@@ -165,21 +210,39 @@ export class BillingGuard {
       // Charged images waiting for a storage retry no longer use the gateway.
       .neq("billing_status", "charged");
     checkStoreError(error);
-    if ((pending ?? 0) + count > limit) {
+    const asking = options.sendsNow ? 1 : count;
+    if ((pending ?? 0) + asking > limit) {
       console.info(
-        `[billing-guard] user ${user.id} at the image job limit (${pending ?? 0} + ${count} > ${limit}${options.sendsNow ? ", sends now" : ""})`,
+        `[billing-guard] user ${user.id} at the image job limit (${pending ?? 0} + ${asking} > ${limit}${options.sendsNow ? ", sends now" : ""})`,
       );
       throw new BillingGuardError("concurrency_limit", 429);
     }
-    return {
-      keyId: credential.keyId,
-      model,
-      resolution: resolved.resolution,
-      quality: resolved.quality,
-      aspect_ratio: resolved.aspectRatio,
-    };
+    if (prepared.length > 1)
+      console.info(
+        `[billing-guard] user ${user.id}: ${prepared.length} models side by side (${prepared
+          .map((p) => `${p.model}@${p.keyId}×${p.count}`)
+          .join(", ")})`,
+      );
+    return prepared;
   }
 }
+
+/** What an image request asks for besides the model and key. */
+type ImageJobInput = {
+  resolution?: string | undefined;
+  quality?: string | undefined;
+  aspect_ratio?: string | undefined;
+  input_images?: string[] | undefined;
+  edit?: ImageEdit | undefined;
+};
+
+export type PreparedImageJob = {
+  keyId: number;
+  model: string;
+  resolution: ImageResolution;
+  quality: ImageQuality;
+  aspect_ratio: string;
+};
 
 /**
  * 局部重绘 / 扩图: one source picture, and a model that can take it (see

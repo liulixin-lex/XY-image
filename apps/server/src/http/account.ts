@@ -53,6 +53,11 @@ export function registerAccountRoutes(
       defaultImageModel: z.string().max(200).optional(),
       defaultChatModel: z.string().max(200).optional(),
       defaultChatProviderId: z.uuid().nullable().optional(),
+      // 设置 › Key: image keys switched off (第 56 条).
+      disabledImageKeyIds: z
+        .array(z.number().int().positive())
+        .max(200)
+        .optional(),
     })
     .strict();
   const links = {
@@ -79,7 +84,9 @@ export function registerAccountRoutes(
       const fresh =
         (request.query as { fresh?: unknown } | undefined)?.fresh === "1";
       try {
-        const credential = await options.keys.resolveImageCredential(user.id);
+        // The default image key, or the first key that is on when it can't
+        // be used: the balance is the account's, whichever key reads it.
+        const credential = await options.keys.resolveImageTarget(user.id);
         const cached = balances.get(user.id);
         const now = Date.now();
         const reuse =

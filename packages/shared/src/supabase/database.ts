@@ -1524,6 +1524,7 @@ export type Database = {
           default_chat_model: string | null
           default_chat_provider_id: string | null
           default_image_model: string | null
+          disabled_image_key_ids: number[]
           image_key_id: number | null
           updated_at: string
           user_id: string
@@ -1533,6 +1534,7 @@ export type Database = {
           default_chat_model?: string | null
           default_chat_provider_id?: string | null
           default_image_model?: string | null
+          disabled_image_key_ids?: number[]
           image_key_id?: number | null
           updated_at?: string
           user_id: string
@@ -1542,6 +1544,7 @@ export type Database = {
           default_chat_model?: string | null
           default_chat_provider_id?: string | null
           default_image_model?: string | null
+          disabled_image_key_ids?: number[]
           image_key_id?: number | null
           updated_at?: string
           user_id?: string

@@ -57,10 +57,20 @@ export type JobService = {
     input: CreateJobInput,
   ): Promise<BackgroundJob>;
   getJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
+  /**
+   * The user's jobs, newest first: `limit` of them (default 50) created
+   * before `before` (an ISO timestamp from the previous page). One extra row
+   * is read to tell whether an older page exists (`more`).
+   */
   listJobs(
     user: AuthenticatedUser,
-    filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
-  ): Promise<BackgroundJob[]>;
+    filters?: {
+      status?: BackgroundJobStatus;
+      jobType?: BackgroundJobType;
+      before?: string;
+      limit?: number;
+    },
+  ): Promise<BackgroundJob[] & { more?: boolean }>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   /**
    * Cancels a job the worker has not picked up (queued, nothing sent to the
@@ -249,15 +259,17 @@ export function createJobService(options: {
 
     async listJobs(user, filters) {
       const client = options.createUserClient(user.accessToken);
+      const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 100);
       let query = client
         .from("background_jobs")
         .select(SELECT_COLS)
         .eq("created_by", user.id)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(limit + 1);
 
       if (filters?.status) query = query.eq("status", filters.status);
       if (filters?.jobType) query = query.eq("job_type", filters.jobType);
+      if (filters?.before) query = query.lt("created_at", filters.before);
 
       const { data: jobs, error } = await query;
       if (error) {
@@ -267,9 +279,12 @@ export function createJobService(options: {
           500,
         );
       }
-      return (jobs ?? []).map((row) =>
-        mapJobRow(row as unknown as Record<string, unknown>),
-      );
+      const rows = jobs ?? [];
+      const page: BackgroundJob[] & { more?: boolean } = rows
+        .slice(0, limit)
+        .map((row) => mapJobRow(row as unknown as Record<string, unknown>));
+      page.more = rows.length > limit;
+      return page;
     },
 
     async cancelJob(user, jobId) {

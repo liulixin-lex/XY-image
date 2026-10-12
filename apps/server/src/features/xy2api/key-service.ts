@@ -53,6 +53,17 @@ export type ImageCredential = {
   platform: string;
   imageModels: string[];
 };
+/** A credential and the model a request uses through it. */
+export type ImageTarget = ImageCredential & { model: string };
+/** An image key as the model lists show it (no secret). */
+export type ImageKeySummary = {
+  keyId: number;
+  name: string;
+  groupName: string | null;
+  platform: string;
+  imageModels: string[];
+  isDefault: boolean;
+};
 export type ChatCredential = {
   keyId: number;
   apiKey: string;
@@ -105,6 +116,112 @@ export class KeyService {
         default_chat_model: null,
       }),
       default_chat_provider_id: data?.default_chat_provider_id ?? null,
+      // bigint[] arrives as numbers; a row from before the column is all on.
+      disabled_image_key_ids: (data?.disabled_image_key_ids ?? []).map(Number),
+    };
+  }
+  /**
+   * The keys that serve image generation (第 56 条): image-capable, usable,
+   * not switched off. The default key comes first, then the newest (the main
+   * site lists keys newest first, and the newest is the default after a sync).
+   */
+  private async enabledImageRows(
+    userId: string,
+    prefs?: PreferencesRow,
+  ): Promise<{ rows: KeyRow[]; prefs: PreferencesRow }> {
+    const [rows, current] = await Promise.all([
+      this.rows(userId),
+      prefs ? Promise.resolve(prefs) : this.preferences(userId),
+    ]);
+    const disabled = new Set(current.disabled_image_key_ids);
+    const enabled = rows
+      .filter(
+        (row) =>
+          row.image_capable && isKeyUsable(row) && !disabled.has(row.key_id),
+      )
+      .sort((a, b) =>
+        a.key_id === current.image_key_id
+          ? -1
+          : b.key_id === current.image_key_id
+            ? 1
+            : b.key_id - a.key_id,
+      );
+    return { rows: enabled, prefs: current };
+  }
+  /** The image keys whose models the studio and the canvas offer. */
+  async imageKeys(userId: string): Promise<ImageKeySummary[]> {
+    const { rows, prefs } = await this.enabledImageRows(userId);
+    if (rows.length === 0) await this.throwNoImageKey(userId, prefs);
+    return rows.map((row) => ({
+      keyId: row.key_id,
+      name: row.name,
+      groupName: row.group_name,
+      platform: row.platform ?? "",
+      imageModels: row.image_models,
+      isDefault: row.key_id === prefs.image_key_id,
+    }));
+  }
+  /**
+   * No key can make images: report why the default key can't (IP limit,
+   * quota) when it is the reason, else key_unavailable.
+   */
+  private async throwNoImageKey(
+    userId: string,
+    prefs: PreferencesRow,
+  ): Promise<never> {
+    await this.selected(userId, prefs.image_key_id);
+    throw new BillingGuardError("key_unavailable", 403);
+  }
+  /**
+   * The key and model one image request goes through (第 56 条).
+   * - `keyId` given: that key (on, usable, image-capable) and `model` on it,
+   *   or the default model if the key has it, else its first.
+   * - Only `model`: the default key if it has it, else the first enabled key
+   *   that does.
+   * - Neither: the default key and model (or the first enabled key when the
+   *   default one is unusable).
+   */
+  async resolveImageTarget(
+    userId: string,
+    input: { keyId?: number | undefined; model?: string | undefined } = {},
+  ): Promise<ImageTarget> {
+    const prefs = await this.preferences(userId);
+    const wanted = input.model?.trim() || null;
+    if (input.keyId !== undefined) {
+      if (prefs.disabled_image_key_ids.includes(input.keyId))
+        throw new BillingGuardError("key_unavailable", 403);
+      const credential = await this.resolveImageCredential(
+        userId,
+        input.keyId,
+      );
+      const model =
+        wanted ??
+        (credential.imageModels.includes(prefs.default_image_model ?? "")
+          ? prefs.default_image_model
+          : credential.imageModels[0]);
+      if (!model || !credential.imageModels.includes(model))
+        throw new BillingGuardError("model_not_accessible", 403);
+      return { ...credential, model };
+    }
+    const { rows } = await this.enabledImageRows(userId, prefs);
+    if (rows.length === 0) return this.throwNoImageKey(userId, prefs);
+    const preferred = wanted ?? prefs.default_image_model;
+    const row =
+      (preferred
+        ? rows.find((candidate) => candidate.image_models.includes(preferred))
+        : undefined) ?? (wanted ? undefined : rows[0]);
+    if (!row) throw new BillingGuardError("model_not_accessible", 403);
+    const model =
+      preferred && row.image_models.includes(preferred)
+        ? preferred
+        : row.image_models[0];
+    if (!model) throw new BillingGuardError("model_not_accessible", 403);
+    return {
+      keyId: row.key_id,
+      apiKey: await this.decryptKey(userId, row.secret_enc),
+      platform: row.platform ?? "",
+      imageModels: row.image_models,
+      model,
     };
   }
   syncKeys(userId: string): Promise<void> {
@@ -157,13 +274,27 @@ export class KeyService {
         ).error,
       );
     const prefs = await this.preferences(userId);
+    // Switched-off keys the main site no longer lists are forgotten. If every
+    // usable image key is off now (the on ones were deleted), all go back on
+    // rather than leaving the user without image generation.
+    const imageUsable = rows.filter(
+      (row) => row.image_capable && isKeyUsable(row),
+    );
+    let disabled = prefs.disabled_image_key_ids.filter((id) => ids.has(id));
+    if (
+      disabled.length &&
+      !imageUsable.some((row) => !disabled.includes(row.key_id))
+    ) {
+      console.info(
+        `[keys] user ${userId}: every usable image key was switched off; switching them back on`,
+      );
+      disabled = [];
+    }
     const image =
-      rows.find(
+      imageUsable.find(
         (row) =>
-          row.key_id === prefs.image_key_id &&
-          row.image_capable &&
-          isKeyUsable(row),
-      ) ?? rows.find((row) => row.image_capable && isKeyUsable(row));
+          row.key_id === prefs.image_key_id && !disabled.includes(row.key_id),
+      ) ?? imageUsable.find((row) => !disabled.includes(row.key_id));
     const chat =
       rows.find(
         (row) =>
@@ -176,6 +307,7 @@ export class KeyService {
         : rows.find((row) => row.chat_models.length && isKeyUsable(row)));
     await this.savePreferences({
       ...prefs,
+      disabled_image_key_ids: disabled,
       image_key_id: image?.key_id ?? null,
       chat_key_id: chat?.key_id ?? null,
       default_image_model: image?.image_models.includes(
@@ -460,17 +592,66 @@ export class KeyService {
       defaultImageModel?: string | undefined;
       defaultChatModel?: string | undefined;
       defaultChatProviderId?: string | null | undefined;
+      disabledImageKeyIds?: number[] | undefined;
     },
   ) {
     const prefs = await this.preferences(userId);
+    if (input.disabledImageKeyIds !== undefined) {
+      // Which keys serve image generation (设置 › Key, 第 56 条). Ids that
+      // are not the user's are dropped; at least one usable image key stays
+      // on, and the default key moves off a key that was switched off.
+      const rows = await this.rows(userId);
+      const own = new Set(rows.map((row) => row.key_id));
+      const disabled = [...new Set(input.disabledImageKeyIds)]
+        .filter((id) => own.has(id))
+        .sort((a, b) => a - b);
+      const on = rows
+        .filter(
+          (row) =>
+            row.image_capable &&
+            isKeyUsable(row) &&
+            !disabled.includes(row.key_id),
+        )
+        .sort((a, b) => b.key_id - a.key_id);
+      if (on.length === 0)
+        throw new BillingGuardError(
+          "invalid_input",
+          400,
+          "至少要留一个能生图的 Key",
+        );
+      prefs.disabled_image_key_ids = disabled;
+      if (!on.some((row) => row.key_id === prefs.image_key_id)) {
+        const next = on[0] as KeyRow;
+        prefs.image_key_id = next.key_id;
+        prefs.default_image_model = next.image_models.includes(
+          prefs.default_image_model ?? "",
+        )
+          ? prefs.default_image_model
+          : (next.image_models[0] ?? null);
+      }
+      console.info(
+        `[keys] user ${userId}: ${disabled.length} image key(s) off, default ${prefs.image_key_id}`,
+      );
+    }
     if (
       input.imageKeyId !== undefined ||
       input.defaultImageModel !== undefined
     ) {
-      const row = await this.selected(
-        userId,
-        input.imageKeyId ?? prefs.image_key_id,
-      );
+      // A default model without a key: the default key if it has it, else
+      // the first key that is on and has it.
+      const keyId =
+        input.imageKeyId ??
+        (input.defaultImageModel
+          ? (
+              await this.enabledImageRows(userId, prefs)
+            ).rows.find((row) =>
+              row.image_models.includes(input.defaultImageModel ?? ""),
+            )?.key_id
+          : undefined) ??
+        prefs.image_key_id;
+      if (keyId !== null && prefs.disabled_image_key_ids.includes(keyId))
+        throw new BillingGuardError("key_unavailable", 403);
+      const row = await this.selected(userId, keyId);
       if (!row.image_capable)
         throw new BillingGuardError("key_unavailable", 403);
       const model =

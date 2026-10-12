@@ -353,6 +353,185 @@ describe("user key synchronization", () => {
   });
 });
 
+describe("several image keys at once (第 56 条)", () => {
+  /**
+   * Key 1: GPT group (gpt-image-2). Key 2: a newer Gemini group
+   * (nano-banana-2.1). Key 3: a newer GPT group that also has gpt-image-2.
+   */
+  async function threeKeys() {
+    const fixture = setup();
+    vi.spyOn(fixture.client, "listModels").mockImplementation(
+      async (apiKey: string) =>
+        apiKey.endsWith("-2")
+          ? ["nano-banana-2.1", "gemini-3.8-flash"]
+          : ["gpt-image-2", "gpt-4.1"],
+    );
+    const key = (id: number, platform: string) => ({
+      ...fixture.remote,
+      id,
+      key: `synthetic-user-api-credential-${id}`,
+      name: `Key ${id}`,
+      group: { ...fixture.remote.group, id: 9 + id, name: `组 ${id}`, platform },
+    });
+    fixture.list.mockResolvedValue([
+      key(3, "openai"),
+      key(2, "gemini"),
+      key(1, "openai"),
+    ]);
+    await fixture.keys.syncKeys("user-1");
+    vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 5 });
+    fixture.tables.background_jobs = [];
+    return fixture;
+  }
+
+  it("lists every key that is on, the default first, then newest first", async () => {
+    const fixture = await threeKeys();
+    await fixture.keys.updatePreferences("user-1", { imageKeyId: 1 });
+    const keys = await fixture.keys.imageKeys("user-1");
+    expect(keys.map((k) => [k.keyId, k.isDefault, k.imageModels])).toEqual([
+      [1, true, ["gpt-image-2"]],
+      [3, false, ["gpt-image-2"]],
+      [2, false, ["nano-banana-2.1"]],
+    ]);
+    expect(JSON.stringify(keys)).not.toContain("synthetic-user-api-credential");
+  });
+
+  it("sends a model through the key it was picked under, or finds one that has it", async () => {
+    const fixture = await threeKeys();
+    await fixture.keys.updatePreferences("user-1", { imageKeyId: 1 });
+    // A named key wins even when the default key has the same model.
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { model: "gpt-image-2", key_id: 3 },
+      ),
+    ).resolves.toMatchObject({ keyId: 3, model: "gpt-image-2" });
+    // Only a model: the default key when it has it ...
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, { model: "gpt-image-2" }),
+    ).resolves.toMatchObject({ keyId: 1 });
+    // ... else the key that does (it used to be "model_not_accessible").
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { model: "nano-banana-2.1" },
+      ),
+    ).resolves.toMatchObject({ keyId: 2, model: "nano-banana-2.1" });
+    // A key without the model is refused, not silently swapped.
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { model: "nano-banana-2.1", key_id: 1 },
+      ),
+    ).rejects.toMatchObject({ code: "model_not_accessible" });
+    // Someone else's key id is just unavailable.
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-2" }, { key_id: 1 }),
+    ).rejects.toMatchObject({ code: "key_unavailable" });
+  });
+
+  it("admits several models side by side only when all of them pass", async () => {
+    const fixture = await threeKeys();
+    const usage = vi.mocked(fixture.client.getUsage);
+    const prepared = await fixture.billing.prepareImageJobs(
+      { id: "user-1" },
+      { aspect_ratio: "3:4", resolution: "2K" },
+      [
+        { model: "gpt-image-2", key_id: 3, count: 2 },
+        { model: "nano-banana-2.1", key_id: 2, count: 2 },
+      ],
+    );
+    expect(prepared.map((p) => [p.keyId, p.model, p.count])).toEqual([
+      [3, "gpt-image-2", 2],
+      [2, "nano-banana-2.1", 2],
+    ]);
+    // Balance is read once per key.
+    expect(usage).toHaveBeenCalledTimes(2);
+    // The pending cap counts every picture of the request.
+    fixture.tables.background_jobs = Array.from({ length: 5 }, () => ({
+      created_by: "user-1",
+      status: "queued",
+      billing_status: "none",
+    }));
+    await expect(
+      fixture.billing.prepareImageJobs({ id: "user-1" }, {}, [
+        { model: "gpt-image-2", count: 2 },
+        { model: "nano-banana-2.1", count: 2 },
+      ]),
+    ).rejects.toMatchObject({ code: "concurrency_limit" });
+    // One model that can't take the references stops the whole request.
+    fixture.tables.background_jobs = [];
+    await expect(
+      fixture.billing.prepareImageJobs(
+        { id: "user-1" },
+        { input_images: Array.from({ length: 12 }, () => "data:") },
+        [
+          { model: "nano-banana-2.1", count: 1 },
+          { model: "gpt-image-2", count: 1 },
+        ],
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+  });
+
+  it("switches keys off for images, keeping one on and the default on an enabled key", async () => {
+    const fixture = await threeKeys();
+    await fixture.keys.updatePreferences("user-1", { imageKeyId: 3 });
+    const prefs = await fixture.keys.updatePreferences("user-1", {
+      disabledImageKeyIds: [3, 999],
+    });
+    // Unknown ids are dropped; the default moved off the key switched off.
+    expect(prefs.disabled_image_key_ids).toEqual([3]);
+    expect(prefs.image_key_id).toBe(2);
+    expect(prefs.default_image_model).toBe("nano-banana-2.1");
+    expect((await fixture.keys.imageKeys("user-1")).map((k) => k.keyId)).toEqual(
+      [2, 1],
+    );
+    // Its models are not offered and requests through it are refused.
+    await expect(
+      fixture.billing.prepareImageJob(
+        { id: "user-1" },
+        { model: "gpt-image-2", key_id: 3 },
+      ),
+    ).rejects.toMatchObject({ code: "key_unavailable" });
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, { model: "gpt-image-2" }),
+    ).resolves.toMatchObject({ keyId: 1 });
+    // A default model on another key moves the default key with it.
+    await expect(
+      fixture.keys.updatePreferences("user-1", {
+        defaultImageModel: "gpt-image-2",
+      }),
+    ).resolves.toMatchObject({ image_key_id: 1, default_image_model: "gpt-image-2" });
+    // Not every key can be off.
+    await expect(
+      fixture.keys.updatePreferences("user-1", {
+        disabledImageKeyIds: [1, 2, 3],
+      }),
+    ).rejects.toMatchObject({ code: "invalid_input", statusCode: 400 });
+  });
+
+  it("forgets deleted keys and never leaves every key off after a sync", async () => {
+    const fixture = await threeKeys();
+    await fixture.keys.updatePreferences("user-1", {
+      disabledImageKeyIds: [1, 2],
+    });
+    // The only key left on is deleted on the main site.
+    fixture.list.mockResolvedValue(
+      (await fixture.list.mock.results[0]?.value).filter(
+        (key: { id: number }) => key.id !== 3,
+      ),
+    );
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await fixture.keys.syncKeys("user-1");
+    const prefs = await fixture.keys.preferences("user-1");
+    expect(prefs.disabled_image_key_ids).toEqual([]);
+    expect(prefs.image_key_id).toBe(2);
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("switching them back on"),
+    );
+  });
+});
+
 describe("keys the main site lists masked", () => {
   const masked = "sk-synt…tial";
   it("reads the full key from GET /api/v1/keys/:id", async () => {
