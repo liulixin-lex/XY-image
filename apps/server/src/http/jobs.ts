@@ -16,6 +16,10 @@ import {
   createImageJobRequestSchema,
   imageBatchPayloadSchema,
   imageBatchResponseSchema,
+  imageBatchTargets,
+  IMAGE_JOB_SOURCES,
+  type ImageJobSource,
+  JOB_PAGE_MAX,
   jobListResponseSchema,
   jobResponseSchema,
   unauthenticatedErrorResponseSchema,
@@ -79,77 +83,100 @@ export async function registerJobRoutes(
     }
   });
 
-  // POST /api/jobs/image-generation/batch — 1 to IMAGE_BATCH_MAX pictures from
-  // one description. Each picture is its own job and its own main-site
-  // request (and charge); they share batch_id in the payload. All of them are
-  // admitted against LOOMIC_MAX_PENDING_IMAGE_JOBS at once; the worker's
-  // dispatch gate then sends at most LOOMIC_MAX_CONCURRENT_JOBS at a time.
+  // POST /api/jobs/image-generation/batch — pictures from one description:
+  // 1 to IMAGE_BATCH_MAX of one model, or `targets` (多模型, 第 56 条):
+  // several models side by side, possibly through different main-site keys,
+  // up to IMAGE_REQUEST_MAX in all. Each picture is its own job and its own
+  // main-site request (and charge); they share batch_id in the payload and
+  // are numbered across the targets. All of them are admitted against
+  // LOOMIC_MAX_PENDING_IMAGE_JOBS at once; the worker's dispatch gate then
+  // sends at most LOOMIC_MAX_CONCURRENT_JOBS at a time.
   app.post("/api/jobs/image-generation/batch", async (request, reply) => {
     try {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
-      const { count, ...payload } = createImageBatchRequestSchema.parse(
-        request.body,
-      );
+      const body = createImageBatchRequestSchema.parse(request.body);
+      const targets = imageBatchTargets(body);
+      const { count: _count, targets: _targets, key_id: _key, ...payload } =
+        body;
+      const total = targets.reduce((sum, target) => sum + target.count, 0);
+      if (payload.canvas_slots && payload.canvas_slots.length < total)
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "invalid_input",
+              message: "canvas_slots needs one slot per picture",
+            },
+          }),
+        );
       const viewer = await options.viewerService.ensureViewer(user);
       const batchId = randomUUID();
       const jobs = await options.billing.withUserLock(user.id, async () => {
-        const prepared = await options.billing.prepareImageJob(user, payload, {
-          count,
-        });
-        const input = imagePayloadSchema.parse({
-          ...payload,
-          model: prepared.model,
-          resolution: prepared.resolution,
-          quality: prepared.quality,
-          aspect_ratio: prepared.aspect_ratio,
-        });
+        const prepared = await options.billing.prepareImageJobs(
+          user,
+          payload,
+          targets,
+        );
         const created: BackgroundJob[] = [];
-        for (let index = 0; index < count; index += 1) {
-          try {
-            created.push(
-              await options.jobService.createJob(user, {
-                workspaceId: viewer.workspace.id,
-                jobType: "image_generation",
-                xy2apiKeyId: prepared.keyId,
-                ...(payload.project_id
-                  ? { projectId: payload.project_id }
-                  : {}),
-                ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
-                ...(payload.session_id
-                  ? { sessionId: payload.session_id }
-                  : {}),
-                ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-                payload: {
-                  ...input,
-                  ...canvasPlacement(payload, index),
-                  ...imageBatchPayloadSchema.parse({
-                    batch_id: batchId,
-                    batch_index: index,
-                    batch_size: count,
-                  }),
-                },
-              }),
-            );
-          } catch (error) {
-            // Nothing is sent at creation, so stopping part way costs
-            // nothing: return what exists and let the page say how many.
-            if (created.length === 0) throw error;
-            console.error(
-              `[jobs] batch ${batchId}: created ${created.length} of ${count}, the rest failed to queue`,
-            );
-            break;
+        let index = 0;
+        queue: for (const target of prepared) {
+          const input = imagePayloadSchema.parse({
+            ...payload,
+            model: target.model,
+            resolution: target.resolution,
+            quality: target.quality,
+            aspect_ratio: target.aspect_ratio,
+          });
+          for (let n = 0; n < target.count; n += 1, index += 1) {
+            try {
+              created.push(
+                await options.jobService.createJob(user, {
+                  workspaceId: viewer.workspace.id,
+                  jobType: "image_generation",
+                  xy2apiKeyId: target.keyId,
+                  ...(payload.project_id
+                    ? { projectId: payload.project_id }
+                    : {}),
+                  ...(payload.canvas_id
+                    ? { canvasId: payload.canvas_id }
+                    : {}),
+                  ...(payload.session_id
+                    ? { sessionId: payload.session_id }
+                    : {}),
+                  ...(payload.thread_id
+                    ? { threadId: payload.thread_id }
+                    : {}),
+                  payload: {
+                    ...input,
+                    ...canvasPlacement(payload, index),
+                    ...imageBatchPayloadSchema.parse({
+                      batch_id: batchId,
+                      batch_index: index,
+                      batch_size: total,
+                    }),
+                  },
+                }),
+              );
+            } catch (error) {
+              // Nothing is sent at creation, so stopping part way costs
+              // nothing: return what exists and let the page say how many.
+              if (created.length === 0) throw error;
+              console.error(
+                `[jobs] batch ${batchId}: created ${created.length} of ${total}, the rest failed to queue`,
+              );
+              break queue;
+            }
           }
         }
         return created;
       });
       console.log(
-        `[jobs] batch ${batchId} of user ${user.id}: ${jobs.length}/${count} queued`,
+        `[jobs] batch ${batchId} of user ${user.id}: ${jobs.length}/${total} queued${targets.length > 1 ? ` across ${targets.length} models` : ""}`,
       );
       return reply.code(201).send(
         imageBatchResponseSchema.parse({
           batch_id: batchId,
-          requested: count,
+          requested: total,
           jobs: jobs.map(forClient),
         }),
       );
@@ -209,18 +236,29 @@ export async function registerJobRoutes(
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
-      const query = request.query as { status?: string; job_type?: string };
+      const query = jobListQuerySchema.parse(request.query ?? {});
       const filters: {
         status?: BackgroundJobStatus;
         jobType?: BackgroundJobType;
+        before?: string;
+        limit?: number;
+        source?: ImageJobSource;
       } = {};
       if (query.status) filters.status = query.status as BackgroundJobStatus;
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
+      if (query.before) filters.before = query.before;
+      if (query.limit) filters.limit = query.limit;
+      if (query.source) filters.source = query.source;
       const jobs = await options.jobService.listJobs(user, filters);
+      const last = jobs.at(-1);
 
-      return reply
-        .code(200)
-        .send(jobListResponseSchema.parse({ jobs: jobs.map(forClient) }));
+      return reply.code(200).send(
+        jobListResponseSchema.parse({
+          jobs: jobs.map(forClient),
+          // 历史 pages (第 56 条): older jobs exist before the last one here.
+          next_before: jobs.more && last ? last.created_at : null,
+        }),
+      );
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
     }
@@ -245,6 +283,15 @@ export async function registerJobRoutes(
 }
 
 const batchParamsSchema = z.object({ batchId: z.string().uuid() });
+
+/** GET /api/jobs: filters and the page (before = created_at of the last job seen). */
+const jobListQuerySchema = z.object({
+  status: z.string().max(40).optional(),
+  job_type: z.string().max(40).optional(),
+  before: z.iso.datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().min(1).max(JOB_PAGE_MAX).optional(),
+  source: z.enum(IMAGE_JOB_SOURCES).optional(),
+});
 
 /**
  * A job as the browser gets it. Inline reference images (data URIs) are cut
@@ -299,6 +346,12 @@ function sendJobError(
       }),
     );
   }
+  if (isZodError(error))
+    return reply.code(400).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "invalid_input", message: "请求参数无效" },
+      }),
+    );
   return reply.code(500).send(
     applicationErrorResponseSchema.parse({
       error: {

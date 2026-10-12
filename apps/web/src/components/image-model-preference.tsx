@@ -2,7 +2,7 @@
 
 /**
  * Which image models the design agent may use. Lists only models the
- * selected image key can reach; preferences for unreachable models are
+ * image keys that are on can reach; preferences for unreachable models are
  * ignored when a run starts (see resolveImagePreference).
  */
 import { CheckIcon } from "lucide-react";
@@ -30,7 +30,11 @@ export function ImageModelPreferencePopover({
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
   const { data, loading, error } = useImageModels();
-  const models = data ?? [];
+  // The agent picks a model by name; with several keys on, a model listed
+  // under two keys is one choice here (第 56 条).
+  const models = (data ?? []).filter(
+    (m, index, all) => all.findIndex((other) => other.id === m.id) === index,
+  );
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 

@@ -14,6 +14,7 @@ import type { KeyMetadata } from "@/lib/xy2api-api";
 import { cn } from "@/lib/utils";
 
 import { BalanceFigure } from "../account/balance";
+import { keyProblem } from "../settings/keys-tab";
 
 type RowState = "ok" | "missing" | "problem";
 
@@ -50,6 +51,11 @@ export function ReadinessPanel({ className }: { className?: string }) {
   const chatKey = list.find((k) => k.keyId === chatId);
   const loadingKeys = !keys.data && !keys.error;
   const imageState = keyState(imageKey, imageId);
+  // 第 56 条: every image key that is on is used; the default one is named.
+  const disabledImage = new Set(prefs?.disabled_image_key_ids ?? []);
+  const imageKeysOn = list.filter(
+    (k) => k.imageCapable && !keyProblem(k) && !disabledImage.has(k.keyId),
+  ).length;
   const chatState = keyState(chatKey, chatId);
   // At $0 the main site refuses model discovery, so no chat Key can be picked
   // yet; the server picks one after a recharge. Not a Key problem to fix here.
@@ -80,7 +86,17 @@ export function ReadinessPanel({ className }: { className?: string }) {
         </div>
       </div>
       <dl className="divide-y divide-line border-t border-line text-[13px]">
-        <Row label="生图 Key" state={loadingKeys ? null : imageState} value={loadingKeys ? null : keyNote(imageKey, imageId)} />
+        <Row
+          label="生图 Key"
+          state={loadingKeys ? null : imageState}
+          value={
+            loadingKeys
+              ? null
+              : imageState === "ok" && imageKeysOn > 1
+                ? `${keyNote(imageKey, imageId)} 等 ${imageKeysOn} 个`
+                : keyNote(imageKey, imageId)
+          }
+        />
         <Row
           label="对话 Key"
           state={loadingKeys ? null : chatState}

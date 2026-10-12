@@ -12,6 +12,11 @@
  * (server canvas-element-writer), with an edge from the generator. The page
  * only polls the jobs for their state and fetches the canvas when one
  * finishes, so a closed tab loses nothing.
+ *
+ * 第 56 条: each generator sends its own model through its own key, and a
+ * generator connected into another feeds it the pictures of its latest run
+ * (链式：上游出图 → 下游参考图). Several generators can be run with one
+ * click (`generateMany`), one batch each.
  */
 import type { ImageQuality, ImageResolution } from "@loomic/shared";
 
@@ -23,12 +28,13 @@ import {
   toImageJobView,
 } from "../image-jobs";
 import type {
-  CreateImageJobInput,
+  CreateImageBatchInput,
   cancelJob,
   createImageBatch,
   fetchJob,
   uploadFile,
 } from "../server-api";
+import { jobIdOf } from "./element";
 import { readGenerator, updateGenerator } from "./generator";
 import { type Rect, outputSlots } from "./layout";
 import { imageSourceOf } from "./render";
@@ -62,6 +68,8 @@ export type RuntimeDeps = {
 
 export type SendParams = {
   model: string;
+  /** The key the model goes through; omitted = the server's default key. */
+  keyId?: number | null;
   aspectRatio: string;
   resolution: ImageResolution;
   quality: ImageQuality;
@@ -79,11 +87,33 @@ export type RuntimeState = {
   missing: ReadonlySet<string>;
 };
 
+/** One edge into a generator, for its input list (and its 断开 button). */
+export type InputLink = {
+  edgeId: string;
+  sourceId: string;
+  kind: "prompt" | "text" | "image" | "generator" | "other";
+};
+
+/** A generator connected into another (链式): what its latest run gives. */
+export type UpstreamRun = {
+  id: string;
+  /** Pictures of its latest run now on the canvas. */
+  pictures: number;
+  /** Its latest run still has pictures on the way. */
+  waiting: boolean;
+};
+
 export type GeneratorInputs = {
   /** Text of connected prompt cards and text nodes, top to bottom. */
   prompts: string[];
-  /** Connected pictures, top to bottom. */
+  /**
+   * Connected pictures, top to bottom; an upstream generator's latest
+   * pictures come in its place, in their slot order.
+   */
   images: SceneElement[];
+  upstream: UpstreamRun[];
+  /** Every edge into the generator, top to bottom by source. */
+  links: InputLink[];
 };
 
 function rectOf(node: SceneNode): Rect {
@@ -95,21 +125,59 @@ function rectOf(node: SceneNode): Rect {
   };
 }
 
+/**
+ * The pictures an upstream generator hands on: those of its latest run that
+ * are on the canvas, in slot order; and whether more are on the way.
+ */
+function latestRunPictures(
+  generator: SceneNode,
+  placed: ReadonlyMap<string, SceneElement>,
+): { pictures: SceneElement[]; waiting: boolean } {
+  const run = readGenerator(generator.data.el).run;
+  if (!run) return { pictures: [], waiting: false };
+  const pictures: SceneElement[] = [];
+  let waiting = false;
+  for (const job of run.jobs) {
+    const picture = placed.get(job.jobId);
+    if (picture) pictures.push(picture);
+    else waiting = true;
+  }
+  return { pictures, waiting };
+}
+
 /** What feeds a generator: nodes with an edge into it. */
 export function generatorInputs(
   nodes: readonly SceneNode[],
-  edges: readonly { source: string; target: string }[],
+  edges: readonly { id: string; source: string; target: string }[],
   generatorId: string,
 ): GeneratorInputs {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const sources = edges
     .filter((edge) => edge.target === generatorId)
-    .flatMap((edge) => byId.get(edge.source) ?? [])
-    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+    .flatMap((edge) => {
+      const node = byId.get(edge.source);
+      return node ? [{ edge, node }] : [];
+    })
+    .sort(
+      (a, b) =>
+        a.node.position.y - b.node.position.y ||
+        a.node.position.x - b.node.position.x,
+    );
   const prompts: string[] = [];
   const images: SceneElement[] = [];
-  for (const node of sources) {
+  const upstream: UpstreamRun[] = [];
+  const links: InputLink[] = [];
+  let placed: Map<string, SceneElement> | null = null;
+  for (const { edge, node } of sources) {
     const text = node.data.el.text;
+    const kind: InputLink["kind"] =
+      node.type === "prompt" ||
+      node.type === "text" ||
+      node.type === "image" ||
+      node.type === "generator"
+        ? node.type
+        : "other";
+    links.push({ edgeId: edge.id, sourceId: node.id, kind });
     if (
       (node.type === "prompt" || node.type === "text") &&
       typeof text === "string" &&
@@ -117,12 +185,43 @@ export function generatorInputs(
     )
       prompts.push(text.trim());
     else if (node.type === "image") images.push(node.data.el);
+    else if (node.type === "generator") {
+      if (!placed) {
+        placed = new Map();
+        for (const n of nodes) {
+          const jobId = n.type === "image" ? jobIdOf(n.data.el) : null;
+          if (jobId) placed.set(jobId, n.data.el);
+        }
+      }
+      const run = latestRunPictures(node, placed);
+      images.push(...run.pictures);
+      upstream.push({
+        id: node.id,
+        pictures: run.pictures.length,
+        waiting: run.waiting,
+      });
+    }
   }
-  return { prompts, images };
+  return { prompts, images, upstream, links };
+}
+
+/**
+ * Why a generator's inputs can't be sent yet, if they can't: an upstream
+ * generator (链式) with no pictures to hand on.
+ */
+export function upstreamBlocker(upstream: readonly UpstreamRun[]): string | null {
+  const empty = upstream.find((run) => run.pictures === 0);
+  if (!empty) return null;
+  return empty.waiting
+    ? "上游「生成」还在出图，等它出完再生成"
+    : "上游「生成」还没有图，先生成上游";
 }
 
 /** The description sent for a generator: connected prompts, then its own. */
-export function composePrompt(inputs: GeneratorInputs, own: string): string {
+export function composePrompt(
+  inputs: Pick<GeneratorInputs, "prompts">,
+  own: string,
+): string {
   return [...inputs.prompts, own.trim()]
     .filter(Boolean)
     .join("\n\n")
@@ -150,6 +249,12 @@ export class GeneratorRuntime {
   private readonly sinceSuccess = new Map<string, number>();
   /** Uploaded copies of pictures that only exist in this page (fileId → URL). */
   private readonly referenceUrls = new Map<string, string>();
+  /**
+   * Slots of runs being sent, by generator, until their pending pictures
+   * are on the canvas: generators sent together (全部生成) must not pick
+   * the same free space for their pictures.
+   */
+  private readonly reservedSlots = new Map<string, Rect[]>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
   private disposed = false;
@@ -332,6 +437,11 @@ export class GeneratorRuntime {
     );
     const prompt = composePrompt(inputs, config.prompt);
     if (!prompt) return false;
+    const blocked = upstreamBlocker(inputs.upstream);
+    if (blocked) {
+      console.info("[node-canvas/runtime] not sent:", blocked, { generator: generatorId });
+      return false;
+    }
 
     const errors = new Map(this.state.errors);
     errors.delete(generatorId);
@@ -363,11 +473,16 @@ export class GeneratorRuntime {
       return false;
     }
 
-    const obstacles = this.store.scene.nodes
-      .filter(
-        (n) => n.id !== generatorId && n.type !== "frame" && n.type !== "line",
-      )
-      .map(rectOf);
+    const obstacles = [
+      ...this.store.scene.nodes
+        .filter(
+          (n) => n.id !== generatorId && n.type !== "frame" && n.type !== "line",
+        )
+        .map(rectOf),
+      ...[...this.reservedSlots.entries()].flatMap(([id, rects]) =>
+        id === generatorId ? [] : rects,
+      ),
+    ];
     const slots = outputSlots(
       rectOf(node),
       config.count,
@@ -379,9 +494,11 @@ export class GeneratorRuntime {
       width: Math.round(slot.width),
       height: Math.round(slot.height),
     }));
-    const body: CreateImageJobInput & { count: number } = {
+    this.reservedSlots.set(generatorId, slots);
+    const body: CreateImageBatchInput = {
       prompt,
       model: params.model,
+      ...(params.keyId ? { key_id: params.keyId } : {}),
       aspect_ratio: params.aspectRatio,
       resolution: params.resolution,
       quality: params.quality,
@@ -395,6 +512,8 @@ export class GeneratorRuntime {
     console.info("[node-canvas/runtime] batch sent", {
       generator: generatorId,
       model: params.model,
+      key: params.keyId ?? null,
+      upstream: inputs.upstream.map((run) => run.id),
       count: config.count,
       resolution: params.resolution,
       quality: params.quality,
@@ -406,6 +525,7 @@ export class GeneratorRuntime {
     try {
       batch = await this.deps.api.createImageBatch(token, body);
     } catch (error) {
+      this.reservedSlots.delete(generatorId);
       const spec = this.deps.report(error);
       if (spec?.action === "reload_models") this.deps.onModelsStale?.();
       const next = new Map(this.state.errors);
@@ -435,6 +555,8 @@ export class GeneratorRuntime {
       { record: false },
     );
     this.store.showPending(generatorId, run.jobs);
+    // The pending pictures now hold their slots on the canvas themselves.
+    this.reservedSlots.delete(generatorId);
     const nextPartial = new Map(this.state.partial);
     if (views.length < batch.requested)
       nextPartial.set(generatorId, {
@@ -449,6 +571,22 @@ export class GeneratorRuntime {
     });
     this.schedule();
     return true;
+  }
+
+  /**
+   * 并行生成: one batch per generator, all at once (each still its own
+   * request and lock). Returns how many were sent.
+   */
+  async generateMany(
+    runs: readonly { generatorId: string; params: SendParams }[],
+  ): Promise<number> {
+    console.info("[node-canvas/runtime] parallel run", {
+      generators: runs.map((run) => run.generatorId),
+    });
+    const sent = await Promise.all(
+      runs.map((run) => this.generate(run.generatorId, run.params)),
+    );
+    return sent.filter(Boolean).length;
   }
 
   /** Cancels a picture the server has not sent yet (free). */

@@ -7,11 +7,14 @@ export function PageHeader({
   title,
   description,
   aside,
+  eyebrow,
   className,
 }: {
   title: string;
   description?: ReactNode;
   aside?: ReactNode;
+  /** Above the title: the section's own tabs (作品 › 最近生成 / 画布项目). */
+  eyebrow?: ReactNode;
   className?: string;
 }) {
   return (
@@ -21,6 +24,7 @@ export function PageHeader({
         className,
       )}
     >
+      {eyebrow ? <div className="mb-3 basis-full">{eyebrow}</div> : null}
       <h1 className="font-display text-[clamp(36px,4.2vw,56px)] leading-[1.02] font-normal text-fg">
         {title}
       </h1>

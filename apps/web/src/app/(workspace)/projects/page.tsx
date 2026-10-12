@@ -13,6 +13,7 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { PageHeader } from "@/components/page-header";
 import { NewProjectCard, ProjectCard } from "@/components/projects/project-card";
 import { Button } from "@/components/ui/button";
+import { WorksTabs } from "@/components/works/works-nav";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { useAuth } from "@/lib/auth-context";
@@ -69,6 +70,7 @@ export default function ProjectsPage() {
   return (
     <div className="pb-20">
       <PageHeader
+        eyebrow={<WorksTabs />}
         title="画布项目"
         description="每个项目是一张无限画布，设计助手在上面出图、排版、改稿。"
         aside={

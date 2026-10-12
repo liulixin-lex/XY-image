@@ -6,12 +6,22 @@
  * (lib/node-canvas/runtime.ts); its pictures show as pending in their slots
  * and the worker puts each finished one there.
  *
+ * 第 56 条: the model can come from any key that is on (the picker groups
+ * them by key), the inputs are listed with a 断开 each, and 「接着生成」 adds
+ * a generator fed by this one's pictures (链式).
+ *
  * Copy follows the billing wording rules: no "charged" labels; a result the
  * page cannot account for is 待核对.
  */
-import { resolveImageParams } from "@loomic/shared";
 import type { NodeProps } from "@xyflow/react";
-import { SparklesIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  ImageIcon,
+  SparklesIcon,
+  TextQuoteIcon,
+  TypeIcon,
+  XIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,17 +35,27 @@ import {
   QUALITY_LABEL,
   RESOLUTIONS,
   RESOLUTION_HINT,
-  describeCapabilities,
   modelCapabilities,
   resolutionUnavailable,
 } from "../../lib/image-model-meta";
+import {
+  imageModelOptions,
+  keyLabel,
+  modelRef,
+  spansSeveralKeys,
+} from "../../lib/image-model-ref";
 import { jobIdOf } from "../../lib/node-canvas/element";
 import {
   type GeneratorConfig,
   readGenerator,
   updateGenerator,
 } from "../../lib/node-canvas/generator";
-import { composePrompt, generatorInputs } from "../../lib/node-canvas/runtime";
+import { planGenerator } from "../../lib/node-canvas/generator-plan";
+import {
+  type InputLink,
+  type UpstreamRun,
+  generatorInputs,
+} from "../../lib/node-canvas/runtime";
 import type { SceneNode } from "../../lib/node-canvas/types";
 import { cn } from "../../lib/utils";
 import { LiveDot } from "../ambient/live-dot";
@@ -66,7 +86,7 @@ export const GeneratorNode = memo(function GeneratorNode({
   data,
   selected,
 }: NodeProps<SceneNode>) {
-  const { store, runtime } = useNodeCanvas();
+  const { store, runtime, actions } = useNodeCanvas();
   const config = readGenerator(data.el);
   const {
     data: modelList,
@@ -75,37 +95,25 @@ export const GeneratorNode = memo(function GeneratorNode({
   } = useImageModels();
   const { account } = useAccount();
   const models = useMemo(() => modelList ?? [], [modelList]);
-  const preferred = account.data?.preferences.default_image_model ?? null;
-
-  // The node's model if the key reaches it, else the account default, else the first.
-  // A node without its own model waits for the account (G3): the first
-  // model shown before the saved default arrives would otherwise be sent.
-  const pickedHere = models.some((m) => m.id === config.model);
-  const awaitingDefault = !pickedHere && !account.data && !account.error;
-  const model =
-    models.find((m) => m.id === config.model) ??
-    models.find((m) => m.id === preferred) ??
-    models[0] ??
-    null;
-  const caps = modelCapabilities(model);
-  const send = resolveImageParams(caps, {
-    resolution: config.resolution,
-    quality: config.quality,
-    aspectRatio: config.aspectRatio,
-  });
+  const prefs = account.data?.preferences ?? null;
 
   // What feeds this node; a key string keeps drags elsewhere from re-rendering it.
   const inputsKey = useStoreState((state) => {
     const inputs = generatorInputs(state.scene.nodes, state.scene.edges, id);
+    const byId = new Map(state.scene.nodes.map((node) => [node.id, node]));
     return JSON.stringify([
       inputs.prompts,
       inputs.images.map((image) => image.id),
+      inputs.upstream,
+      inputs.links.map((link) => ({
+        ...link,
+        text: linkText(byId.get(link.sourceId)?.data.el.text),
+      })),
     ]);
   });
-  const [connectedPrompts, imageIds] = JSON.parse(inputsKey) as [
-    string[],
-    string[],
-  ];
+  const [connectedPrompts, imageIds, upstream, links] = JSON.parse(
+    inputsKey,
+  ) as [string[], string[], UpstreamRun[], (InputLink & { text: string })[]];
 
   const sending = useRuntimeState((state) => state.sending.has(id));
   const issue = useRuntimeState((state) => state.errors.get(id) ?? null);
@@ -146,52 +154,40 @@ export const GeneratorNode = memo(function GeneratorNode({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [own]);
 
-  const prompt = composePrompt({ prompts: connectedPrompts, images: [] }, own);
-  const refLimit = caps.maxInputImages;
-  const blockedReason = modelsError
-    ? "当前 Key 不能生图"
-    : !model
-      ? modelsLoading
-        ? "正在读取可用模型"
-        : "当前 Key 没有可用的生图模型"
-      : awaitingDefault
-        ? "正在读取默认模型"
-        : imageIds.length > refLimit
-        ? refLimit === 0
-          ? `${model.displayName} 不支持参考图`
-          : `${model.displayName} 最多 ${refLimit} 张参考图`
-        : !prompt
-          ? "先写描述，或连一张提示词卡片进来"
-          : null;
-  const canGenerate = !blockedReason && !sending;
+  // Model, values and what stops 生成: the same rules 「全部生成」 uses.
+  const plan = planGenerator({
+    config,
+    inputs: { prompts: connectedPrompts, upstream, imageCount: imageIds.length },
+    own,
+    models,
+    prefs,
+    accountSettled: Boolean(account.data) || Boolean(account.error),
+    modelsLoading,
+    modelsError,
+  });
+  const { model, send, refLimit, prompt, blockedReason, params } = plan;
+  const caps = modelCapabilities(model);
+  const canGenerate = Boolean(params) && !sending;
+  const severalKeys = spansSeveralKeys(models);
 
   const generate = useCallback(() => {
-    if (!canGenerate || !model) return;
-    void runtime.generate(id, {
-      model: model.id,
-      aspectRatio: send.aspectRatio,
-      resolution: send.resolution,
-      quality: send.quality,
-    });
-  }, [
-    canGenerate,
-    model,
-    runtime,
-    id,
-    send.aspectRatio,
-    send.resolution,
-    send.quality,
-  ]);
+    if (!canGenerate || !params) return;
+    void runtime.generate(id, params);
+  }, [canGenerate, params, runtime, id]);
 
-  const modelOptions = useMemo(
-    () =>
-      models.map((m) => ({
-        value: m.id,
-        text: m.displayName,
-        label: m.displayName,
-        description: `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
-      })),
-    [models],
+  const modelOptions = useMemo(() => imageModelOptions(models), [models]);
+  const chooseModel = useCallback(
+    (ref: string) => {
+      const picked = models.find((m) => modelRef(m) === ref);
+      if (!picked) return;
+      update({ model: picked.id, keyId: picked.keyId ?? null });
+      console.info("[node-canvas] generator model", {
+        generator: id,
+        model: picked.id,
+        key: picked.keyId ?? null,
+      });
+    },
+    [models, update, id],
   );
   const ratioOptions = useMemo(
     () =>
@@ -256,19 +252,27 @@ export const GeneratorNode = memo(function GeneratorNode({
         selected={selected}
         aside={
           <Picker
-            value={model?.id ?? null}
-            onValueChange={(value) => update({ model: value })}
+            value={model ? modelRef(model) : null}
+            onValueChange={chooseModel}
             options={modelOptions}
             ariaLabel="生图模型"
             placeholder={modelsLoading ? "读取模型…" : "无可用模型"}
             disabled={sending || models.length === 0}
             align="end"
             className="nodrag h-7 max-w-[150px] border-transparent bg-transparent px-2 text-[12.5px] text-fg-soft hover:bg-tint/[0.06]"
-            popupClassName="w-[280px]"
+            popupClassName="w-[300px]"
           />
         }
       >
         <div className="flex flex-col px-3.5">
+          {model && severalKeys ? (
+            <p
+              className="-mt-1 truncate pb-1 text-right text-[11.5px] text-fg-muted"
+              title={`经由 ${keyLabel(model)}`}
+            >
+              经由 {keyLabel(model)}
+            </p>
+          ) : null}
           <Row label="比例">
             <Picker
               value={send.aspectRatio}
@@ -346,6 +350,15 @@ export const GeneratorNode = memo(function GeneratorNode({
               <span className="text-fg-muted"> / {refLimit}</span>
             </span>
           </Row>
+          {links.length ? (
+            <InputList
+              links={links}
+              upstream={upstream}
+              disabled={sending}
+              onDisconnect={(edgeId) => store.disconnect(edgeId)}
+              onFocus={actions.focus}
+            />
+          ) : null}
           {bumpedUp ? (
             <p className="pb-1 text-[12px] leading-snug text-fg-muted">
               {send.aspectRatio} 最小 {send.resolution}，按 {send.resolution}{" "}
@@ -421,12 +434,102 @@ export const GeneratorNode = memo(function GeneratorNode({
             blockedReason={prompt ? blockedReason : null}
             status={status}
           />
+          {status && status.tone !== "live" && placedKey ? (
+            <button
+              type="button"
+              onClick={() => actions.chainFrom(id)}
+              title="新加一个「生成」，用这次出的图做参考图"
+              className="nodrag -mb-1 inline-flex h-7 items-center gap-1 self-start rounded-md px-1.5 text-[12.5px] font-semibold text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
+            >
+              接着生成
+              <ArrowRightIcon className="size-3.5" strokeWidth={2.2} />
+            </button>
+          ) : null}
         </div>
       </CardNode>
       <NodeHandles />
     </>
   );
 });
+
+/** A short excerpt of a prompt card's text for the input list. */
+function linkText(text: unknown): string {
+  if (typeof text !== "string") return "";
+  const line = text.trim().replace(/\s+/g, " ");
+  return line.length > 14 ? `${line.slice(0, 14)}…` : line;
+}
+
+const LINK_ICON = {
+  prompt: TextQuoteIcon,
+  text: TypeIcon,
+  image: ImageIcon,
+  generator: SparklesIcon,
+  other: ImageIcon,
+} as const;
+
+/**
+ * What is connected in, one chip each: click to find it on the canvas, ×
+ * to disconnect (断开) — the way to undo a connection on any device.
+ */
+function InputList({
+  links,
+  upstream,
+  disabled,
+  onDisconnect,
+  onFocus,
+}: {
+  links: (InputLink & { text: string })[];
+  upstream: UpstreamRun[];
+  disabled: boolean;
+  onDisconnect: (edgeId: string) => void;
+  onFocus: (id: string) => void;
+}) {
+  let pictures = 0;
+  return (
+    <ul aria-label="连入的内容" className="flex flex-wrap gap-1 pt-1 pb-1.5">
+      {links.map((link) => {
+        const Icon = LINK_ICON[link.kind];
+        const run = upstream.find((item) => item.id === link.sourceId);
+        const text =
+          link.kind === "prompt" || link.kind === "text"
+            ? link.text || "空提示词"
+            : link.kind === "generator"
+              ? run?.pictures
+                ? `上游 ${run.pictures} 张`
+                : run?.waiting
+                  ? "上游出图中"
+                  : "上游未出图"
+              : `图片 ${++pictures}`;
+        return (
+          <li
+            key={link.edgeId}
+            className="group/link flex h-7 max-w-full items-center rounded-md bg-tint/[0.055] text-[12px] text-fg-soft transition-colors hover:bg-tint/[0.09]"
+          >
+            <button
+              type="button"
+              onClick={() => onFocus(link.sourceId)}
+              title="在画布上找到它"
+              className="nodrag flex h-full min-w-0 items-center gap-1 pr-0.5 pl-2 focus-visible:outline-2 focus-visible:outline-acc"
+            >
+              <Icon className="size-3.5 shrink-0" strokeWidth={1.9} />
+              <span className="max-w-[118px] truncate">{text}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDisconnect(link.edgeId)}
+              disabled={disabled}
+              aria-label={`断开：${text}`}
+              title="断开"
+              className="nodrag flex size-6 shrink-0 items-center justify-center rounded-[5px] text-fg-muted transition-colors hover:bg-alert-wash hover:text-alert focus-visible:outline-2 focus-visible:outline-acc disabled:opacity-40"
+            >
+              <XIcon className="size-3" strokeWidth={2.4} />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 type RunStatus = { text: string; tone: "live" | "done" | "warn" } | null;
 
@@ -488,7 +591,7 @@ function GeneratorNotice({
           href="/settings?tab=keys"
           className="nodrag ml-0.5 underline underline-offset-2"
         >
-          去选择 Key
+          去看 Key
         </Link>
       </output>
     );

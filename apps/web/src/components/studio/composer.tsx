@@ -19,7 +19,12 @@ import {
   useState,
 } from "react";
 
-import { IMAGE_BATCH_MAX, resolveImageParams } from "@loomic/shared";
+import {
+  IMAGE_BATCH_MAX,
+  IMAGE_MODELS_PER_REQUEST_MAX,
+  IMAGE_REQUEST_MAX,
+  resolveImageParams,
+} from "@loomic/shared";
 
 import { ATTACHMENT_ACCEPT, useImageAttachments } from "@/hooks/use-image-attachments";
 import {
@@ -42,6 +47,17 @@ import {
   modelCapabilities,
   resolutionUnavailable,
 } from "@/lib/image-model-meta";
+import {
+  type ModelRef,
+  defaultModel,
+  findModel,
+  imageModelOptions,
+  keyLabel,
+  modelLabel,
+  modelRef,
+  modelRequest,
+  spansSeveralKeys,
+} from "@/lib/image-model-ref";
 import type { PendingDraft } from "@/lib/pending-prompt";
 import { type ImageModelInfo, optimizePrompt } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -64,6 +80,8 @@ export type ComposerHandle = {
   applyParams: (params: {
     prompt: string;
     model?: string | null;
+    /** The key the picture went through; the model is looked up under it first. */
+    keyId?: number | null;
     resolution?: ImageResolution;
     /** null for older records that had no 质量. */
     quality?: ImageQuality | null;
@@ -116,7 +134,12 @@ export const Composer = forwardRef<
   const { report } = useIssues();
   const { error: toastError, toast } = useToast();
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<string | null>(null);
+  // The main model, as a (key, model) ref (lib/image-model-ref.ts).
+  const [model, setModel] = useState<ModelRef | null>(null);
+  // 多模型 (第 56 条): more models run side by side on the same description,
+  // each through its own key. Not remembered: like 数量, every extra model
+  // is another charge per picture, so a visit starts with none.
+  const [extraRefs, setExtraRefs] = useState<ModelRef[]>([]);
   // What the user picked; the model may need a nearby value (effective*).
   const [resolution, setResolution] = useState<ImageResolution>("2K");
   const [quality, setQuality] = useState<ImageQuality>("auto");
@@ -207,13 +230,18 @@ export const Composer = forwardRef<
   }, [restored, resolution, quality, ratio]);
 
   // Model: what the user picked here while valid; otherwise the saved
-  // preference, otherwise what is shown, otherwise the first model the key
-  // offers. The model list and the account (which holds the preference) load
-  // in parallel; picking before the account arrived locked in models[0] in
-  // 6 of 8 production runs (FINDINGS G3), so nothing is chosen until the
-  // account is in (or failed), and a late preference still wins over a
-  // choice the user did not make.
-  const preferredModel = account.data?.preferences.default_image_model ?? null;
+  // default (its key first, else the same model under another key), otherwise
+  // what is shown, otherwise the first model listed. The model list and the
+  // account (which holds the preference) load in parallel; picking before the
+  // account arrived locked in models[0] in 6 of 8 production runs (FINDINGS
+  // G3), so nothing is chosen until the account is in (or failed), and a late
+  // preference still wins over a choice the user did not make.
+  const prefs = account.data?.preferences ?? null;
+  const preferredRef = useMemo(() => {
+    if (!prefs?.default_image_model) return null;
+    const found = defaultModel(models, prefs);
+    return found ? modelRef(found) : null;
+  }, [models, prefs]);
   const accountSettled = Boolean(account.data) || Boolean(account.error);
   const userPickedModel = useRef(false);
   useEffect(() => {
@@ -223,16 +251,38 @@ export const Composer = forwardRef<
     }
     if (!accountSettled) return;
     setModel((current) => {
-      const valid = (id: string | null): id is string =>
-        Boolean(id) && models.some((m) => m.id === id);
+      const valid = (ref: string | null): ref is string =>
+        Boolean(ref) && models.some((m) => modelRef(m) === ref);
       if (userPickedModel.current && valid(current)) return current;
-      if (valid(preferredModel)) return preferredModel;
+      if (valid(preferredRef)) return preferredRef;
       if (valid(current)) return current;
-      return models[0]?.id ?? null;
+      // The key it came through was switched off: the same model elsewhere.
+      const moved = findModel(models, current);
+      return moved ? modelRef(moved) : models[0] ? modelRef(models[0]) : null;
     });
-  }, [models, preferredModel, accountSettled]);
+  }, [models, preferredRef, accountSettled]);
 
-  const current = models.find((m) => m.id === model) ?? null;
+  const current = useMemo(() => findModel(models, model), [models, model]);
+  const extras = useMemo(
+    () =>
+      extraRefs.flatMap((ref) => {
+        const found = models.find((m) => modelRef(m) === ref);
+        return found && found !== current ? [found] : [];
+      }),
+    [extraRefs, models, current],
+  );
+  // Extra models whose key went away drop out of the side-by-side set.
+  useEffect(() => {
+    setExtraRefs((refs) => {
+      const kept = refs.filter((ref) => ref !== model && models.some((m) => modelRef(m) === ref));
+      return kept.length === refs.length ? refs : kept;
+    });
+  }, [models, model]);
+  const selectedModels = useMemo(
+    () => (current ? [current, ...extras] : []),
+    [current, extras],
+  );
+  const severalKeys = spansSeveralKeys(models);
   // Still reading the list or the saved default: the picker says so instead
   // of 「没有可用模型」 for the first few hundred ms of every visit.
   const modelPending = models.length === 0 ? modelsLoading : !accountSettled;
@@ -244,21 +294,68 @@ export const Composer = forwardRef<
     aspectRatio: sendRatio,
   } = resolveImageParams(caps, { resolution, quality, aspectRatio: ratio });
   const topQuality = caps.qualities.at(-1);
-  const refLimit = caps.maxInputImages;
+  // References go to every selected model: the tightest limit applies.
+  const refLimiter = selectedModels.reduce<ImageModelInfo | null>(
+    (tightest, m) =>
+      !tightest || modelCapabilities(m).maxInputImages < modelCapabilities(tightest).maxInputImages
+        ? m
+        : tightest,
+    null,
+  );
+  const refLimit = refLimiter ? modelCapabilities(refLimiter).maxInputImages : caps.maxInputImages;
   const refCount = attachments.length;
   const overRefLimit = refCount > refLimit;
+  // Each model makes `count` pictures; one request holds at most IMAGE_REQUEST_MAX.
+  const modelCount = Math.max(1, selectedModels.length);
+  const countMax = Math.max(1, Math.min(IMAGE_BATCH_MAX, Math.floor(IMAGE_REQUEST_MAX / modelCount)));
+  useEffect(() => {
+    if (count > countMax) setCount(countMax);
+  }, [count, countMax]);
+  const total = count * modelCount;
+  // How the other models will actually run (their nearest supported values).
+  const extraNotes = useMemo(
+    () =>
+      extras.flatMap((m) => {
+        const sent = resolveImageParams(modelCapabilities(m), { resolution, quality, aspectRatio: ratio });
+        if (sent.aspectRatio === sendRatio && sent.resolution === sendResolution) return [];
+        return [`${modelLabel(m, models)} 按 ${sent.aspectRatio} · ${sent.resolution} 出图`];
+      }),
+    [extras, models, resolution, quality, ratio, sendRatio, sendResolution],
+  );
 
   const chooseModel = useCallback(
     (next: string) => {
+      const picked = findModel(models, next);
+      if (!picked) return;
       userPickedModel.current = true;
       setModel(next);
-      // Remember as the account default (best effort, server validates).
-      updatePreferences({ defaultImageModel: next }).catch((error) =>
-        console.warn("[studio] could not save default model", error),
-      );
+      setExtraRefs((refs) => refs.filter((ref) => ref !== next));
+      // Remember as the account default (best effort, server validates). The
+      // list is not reloaded for it: its order would jump under the user.
+      updatePreferences(
+        picked.keyId && picked.keyId !== prefs?.image_key_id
+          ? { imageKeyId: picked.keyId, defaultImageModel: picked.id }
+          : { defaultImageModel: picked.id },
+        { reloadModels: false },
+      ).catch((error) => console.warn("[studio] could not save default model", error));
     },
-    [updatePreferences],
+    [models, prefs?.image_key_id, updatePreferences],
   );
+
+  const addExtraModel = useCallback(
+    (ref: string) => {
+      setExtraRefs((refs) =>
+        refs.includes(ref) || ref === model
+          ? refs
+          : [...refs, ref].slice(0, IMAGE_MODELS_PER_REQUEST_MAX - 1),
+      );
+      console.info("[studio] side-by-side model added", ref);
+    },
+    [model],
+  );
+  const removeExtraModel = useCallback((ref: string) => {
+    setExtraRefs((refs) => refs.filter((item) => item !== ref));
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -266,9 +363,11 @@ export const Composer = forwardRef<
       applyParams: (params) => {
         setPrompt(params.prompt);
         setBeforeRewrite(null);
-        if (params.model && models.some((m) => m.id === params.model)) {
+        const reused = params.model ? findModel(models, { id: params.model, keyId: params.keyId ?? null }) : null;
+        if (reused) {
           userPickedModel.current = true;
-          setModel(params.model);
+          setModel(modelRef(reused));
+          setExtraRefs([]);
         }
         if (params.resolution) setResolution(params.resolution);
         if (params.quality) setQuality(params.quality);
@@ -282,7 +381,7 @@ export const Composer = forwardRef<
           mimeType: "image/png",
           ...(refImage.name ? { name: refImage.name } : {}),
         });
-        return { model: current?.displayName ?? "当前模型", limit: refLimit };
+        return { model: refLimiter?.displayName ?? current?.displayName ?? "当前模型", limit: refLimit };
       },
       setPrompt: (value) => {
         setPrompt(value);
@@ -290,7 +389,7 @@ export const Composer = forwardRef<
       },
       focus: () => textareaRef.current?.focus({ preventScroll: true }),
     }),
-    [addCanvasRef, models, current?.displayName, refLimit],
+    [addCanvasRef, models, current?.displayName, refLimiter?.displayName, refLimit],
   );
 
   // Auto-size the prompt.
@@ -311,28 +410,39 @@ export const Composer = forwardRef<
       : "当前 Key 没有可用的生图模型"
     : room === 0
       ? `排队和生成中的已有 ${MAX_PENDING_JOBS} 张，等前面的完成`
-      : count > room
-        ? `现在最多还能排 ${room} 张，把数量调到 ${room} 或等前面的完成`
+      : total > room
+        ? modelCount > 1
+          ? `现在最多还能排 ${room} 张，这次要 ${total} 张：少选个模型或调小数量`
+          : `现在最多还能排 ${room} 张，把数量调到 ${room} 或等前面的完成`
         : isUploading
           ? "参考图还在上传"
           : overRefLimit
-            ? `${current.displayName} 最多 ${refLimit} 张参考图`
+            ? refLimit === 0
+              ? `${refLimiter?.displayName ?? current.displayName} 不支持参考图，去掉参考图或换个模型`
+              : `${refLimiter?.displayName ?? current.displayName} 最多 ${refLimit} 张参考图`
             : attachments.some((a) => a.error)
               ? "有参考图上传失败，重试或移除后再提交"
               : null;
   const canSubmit = Boolean(trimmed) && !blockedReason && !submitting;
 
   const submit = async () => {
-    if (!canSubmit || !model) return;
-    const result = await onSubmit({
+    if (!canSubmit || !current) return;
+    const shared = {
       prompt: trimmed,
-      model,
       resolution: sendResolution,
       quality: sendQuality,
       aspect_ratio: sendRatio,
-      count,
       ...(readyAttachments.length ? { input_images: readyAttachments.map((a) => a.url) } : {}),
-    });
+    };
+    const result = await onSubmit(
+      extras.length === 0
+        ? { ...shared, ...modelRequest(current), count }
+        : {
+            ...shared,
+            // 多模型: one request, every model with the same count.
+            targets: selectedModels.map((m) => ({ ...modelRequest(m), count })),
+          },
+    );
     if (!result) {
       textareaRef.current?.focus();
       return;
@@ -372,16 +482,32 @@ export const Composer = forwardRef<
     textareaRef.current?.focus({ preventScroll: true });
   };
 
-  const modelOptions = useMemo(
-    () =>
-      models.map((m) => ({
-        value: m.id,
-        text: m.displayName,
-        label: m.displayName,
-        description: `${m.description} · 最高 ${modelCapabilities(m).resolutions.at(-1) ?? "1K"}`,
-      })),
-    [models],
+  const describeModel = useCallback(
+    (m: ImageModelInfo) => `${m.description} · 最高 ${modelCapabilities(m).resolutions.at(-1) ?? "1K"}`,
+    [],
   );
+  const modelOptions = useMemo(
+    () => imageModelOptions(models, { describe: describeModel }),
+    [models, describeModel],
+  );
+  // Models that can join: not picked yet, and able to take the references.
+  const extraOptions = useMemo(
+    () =>
+      imageModelOptions(
+        models.filter((m) => m !== current && !extras.includes(m)),
+        {
+          describe: describeModel,
+          unavailable: (m) => {
+            const limit = modelCapabilities(m).maxInputImages;
+            if (refCount > limit) return limit === 0 ? "不支持参考图" : `最多 ${limit} 张参考图`;
+            return null;
+          },
+        },
+      ),
+    [models, current, extras, describeModel, refCount],
+  );
+  const canAddModel =
+    Boolean(current) && extraOptions.length > 0 && selectedModels.length < IMAGE_MODELS_PER_REQUEST_MAX;
 
   return (
     <section
@@ -403,18 +529,34 @@ export const Composer = forwardRef<
           moreBelow && "[mask-image:linear-gradient(to_bottom,#000_calc(100%-56px),transparent)]",
         )}
       >
-        <Field label="模型" inline>
-          <Picker
-            ariaLabel="模型"
-            value={model}
-            onValueChange={chooseModel}
-            options={modelOptions}
-            placeholder={modelPending ? "读取模型…" : "没有可用模型"}
-            disabled={models.length === 0}
-            className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
-            popupClassName="w-[300px]"
-          />
-        </Field>
+        <div>
+          <Field label="模型" inline>
+            <Picker
+              ariaLabel="模型"
+              value={model}
+              onValueChange={chooseModel}
+              options={modelOptions}
+              placeholder={modelPending ? "读取模型…" : "没有可用模型"}
+              disabled={models.length === 0}
+              className="h-11 w-full rounded-[12px] bg-panel/75 text-[14px]"
+              popupClassName="w-[320px]"
+            />
+          </Field>
+          {current && severalKeys ? (
+            <p className="mt-1.5 pl-[52px] text-[12px] text-fg-muted">经由 {keyLabel(current)}</p>
+          ) : null}
+          {extras.length > 0 || canAddModel ? (
+            <SideBySide
+              extras={extras}
+              models={models}
+              options={extraOptions}
+              canAdd={canAddModel}
+              onAdd={addExtraModel}
+              onRemove={removeExtraModel}
+              notes={extraNotes}
+            />
+          ) : null}
+        </div>
 
         <Field label="提示词" htmlFor="studio-prompt">
           <div className="rounded-[14px] bg-panel/75 px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--line)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--acc),0_0_0_3px_var(--acc-soft)]">
@@ -619,7 +761,13 @@ export const Composer = forwardRef<
           strip between them. */}
       <div className="shrink-0 px-5 pt-2 pb-5 sm:px-6 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:rounded-t-[20px] max-md:bg-panel max-md:pt-3 max-md:pb-[calc(max(12px,env(safe-area-inset-bottom))+72px)] max-md:shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)]">
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
-          <Stepper value={count} min={1} max={IMAGE_BATCH_MAX} onChange={setCount} />
+          <Stepper
+            value={count}
+            min={1}
+            max={countMax}
+            onChange={setCount}
+            label={modelCount > 1 ? "每个模型" : undefined}
+          />
           <Button
             variant="accent"
             size="poster"
@@ -636,7 +784,7 @@ export const Composer = forwardRef<
             </>
           ) : (
             <>
-              生成<span className="numeral text-[26px]">{count}</span>张
+              生成<span className="numeral text-[26px]">{total}</span>张
               <ArrowRightIcon strokeWidth={2.4} />
             </>
           )}
@@ -645,7 +793,9 @@ export const Composer = forwardRef<
         <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted" aria-live="polite">
           {blockedReason && trimmed ? (
             <span className="text-fg-soft">{blockedReason}</span>
-          ) : count > MAX_IN_FLIGHT ? (
+          ) : modelCount > 1 ? (
+            `${modelCount} 个模型各出 ${count} 张，同一句描述，结果排在一起对比。`
+          ) : total > MAX_IN_FLIGHT ? (
             `同时最多发出 ${MAX_IN_FLIGHT} 张，其余排队，还没发出的可以取消。`
           ) : (
             "每次请求只发一次，失败不会自动重发。"
@@ -655,6 +805,71 @@ export const Composer = forwardRef<
     </section>
   );
 });
+
+/**
+ * 多模型 (第 56 条): the other models that run on the same description, as
+ * removable chips, and a picker to add one (grouped by key). Where a model
+ * will use other values than the main one (its nearest supported ratio or
+ * 画质), a line says so.
+ */
+function SideBySide({
+  extras,
+  models,
+  options,
+  canAdd,
+  onAdd,
+  onRemove,
+  notes,
+}: {
+  extras: ImageModelInfo[];
+  models: ImageModelInfo[];
+  options: ReturnType<typeof imageModelOptions>;
+  canAdd: boolean;
+  onAdd: (ref: string) => void;
+  onRemove: (ref: string) => void;
+  notes: string[];
+}) {
+  return (
+    <div className="mt-2.5 pl-[52px]">
+      <ul aria-label="同时生成的模型" className="flex flex-wrap items-center gap-1.5">
+        {extras.map((m) => (
+          <li key={modelRef(m)} className="animate-in fade-in-0 zoom-in-95 duration-200">
+            <span className="inline-flex h-8 items-center gap-1 rounded-[10px] bg-acc-soft pr-1 pl-2.5 text-[12.5px] font-semibold text-acc-text">
+              <span className="max-w-[150px] truncate" title={`${m.displayName} · ${keyLabel(m)}`}>
+                {modelLabel(m, models)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onRemove(modelRef(m))}
+                aria-label={`不再同时用 ${m.displayName}`}
+                className="flex size-6 items-center justify-center rounded-[8px] transition-colors hover:bg-acc/15 focus-visible:outline-2 focus-visible:outline-acc"
+              >
+                <XIcon className="size-3.5" strokeWidth={2.4} />
+              </button>
+            </span>
+          </li>
+        ))}
+        {canAdd ? (
+          <li>
+            <Picker
+              ariaLabel="同时用另一个模型"
+              value={null}
+              onValueChange={onAdd}
+              options={options}
+              placeholder={extras.length ? "再加一个" : "同时用其他模型对比"}
+              icon={<PlusIcon className="size-3.5 shrink-0" strokeWidth={2.2} />}
+              className="h-8 rounded-[10px] border-dashed bg-transparent px-2.5 text-[12.5px] text-fg-soft hover:text-fg"
+              popupClassName="w-[320px]"
+            />
+          </li>
+        ) : null}
+      </ul>
+      {notes.length ? (
+        <p className="mt-1.5 text-[12px] leading-snug text-fg-muted">{notes.join("；")}</p>
+      ) : null}
+    </div>
+  );
+}
 
 export function Field({
   label,
@@ -705,11 +920,14 @@ export function Stepper({
   min,
   max,
   onChange,
+  label,
 }: {
   value: number;
   min: number;
   max: number;
   onChange: (value: number) => void;
+  /** A small caption above the number (多模型: 「每个模型」). */
+  label?: string | undefined;
 }) {
   const button =
     "flex size-8 shrink-0 items-center justify-center rounded-full bg-tint/[0.07] text-fg transition-[background-color,scale] hover:bg-tint/[0.12] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:opacity-35";
@@ -728,8 +946,15 @@ export function Stepper({
       >
         <MinusIcon className="size-4" strokeWidth={2.4} />
       </button>
-      <output aria-live="polite" aria-label={`${value} 张`} className="numeral text-[28px] text-fg">
-        {value}
+      <output
+        aria-live="polite"
+        aria-label={label ? `${label} ${value} 张` : `${value} 张`}
+        className="relative flex flex-col items-center leading-none"
+      >
+        {label ? (
+          <span className="absolute -top-3 text-[10px] font-semibold whitespace-nowrap text-fg-muted">{label}</span>
+        ) : null}
+        <span className="numeral text-[28px] text-fg">{value}</span>
       </output>
       <button
         type="button"

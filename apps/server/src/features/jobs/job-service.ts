@@ -2,6 +2,7 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
+  ImageJobSource,
   Json,
 } from "@loomic/shared";
 import { checkStoreError, integrationClient } from "../xy2api/store.js";
@@ -57,10 +58,22 @@ export type JobService = {
     input: CreateJobInput,
   ): Promise<BackgroundJob>;
   getJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
+  /**
+   * The user's jobs, newest first: `limit` of them (default 50) created
+   * before `before` (an ISO timestamp from the previous page). One extra row
+   * is read to tell whether an older page exists (`more`).
+   */
   listJobs(
     user: AuthenticatedUser,
-    filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
-  ): Promise<BackgroundJob[]>;
+    filters?: {
+      status?: BackgroundJobStatus;
+      jobType?: BackgroundJobType;
+      before?: string;
+      limit?: number;
+      /** Image jobs only: where the picture was made. */
+      source?: ImageJobSource;
+    },
+  ): Promise<BackgroundJob[] & { more?: boolean }>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   /**
    * Cancels a job the worker has not picked up (queued, nothing sent to the
@@ -128,6 +141,10 @@ export function createJobService(options: {
         BackgroundJob["billing_status"]
       >,
       xy2api_request_id: (row.xy2api_request_id as string) ?? null,
+      xy2api_key_id:
+        row.xy2api_key_id === null || row.xy2api_key_id === undefined
+          ? null
+          : Number(row.xy2api_key_id),
       payload: (row.payload as Record<string, unknown>) ?? {},
       result: (row.result as Record<string, unknown>) ?? null,
       error_code: (row.error_code as string) ?? null,
@@ -145,7 +162,7 @@ export function createJobService(options: {
   }
 
   const SELECT_COLS =
-    "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, billing_status, xy2api_request_id, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+    "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, billing_status, xy2api_request_id, xy2api_key_id, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
 
   return {
     async createJob(user, input) {
@@ -249,15 +266,26 @@ export function createJobService(options: {
 
     async listJobs(user, filters) {
       const client = options.createUserClient(user.accessToken);
+      const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 100);
       let query = client
         .from("background_jobs")
         .select(SELECT_COLS)
         .eq("created_by", user.id)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(limit + 1);
 
       if (filters?.status) query = query.eq("status", filters.status);
       if (filters?.jobType) query = query.eq("job_type", filters.jobType);
+      if (filters?.before) query = query.lt("created_at", filters.before);
+      if (filters?.source === "studio") query = query.is("canvas_id", null);
+      else if (filters?.source === "canvas")
+        query = query
+          .not("canvas_id", "is", null)
+          .not("payload->>canvas_source_id", "is", null);
+      else if (filters?.source === "assistant")
+        query = query
+          .not("canvas_id", "is", null)
+          .is("payload->>canvas_source_id", null);
 
       const { data: jobs, error } = await query;
       if (error) {
@@ -267,9 +295,12 @@ export function createJobService(options: {
           500,
         );
       }
-      return (jobs ?? []).map((row) =>
-        mapJobRow(row as unknown as Record<string, unknown>),
-      );
+      const rows = jobs ?? [];
+      const page: BackgroundJob[] & { more?: boolean } = rows
+        .slice(0, limit)
+        .map((row) => mapJobRow(row as unknown as Record<string, unknown>));
+      page.more = rows.length > limit;
+      return page;
     },
 
     async cancelJob(user, jobId) {

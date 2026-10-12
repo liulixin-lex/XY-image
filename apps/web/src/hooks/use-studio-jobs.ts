@@ -1,7 +1,10 @@
 "use client";
 
 /**
- * Studio job state: the latest 50 image jobs, polled while any is active.
+ * Studio job state: the latest image jobs (one page), polled while any is
+ * active, plus older pages the user asked for (「加载更早」). A poll only
+ * refreshes the latest page; pictures that slid off it stay in the list, so
+ * a long session never loses what it already showed.
  *
  * Billing rules this hook enforces:
  * - One click sends one batch request (1 to IMAGE_BATCH_MAX pictures, each
@@ -25,7 +28,7 @@ import {
   toImageJobView,
 } from "@/lib/image-jobs";
 import {
-  type CreateImageJobInput,
+  type CreateImageBatchInput,
   ApiApplicationError,
   cancelJob as apiCancelJob,
   cancelImageBatch,
@@ -42,7 +45,26 @@ const POLL_MS = 4000;
 export const MAX_PENDING_JOBS = 8;
 export const MAX_IN_FLIGHT = 2;
 
-export type StudioSubmitInput = CreateImageJobInput & { count: number };
+/** One model × count, or several models side by side (`targets`, 第 56 条). */
+export type StudioSubmitInput = CreateImageBatchInput;
+/** Jobs per page, the latest page and each older one. */
+export const STUDIO_PAGE = 50;
+
+/**
+ * The fresh latest page first; earlier rows that are older than it (they
+ * slid off the page, or came from 「加载更早」) after it, in their order.
+ * Rows inside the page's time span that it no longer lists are gone.
+ */
+export function mergeLatest(
+  fresh: ImageJobView[],
+  prev: ImageJobView[],
+  pageFull: boolean,
+): ImageJobView[] {
+  const oldest = fresh.at(-1)?.createdAt;
+  if (!pageFull || !oldest) return fresh;
+  const ids = new Set(fresh.map((job) => job.id));
+  return [...fresh, ...prev.filter((job) => !ids.has(job.id) && job.createdAt < oldest)];
+}
 /** Pictures queued by one click; `queued < requested` when the server stopped part way. */
 export type StudioSubmitResult = { queued: number; requested: number };
 
@@ -57,6 +79,10 @@ export function useStudioJobs() {
   const [jobs, setJobs] = useState<ImageJobView[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Where the next older page starts; null when everything is shown.
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderLoaded = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   // Jobs created in this page session: they light up when they finish and
@@ -70,9 +96,14 @@ export function useStudioJobs() {
     const current = tokenRef.current;
     if (!current) return;
     try {
-      const { jobs: rows } = await fetchJobs(current, { jobType: "image_generation" });
-      const views = rows.map(toImageJobView);
-      setJobs(views);
+      const page = await fetchJobs(current, { jobType: "image_generation", limit: STUDIO_PAGE });
+      const views = page.jobs.map(toImageJobView);
+      // Older servers send no next_before: a full page then means "maybe more".
+      const pageFull = page.next_before != null || views.length >= STUDIO_PAGE;
+      setJobs((prev) => mergeLatest(views, prev, pageFull));
+      // Once older pages are in, their own cursor goes on; until then the
+      // latest page's is the start.
+      if (!olderLoaded.current) setCursor(page.next_before ?? null);
       setLoadError(null);
       // Detect transitions for jobs this session submitted.
       const developed: string[] = [];
@@ -132,6 +163,33 @@ export function useStudioJobs() {
     };
   }, [activeCount, load]);
 
+  /** 「加载更早」: the next older page, appended. */
+  const loadOlder = useCallback(async () => {
+    const current = tokenRef.current;
+    if (!current || !cursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await fetchJobs(current, {
+        jobType: "image_generation",
+        before: cursor,
+        limit: STUDIO_PAGE,
+      });
+      const views = page.jobs.map(toImageJobView);
+      olderLoaded.current = true;
+      setJobs((prev) => {
+        const ids = new Set(prev.map((job) => job.id));
+        return [...prev, ...views.filter((job) => !ids.has(job.id))];
+      });
+      setCursor(page.next_before ?? null);
+      console.info("[studio] older page", { from: cursor, rows: views.length, more: Boolean(page.next_before) });
+    } catch (error) {
+      console.warn("[studio] older page failed", error);
+      report(error);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [cursor, loadingOlder, report]);
+
   const submit = useCallback(
     async (input: StudioSubmitInput): Promise<StudioSubmitResult | null> => {
       const current = tokenRef.current;
@@ -149,6 +207,7 @@ export function useStudioJobs() {
           batch: batch.batch_id,
           queued: views.length,
           requested: batch.requested,
+          models: input.targets?.length ?? 1,
         });
         return { queued: views.length, requested: batch.requested };
       } catch (error) {
@@ -224,6 +283,10 @@ export function useStudioJobs() {
     loading,
     loadError,
     reload: load,
+    /** Older pictures exist past what is shown. */
+    hasOlder: cursor !== null,
+    loadingOlder,
+    loadOlder,
     submit,
     submitting,
     cancel,

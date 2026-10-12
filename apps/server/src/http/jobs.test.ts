@@ -59,13 +59,21 @@ async function route() {
   };
   const billing = {
     withUserLock: (_id: string, fn: () => Promise<unknown>) => fn(),
-    prepareImageJob: vi.fn(async () => ({
-      keyId: 7,
-      model: "gpt-image-2",
-      resolution: "2K" as const,
-      quality: "high" as const,
-      aspect_ratio: "3:4",
-    })),
+    prepareImageJobs: vi.fn(
+      async (
+        _user: unknown,
+        _input: unknown,
+        targets: { model?: string; key_id?: number; count: number }[],
+      ) =>
+        targets.map((target) => ({
+          keyId: target.key_id ?? 7,
+          model: target.model || "gpt-image-2",
+          resolution: "2K" as const,
+          quality: "high" as const,
+          aspect_ratio: "3:4",
+          count: target.count,
+        })),
+    ),
   };
   await registerJobRoutes(app, {
     auth: {
@@ -99,11 +107,11 @@ describe("studio batch routes", () => {
     const body = response.json();
     expect(body.requested).toBe(3);
     expect(body.jobs).toHaveLength(3);
-    expect(billing.prepareImageJob).toHaveBeenCalledOnce();
-    expect(billing.prepareImageJob).toHaveBeenCalledWith(
+    expect(billing.prepareImageJobs).toHaveBeenCalledOnce();
+    expect(billing.prepareImageJobs).toHaveBeenCalledWith(
       expect.objectContaining({ id: "user-1" }),
       expect.objectContaining({ prompt: "雨夜霓虹街口" }),
-      { count: 3 },
+      [{ model: "", count: 3 }],
     );
     const payloads = jobService.createJob.mock.calls.map(
       ([, input]) => input.payload,
@@ -199,7 +207,7 @@ describe("studio batch routes", () => {
       payload: { prompt: "海边日落", count: 5 },
     });
     expect(tooMany.statusCode).toBe(400);
-    billing.prepareImageJob.mockRejectedValueOnce(
+    billing.prepareImageJobs.mockRejectedValueOnce(
       new BillingGuardError("concurrency_limit", 429),
     );
     const capped = await app.inject({
@@ -209,6 +217,88 @@ describe("studio batch routes", () => {
     });
     expect(capped.statusCode).toBe(429);
     expect(capped.json().error.code).toBe("concurrency_limit");
+  });
+
+  it("runs several models side by side, each through its own key (第 56 条)", async () => {
+    const { app, jobService, billing } = await route();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: {
+        prompt: "雨夜霓虹街口",
+        targets: [
+          { model: "gpt-image-2", key_id: 11, count: 2 },
+          { model: "nano-banana-2.1", key_id: 12, count: 1 },
+          { model: "grok-imagine-image-2.0", count: 1 },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().requested).toBe(4);
+    expect(billing.prepareImageJobs).toHaveBeenCalledOnce();
+    const calls = jobService.createJob.mock.calls.map(([, input]) => input);
+    expect(
+      calls.map((input) => [
+        input.payload.model,
+        (input as { xy2apiKeyId?: number }).xy2apiKeyId,
+        input.payload.batch_index,
+        input.payload.batch_size,
+      ]),
+    ).toEqual([
+      ["gpt-image-2", 11, 0, 4],
+      ["gpt-image-2", 11, 1, 4],
+      ["nano-banana-2.1", 12, 2, 4],
+      ["grok-imagine-image-2.0", 7, 3, 4],
+    ]);
+    expect(calls[0]?.payload).not.toHaveProperty("targets");
+    expect(calls[0]?.payload).not.toHaveProperty("key_id");
+  });
+
+  it("refuses malformed 多模型 requests before anything is queued", async () => {
+    const { app, jobService } = await route();
+    const bad = [
+      // targets replace count / model / key_id
+      { prompt: "x", count: 1, targets: [{ model: "a", count: 1 }] },
+      { prompt: "x", model: "a", targets: [{ model: "b", count: 1 }] },
+      // neither
+      { prompt: "x" },
+      // more than IMAGE_REQUEST_MAX pictures
+      {
+        prompt: "x",
+        targets: [
+          { model: "a", count: 4 },
+          { model: "b", count: 4 },
+          { model: "c", count: 1 },
+        ],
+      },
+      // the same model through the same key twice
+      {
+        prompt: "x",
+        targets: [
+          { model: "a", key_id: 3, count: 1 },
+          { model: "a", key_id: 3, count: 1 },
+        ],
+      },
+      // a canvas run needs one slot per picture
+      {
+        prompt: "x",
+        canvas_id: "00000000-0000-4000-8000-0000000000cc",
+        canvas_slots: [{ x: 0, y: 0, width: 100, height: 100 }],
+        targets: [
+          { model: "a", count: 1 },
+          { model: "b", count: 1 },
+        ],
+      },
+    ];
+    for (const payload of bad) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/jobs/image-generation/batch",
+        payload,
+      });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+    expect(jobService.createJob).not.toHaveBeenCalled();
   });
 
   it("cancels only the unsent pictures of a batch", async () => {
@@ -231,6 +321,45 @@ describe("studio batch routes", () => {
       url: "/api/jobs/image-batches/not-a-uuid/cancel",
     });
     expect(bad.statusCode).toBe(400);
+  });
+});
+
+describe("job history pages (第 56 条)", () => {
+  it("passes the page to the service and says where the next one starts", async () => {
+    const { app, jobService } = await route();
+    const page = Object.assign([job(1, { prompt: "a" }), job(2, { prompt: "b" })], {
+      more: true,
+    });
+    page[1]!.created_at = "2026-10-12T08:00:00.000Z";
+    jobService.listJobs.mockResolvedValueOnce(page);
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/jobs?job_type=image_generation&status=succeeded&limit=2&before=2026-10-12T09:00:00.000Z",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(jobService.listJobs).toHaveBeenCalledWith(expect.anything(), {
+      jobType: "image_generation",
+      status: "succeeded",
+      limit: 2,
+      before: "2026-10-12T09:00:00.000Z",
+    });
+    expect(response.json().next_before).toBe("2026-10-12T08:00:00.000Z");
+    // The last page has no next one.
+    jobService.listJobs.mockResolvedValueOnce([job(3, { prompt: "c" })]);
+    const last = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(last.json().next_before).toBeNull();
+    // 最近生成 filters by where a picture was made.
+    jobService.listJobs.mockResolvedValueOnce([]);
+    await app.inject({ method: "GET", url: "/api/jobs?job_type=image_generation&source=canvas" });
+    expect(jobService.listJobs).toHaveBeenLastCalledWith(expect.anything(), {
+      jobType: "image_generation",
+      source: "canvas",
+    });
+    // A bad cursor, page size or source is the caller's mistake, not a 500.
+    for (const query of ["before=yesterday", "limit=0", "limit=101", "source=everywhere"]) {
+      const bad = await app.inject({ method: "GET", url: `/api/jobs?${query}` });
+      expect(bad.statusCode, query).toBe(400);
+    }
   });
 });
 

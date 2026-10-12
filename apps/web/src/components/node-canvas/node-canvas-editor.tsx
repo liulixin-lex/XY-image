@@ -30,6 +30,8 @@ import {
   type EdgeTypes,
   MiniMap,
   type NodeTypes,
+  type OnConnectEnd,
+  type OnReconnect,
   type OnSelectionChangeParams,
   Panel,
   ReactFlow,
@@ -69,6 +71,7 @@ import {
 import {
   GENERATOR_DEFAULTS,
   GENERATOR_WIDTH,
+  readGenerator,
 } from "../../lib/node-canvas/generator";
 import {
   type Rect,
@@ -250,6 +253,23 @@ function imageSize(src: string): Promise<{ width: number; height: number }> {
     img.onerror = () => reject(new Error("image unreadable"));
     img.src = src;
   });
+}
+
+/**
+ * The node under the pointer that ended a drag (mouse, or the touch that
+ * lifted), if any. React Flow only lands a connection on a handle; this lets
+ * a drop anywhere on a node's body count too.
+ */
+function nodeIdAt(event: MouseEvent | TouchEvent): string | null {
+  const point = "changedTouches" in event ? event.changedTouches[0] : event;
+  if (!point || typeof document === "undefined") return null;
+  const hit = document.elementFromPoint(point.clientX, point.clientY);
+  // A frame is a container: its empty inside is canvas, not a node to join.
+  const node =
+    hit instanceof Element
+      ? hit.closest(".react-flow__node:not(.react-flow__node-frame)")
+      : null;
+  return node?.getAttribute("data-id") ?? null;
 }
 
 /**
@@ -873,6 +893,49 @@ function EditorInner({
         focusField(`generator-prompt-${el.id}`);
         console.info(`[node-canvas] generator from picture ${imageId}`);
       },
+      chainFrom: (generatorId) => {
+        // 链式: a generator fed by this one's latest pictures, past its outputs.
+        const upstream = store.scene.nodes.find((n) => n.id === generatorId);
+        if (!upstream || upstream.type !== "generator") return;
+        const rect = rectOfNode(upstream);
+        const size = { width: GENERATOR_WIDTH, height: 440 };
+        const position = freeSpotNear(
+          {
+            x: rect.x + rect.width + NODE_GAP * 2 + size.width * 1.5,
+            y: rect.y + size.height / 2,
+          },
+          size,
+          obstacles(),
+        );
+        const config = readGenerator(upstream.data.el);
+        const el = createElement(
+          "generator",
+          { ...position, ...size },
+          {
+            strokeColor: "transparent",
+            customData: {
+              generator: {
+                ...GENERATOR_DEFAULTS,
+                aspectRatio: config.aspectRatio,
+              },
+            },
+          },
+        );
+        store.addElements([el], { select: true });
+        store.connect(generatorId, el.id);
+        focusField(`generator-prompt-${el.id}`);
+        console.info(`[node-canvas] chained a generator after ${generatorId}`);
+      },
+      focus: (id) => {
+        store.select([id]);
+        if (store.scene.nodes.some((n) => n.id === id))
+          void flow.fitView({
+            nodes: [{ id }],
+            padding: 0.6,
+            maxZoom: Math.max(1, flow.getZoom()),
+            duration: 240,
+          });
+      },
       download: (imageId) => {
         const image = store.liveElements().find((el) => el.id === imageId);
         const src = image ? imageSourceOf(image, store.files) : null;
@@ -887,7 +950,7 @@ function EditorInner({
         void downloadImage(src, `${name}.png`);
       },
     }),
-    [store, obstacles, focusField],
+    [store, obstacles, focusField, flow],
   );
 
   // ── the handle for the page ─────────────────────────────────────────
@@ -1106,6 +1169,7 @@ function EditorInner({
               selectable: false,
               deletable: false,
               focusable: false,
+              reconnectable: false,
               className: "pending-link",
             },
           ]
@@ -1116,6 +1180,70 @@ function EditorInner({
 
   // While a connection is dragged every handle shows (node-canvas.css).
   const [connecting, setConnecting] = useState(false);
+
+  // 连线 (第 56 条). A new connection dropped on a node's body (not just its
+  // handle) connects; an edge end dragged to another node moves the edge;
+  // dragged onto empty canvas it disconnects (断开).
+  const reconnectingRef = useRef<string | null>(null);
+  const handleConnectEnd = useCallback<OnConnectEnd>(
+    (event, state) => {
+      setConnecting(false);
+      // React Flow calls this for an edge end being moved too: that is
+      // handled in handleReconnectEnd.
+      if (reconnectingRef.current || state.isValid || !state.fromNode) return;
+      const over = nodeIdAt(event);
+      if (!over || over === state.fromNode.id) return;
+      const fromSource = state.fromHandle?.type !== "target";
+      const connection = {
+        source: fromSource ? state.fromNode.id : over,
+        target: fromSource ? over : state.fromNode.id,
+        sourceHandle: null,
+        targetHandle: null,
+      };
+      if (!store.isValidConnection(connection)) return;
+      store.onConnect(connection);
+      console.info("[node-canvas] connected by a drop on the node body");
+    },
+    [store],
+  );
+  const handleReconnectStart = useCallback(
+    (_event: unknown, edge: SceneEdge) => {
+      reconnectingRef.current = edge.id;
+      store.beginReconnect(edge.id);
+    },
+    [store],
+  );
+  const handleReconnect = useCallback<OnReconnect<SceneEdge>>(
+    (edge, connection) => store.onReconnect(edge, connection),
+    [store],
+  );
+  const handleReconnectEnd = useCallback(
+    (
+      event: MouseEvent | TouchEvent,
+      edge: SceneEdge,
+      fixedEnd: "source" | "target",
+      state: Parameters<OnConnectEnd>[1],
+    ) => {
+      reconnectingRef.current = null;
+      if (state.isValid) {
+        store.endReconnect(edge.id, true);
+        return;
+      }
+      const over = nodeIdAt(event);
+      if (over) {
+        // `fixedEnd` is the end that stayed; the dragged one lands on `over`.
+        store.onReconnect(
+          edge,
+          fixedEnd === "source"
+            ? { source: edge.source, target: over, sourceHandle: null, targetHandle: null }
+            : { source: over, target: edge.target, sourceHandle: null, targetHandle: null },
+        );
+      }
+      // Near a handle it can't join, or on a node: the edge stays as it was.
+      store.endReconnect(edge.id, Boolean(over) || Boolean(state.toNode));
+    },
+    [store],
+  );
 
   return (
     <NodeCanvasProvider value={contextValue}>
@@ -1136,7 +1264,13 @@ function EditorInner({
           onEdgesChange={store.onEdgesChange}
           onConnect={store.onConnect}
           onConnectStart={() => setConnecting(true)}
-          onConnectEnd={() => setConnecting(false)}
+          onConnectEnd={handleConnectEnd}
+          onReconnectStart={handleReconnectStart}
+          onReconnect={handleReconnect}
+          onReconnectEnd={handleReconnectEnd}
+          reconnectRadius={14}
+          connectionDragThreshold={3}
+          connectionRadius={28}
           isValidConnection={store.isValidConnection}
           onSelectionChange={handleSelectionChange}
           onInit={handleInit}

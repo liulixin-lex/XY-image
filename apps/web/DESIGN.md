@@ -10,21 +10,21 @@ colors:
   well: "#f0ecee"
   fg: "#24212b"
   fg-soft: "#5c5766"
-  fg-muted: "#6f6a78"
+  fg-muted: "#66626f"
   line: "rgb(36 33 43 / 0.1)"
   line-strong: "rgb(36 33 43 / 0.18)"
   tint-wash: "rgb(36 33 43 / 0.06)"
-  coral: "#e5533d"
-  coral-hover: "#d6452f"
+  coral: "#d4412a"
+  coral-hover: "#c2361f"
   coral-ink: "#ffffff"
-  coral-text: "#bf3b2a"
-  coral-soft: "rgb(229 83 61 / 0.11)"
+  coral-text: "#b23727"
+  coral-soft: "rgb(212 65 42 / 0.11)"
   coral-on-ink: "#ff8068"
   alert: "#b4233f"
   alert-wash: "rgb(180 35 63 / 0.09)"
-  warn: "#b9560f"
+  warn: "#9f4a0d"
   warn-wash: "rgb(185 86 15 / 0.1)"
-  ok: "#1f8a5b"
+  ok: "#19714b"
   amb-default: "rgb(224 122 102)"
   amb-2-default: "rgb(196 70 128)"
   glass: "rgb(255 255 255 / 0.62)"
@@ -187,6 +187,7 @@ components:
 
 # Design System: GGUU AI IMAGE
 
+<!-- 2026-10-12 agent01（第 56 条打磨）：亮色珊瑚加深一档 #e5533d → #d4412a（同 8° 色相，白字从 3.7:1 到 4.6:1；品牌标保留原珊瑚）；弱字、珊瑚字、待核对橙、成功绿压到地面色上也 ≥4.5:1；玻璃加发丝边和顶光渐变，新增 glass-ink（压在图片上的深色磨砂）；顶栏改成渐进模糊；最近生成的图卡随滚动入场。 -->
 <!-- 2026-10-10 agent01 按 impeccable document 流程，从 F2（海报 · 柔和版）已上线的代码重写：apps/web/src/app/globals.css、components/ui/{button-variants,select,poster-tabs,dialog}.tsx、components/app-sidebar.tsx、components/landing/*、components/studio/*、components/brand/brand-mark.tsx。替换 10-08 的「夜色光场」版本。改 token 时同步本文件，再跑 `node scripts/build-design-sidecar.mjs` 重新生成 .impeccable/design.json；方向合同在 .impeccable/surfaces/src-app-page-tsx.md。 -->
 
 ## Overview
@@ -211,7 +212,7 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 一种石墨紫的中性色系，加一个珊瑚强调色和一组来自图片的环境色；暗色主题用同一套名字（frontmatter 里带 `-dark` 的值）。
 
 ### Primary
-- **珊瑚 Coral**（亮 #e5533d / 暗 #ff8068）：每屏最要紧的那个动作（「生成 N 张」「开始生成」「登录」「重绘 N 张」）、选中图片的外圈（`ring-picked`：一圈墙色缝再一圈珊瑚）、分区名前的斜杠、生成中的状态点、品牌标。亮色上配白字，暗色上配深色字（#24141a）。写成文字时用 `coral-text`（亮 #bf3b2a / 暗 #ff977f）保证对比度；压在墨色底上的珊瑚字用 `coral-on-ink`。浅底 `coral-soft` 用在选中项的背景和扩图预览的条纹。
+- **珊瑚 Coral**（亮 #d4412a / 暗 #ff8068；品牌标仍用 F2 原色 #e5533d）：每屏最要紧的那个动作（「生成 N 张」「开始生成」「登录」「重绘 N 张」）、选中图片的外圈（`ring-picked`：一圈墙色缝再一圈珊瑚）、分区名前的斜杠、生成中的状态点、品牌标。亮色上配白字，暗色上配深色字（#24141a）。写成文字时用 `coral-text`（亮 #b23727 / 暗 #ff977f）保证对比度；压在墨色底上的珊瑚字用 `coral-on-ink`。浅底 `coral-soft` 用在选中项的背景和扩图预览的条纹。
 
 ### Secondary
 - **环境色 Ambient**（默认 rgb(224 122 102) 珊瑚肉色 / rgb(196 70 128) 莓果）：从当前图片取样，染房间的墙、地面光晕和大图背后的色块；暗色下也给大图投出同色的光（`shadow-lit`）。它是氛围，不是控件颜色：按钮、文字、边框都不用它。
@@ -222,14 +223,14 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 - **面板 Panel**（#fbfafb；暗 #25222c）：卡片、设置分组、编辑器侧栏。
 - **凹槽 Well**（#f0ecee；暗 #17151c）：提示词框这类往下凹的输入区。
 - **墨 Ink**（#24212b；暗 #f2eff4）：正文和标题；也是「墨色」选中态（导航页签、分段选项、用户消息气泡）的底色。
-- **次级字 / 弱字**（#5c5766 / #6f6a78；暗 #beb8c6 / #a39dad）：说明和辅助信息。
+- **次级字 / 弱字**（#5c5766 / #66626f；暗 #beb8c6 / #a39dad）：弱字压到最深的地面色上也有 4.5:1：说明和辅助信息。
 - **线 Line**（墨色 10% / 18%）：分隔和描边，只在需要分组时用。
 - **叠加 Tint**：亮色是墨，暗色是近白，写成 `bg-tint/[0.06]` 这类，用于输入框底、未选中的分段选项、悬停。
 
 ### 状态色
-- **待核对 Warn**（#b9560f；暗 #ffa066）配浅底：结果未知、图片可能已经生成。
+- **待核对 Warn**（#9f4a0d；暗 #ffa066）配浅底：结果未知、图片可能已经生成。
 - **失败 Alert**（#b4233f；暗 #ff7b93）配浅底：和珊瑚明显分开的深红。
-- **成功 Ok**（#1f8a5b；暗 #5fd3a1）：只在设置里的 Key 状态这类地方用；生成成功的图不标状态。
+- **成功 Ok**（#19714b；暗 #5fd3a1）：只在设置里的 Key 状态这类地方用；生成成功的图不标状态。
 
 ### Named Rules
 **The One Coral Rule.** 每屏只有一个珊瑚动作。第二个按钮用墨色、描边或幽灵样式；珊瑚铺成大面积底色就错了。
@@ -284,12 +285,17 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 - **Accent pool**（`0 14px 30px -12px var(--acc-glow)`）：珊瑚主按钮下面的一汪珊瑚光。
 - **Picked**（`0 0 0 3px var(--ground), 0 0 0 5px var(--acc), 0 26px 46px -22px var(--acc-glow)`）：被选中的那张图。
 - **Lit**（亮：接触阴影加长投影；暗：再加一圈环境色光晕 `0 0 140px -30px rgb(var(--amb) / 0.6)`）：立在房间里的大图和编辑中的原图。
-- **Glass / Glass strong**（`blur(20–24px) saturate(125–140%)`，顶边 1px 高光）：导航、浮动工具条、菜单、弹窗；系统要求减少透明时退回实色面板。
+- **Glass / Glass float / Glass strong**（e1 / e2 / e3）：三档共用同一种材质——顶边 1px 高光、一圈发丝边（`--glass-edge`，亮 白 55% / 暗 白 7%）、自上而下的顶光渐变（`--glass-sheen`）；`glass` 不模糊，`glass-float` `blur(20px) saturate(150%)`，`glass-strong` `blur(24px) saturate(150%)`，阴影一档比一档长、软。系统要求减少透明时退回实色面板。
+- **Glass ink**（`glass-ink`）：压在图片上的深色磨砂（结果卡工具条、图上的角标和图标按钮），两套主题都是白字，`blur(14px) saturate(160%)` 加发丝边；lite 档位换成 86% 实底。
+- **Progressive veil**（`progressive-veil`）：顶栏的渐进模糊。页面滚到顶栏下面时，三层逐级加深的背景模糊（2 / 6 / 14px，各自用渐变遮罩）加一层墙色薄纱，往下 32px 渐隐，没有硬分隔线；只淡入淡出整层，不动画模糊值。lite 档位和减少透明时退回实色墙。
 
 ### Named Rules
 **The Lit Not Lined Rule.** 用光和阴影分层，不用硬描边。描边只在输入框、分段选项这类需要「边界可点」的地方出现，并且是墨色 10–18% 的细线。
 
 **The Opaque Workbench Rule.** 要在上面精细操作的弹窗（局部重绘 / 扩图编辑器）用实色面板，不能让背后的结果列表透出来。
+
+### Scroll
+- **跟随滚动**：吸顶的只有顶栏、生图页的设置面板和最近生成的来源筛选（吸住后变成 glass-strong 小胶囊）。最近生成的图卡用滚动时间线（`scroll-rise`，`animation-timeline: view()`）从略低略淡升到原位，和滚动位置绑定；不支持的浏览器和减少动效时直接显示。长列表滚过 1.5 屏后出现「回到顶部」磨砂圆钮。
 
 ## Shapes
 

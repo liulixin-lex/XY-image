@@ -8,6 +8,8 @@ const mockPush = vi.fn();
 const mockReplace = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({ push: mockPush, replace: mockReplace })),
+  // The 作品 tabs above the title mark the open page.
+  usePathname: vi.fn(() => "/projects"),
 }));
 
 const mockAuthValue = {

@@ -59,6 +59,11 @@ export type AccountPreferences = {
    * reject it in updates.
    */
   default_chat_provider_id?: string | null;
+  /**
+   * Keys switched off for image generation (设置 › Key, 第 56 条); every
+   * other usable image key's models are offered. Absent on older servers.
+   */
+  disabled_image_key_ids?: number[];
 };
 
 export type AccountLinks = {
@@ -113,6 +118,8 @@ export type PreferencesPatch = {
    * server lists `default_chat_provider_id` (older servers reject the field).
    */
   defaultChatProviderId?: string | null;
+  /** The full list of image keys to switch off (empty = all on). */
+  disabledImageKeyIds?: number[];
 };
 
 // ---------------------------------------------------------------------------

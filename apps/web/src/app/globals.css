@@ -138,23 +138,28 @@
     --well: #f0ecee;
     --fg: #24212b;
     --fg-soft: #5c5766;
-    --fg-muted: #6f6a78;
+    /* 第 56 条 contrast pass: muted text, coral text, warn and ok reach
+       4.5:1 down to the floor colour (they were 4.0–4.3 there). */
+    --fg-muted: #66626f;
     --tint: 36 33 43;
     --line: rgb(36 33 43 / 0.1);
     --line-strong: rgb(36 33 43 / 0.18);
-    --acc: #e5533d;
-    --acc-hover: #d6452f;
+    /* Coral one step deeper than F2's #e5533d (same 8° hue): white labels on
+       small coral buttons read at 4.6:1 instead of 3.7:1. The brand mark
+       keeps the original coral. */
+    --acc: #d4412a;
+    --acc-hover: #c2361f;
     --acc-ink: #ffffff;
-    --acc-text: #bf3b2a;
-    --acc-soft: rgb(229 83 61 / 0.11);
-    --acc-glow: rgb(229 83 61 / 0.42);
+    --acc-text: #b23727;
+    --acc-soft: rgb(212 65 42 / 0.11);
+    --acc-glow: rgb(212 65 42 / 0.4);
     /* Coral for text on an inked (bg-fg) surface. */
     --acc-inverse: #ff8068;
     --alert: #b4233f;
     --alert-wash: rgb(180 35 63 / 0.09);
-    --warn: #b9560f;
+    --warn: #9f4a0d;
     --warn-wash: rgb(185 86 15 / 0.1);
-    --ok: #1f8a5b;
+    --ok: #19714b;
     --ok-wash: rgb(31 138 91 / 0.11);
     /* Ambient pair, sampled from the image on show (defaults: coral / berry). */
     --amb: 224 122 102;
@@ -166,6 +171,11 @@
     --glass: rgb(255 255 255 / 0.62);
     --glass-strong: rgb(255 255 255 / 0.86);
     --glass-highlight: rgb(255 255 255 / 0.95);
+    /* Glass edge and sheen: a hairline that catches the light all round and
+       a soft top-lit gradient, so frosted pieces read as material, not as
+       a flat translucent box. */
+    --glass-edge: rgb(255 255 255 / 0.55);
+    --glass-sheen: rgb(255 255 255 / 0.45);
     /* Shadows are tinted to the room (warm graphite), never pure black. */
     --shadow: rgb(84 52 60 / 0.14);
     --shadow-2: rgb(84 52 60 / 0.26);
@@ -248,6 +258,8 @@
     --glass: rgb(40 36 48 / 0.58);
     --glass-strong: rgb(37 34 44 / 0.9);
     --glass-highlight: rgb(255 255 255 / 0.1);
+    --glass-edge: rgb(255 255 255 / 0.07);
+    --glass-sheen: rgb(255 255 255 / 0.05);
     --shadow: rgb(0 0 0 / 0.35);
     --shadow-2: rgb(0 0 0 / 0.58);
 
@@ -374,33 +386,100 @@
    in-flow panel there is only the room's smooth gradient, which a blur
    leaves unchanged, while every visible blurred panel had to be re-filtered
    on each scroll frame (measured: compositing work about halved without it). */
+/* Dark frosted glass for controls laid over pictures (toolbars, badges,
+   icon buttons on a photo): the same in both themes, white text, a hairline
+   edge so it holds on dark and light images alike. */
+@utility glass-ink {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.08), transparent 50%), rgb(24 20 28 / 0.64);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 10px 30px -12px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+
+/* Elevation, one step per role (第 56 条 pass): glass panels rest on the
+   room (e1), floating controls hover over pictures (e2), menus and dialogs
+   sit above everything (e3). Each step lengthens and softens the shadow;
+   the lit top edge and the hairline edge are the same on all three. */
 @utility glass {
-  background: var(--glass);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 38%), var(--glass);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-edge),
     0 1px 2px var(--shadow),
     0 24px 48px -28px var(--shadow-2);
 }
 /* Frosted glass for controls floating over pictures or the canvas, where
    the blur keeps them legible. Keep it to small, fixed or overlaid pieces. */
 @utility glass-float {
-  background: var(--glass);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 45%), var(--glass);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
-    0 1px 2px var(--shadow),
-    0 24px 48px -28px var(--shadow-2);
-  backdrop-filter: blur(20px) saturate(125%);
-  -webkit-backdrop-filter: blur(20px) saturate(125%);
+    inset 0 0 0 1px var(--glass-edge),
+    0 2px 6px -1px var(--shadow),
+    0 24px 48px -24px var(--shadow-2);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
 }
 /* Denser glass for popovers, menus and dialogs that sit over busy content. */
 @utility glass-strong {
-  background: var(--glass-strong);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 40%), var(--glass-strong);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-edge),
     0 4px 12px -2px var(--shadow),
     0 30px 70px -24px var(--shadow-2);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+/*
+ * Progressive blur under the sticky top bar (第 56 条): instead of a frosted
+ * band with a hard line, the page dissolves into the bar — three stacked
+ * backdrop blurs, each masked to a deeper band, plus a wall-coloured veil
+ * that fades out 32 px below the bar. The layer only fades in (opacity)
+ * once the page scrolls; blur values never animate.
+ */
+@utility progressive-veil {
+  position: absolute;
+  inset: 0 0 -32px 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms var(--ease-out-quart);
+  background: linear-gradient(
+    180deg,
+    /* Dense under the bar (labels stay legible over any picture, blur or
+       not), then the 32 px tail dissolves into the page. */
+    color-mix(in srgb, var(--ground) 92%, transparent) 0%,
+    color-mix(in srgb, var(--ground) 86%, transparent) 66%,
+    color-mix(in srgb, var(--ground) 40%, transparent) 84%,
+    transparent 100%
+  );
+  & > i {
+    position: absolute;
+    inset: 0;
+  }
+  & > i:nth-child(1) {
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    mask-image: linear-gradient(180deg, #000 0%, #000 72%, transparent 100%);
+  }
+  & > i:nth-child(2) {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 78%);
+  }
+  & > i:nth-child(3) {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    mask-image: linear-gradient(180deg, #000 0%, #000 38%, transparent 60%);
+  }
+  [data-scrolled] > & {
+    opacity: 1;
+  }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-float,
@@ -413,6 +492,11 @@
   .glass-float,
   .glass-strong {
     background: var(--panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-ink {
+    background: rgb(24 20 28 / 0.9);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -432,15 +516,48 @@
   & .glass-strong {
     background: var(--panel);
   }
+  & .glass-ink {
+    background: rgb(24 20 28 / 0.86);
+  }
   & header[data-scrolled] {
     background-color: var(--ground);
   }
 }
 @media (prefers-reduced-transparency: reduce) {
+  .progressive-veil {
+    inset: 0;
+    background: var(--ground);
+  }
   header[data-scrolled] {
     background-color: var(--ground);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+}
+
+/*
+ * Scroll-following rise (第 56 条, 最近生成 tiles): as a tile scrolls into
+ * view it settles from slightly low and faint to its place, tied to the
+ * scroll position, not a timer. Browsers without view timelines, and
+ * visitors who ask for less motion, see the tiles as they are.
+ */
+@keyframes scroll-rise {
+  from {
+    opacity: 0.4;
+    transform: translateY(22px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility scroll-rise {
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: scroll-rise both cubic-bezier(0.16, 1, 0.3, 1);
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
   }
 }
 

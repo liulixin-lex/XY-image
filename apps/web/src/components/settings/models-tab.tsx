@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Default models, plus the user's own chat providers. The image list depends
- * on the selected image key; the chat list merges the chat key's models with
- * the user's providers (lib/chat-models.ts).
+ * Default models, plus the user's own chat providers. The image list holds
+ * the models of every image key that is on, grouped by key (第 56 条); the
+ * default is a (key, model) pair. The chat list merges the chat key's models
+ * with the user's providers (lib/chat-models.ts).
  *
  * The default chat model lives only in account preferences (bare model +
  * provider id; null = main site); the agent runtime resolves it from there
@@ -21,6 +22,13 @@ import {
 } from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
 import { describeCapabilities, modelCapabilities } from "@/lib/image-model-meta";
+import {
+  findModel,
+  imageModelOptions,
+  keyLabel,
+  modelRef,
+  spansSeveralKeys,
+} from "@/lib/image-model-ref";
 
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
@@ -43,15 +51,23 @@ export function ModelsTab() {
   const currentChat = preferredChatModelId(prefs);
   const chatSelected = chatModels.find((m) => m.id === currentChat) ?? null;
   const chatOptions = useMemo(() => chatPickerOptions(chatModels), [chatModels]);
-  const imageValue =
-    prefs?.default_image_model && imageModels.some((m) => m.id === prefs.default_image_model)
-      ? prefs.default_image_model
-      : null;
+  const imageDefault = prefs?.default_image_model
+    ? findModel(imageModels, { id: prefs.default_image_model, keyId: prefs.image_key_id })
+    : null;
+  const imageValue = imageDefault ? modelRef(imageDefault) : null;
+  const severalKeys = spansSeveralKeys(imageModels);
 
-  const saveImage = async (id: string) => {
+  const saveImage = async (ref: string) => {
+    const picked = findModel(imageModels, ref);
+    if (!picked) return;
     setSaving("image");
     try {
-      await updatePreferences({ defaultImageModel: id });
+      // The default key moves with the model when it is on another key.
+      await updatePreferences(
+        picked.keyId && picked.keyId !== prefs?.image_key_id
+          ? { imageKeyId: picked.keyId, defaultImageModel: picked.id }
+          : { defaultImageModel: picked.id },
+      );
       success("默认生图模型已保存");
     } catch (error) {
       report(error);
@@ -87,17 +103,12 @@ export function ModelsTab() {
           error={image.error}
           loading={image.loading && imageModels.length === 0}
           empty={imageModels.length === 0}
-          emptyText="当前生图 Key 没有可用的生图模型。"
+          emptyText="开着的生图 Key 里没有可用的生图模型。"
         >
           <Picker
             value={imageValue}
             onValueChange={(v) => void saveImage(v)}
-            options={imageModels.map((m) => ({
-              value: m.id,
-              text: m.displayName,
-              label: m.displayName,
-              description: `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
-            }))}
+            options={imageModelOptions(imageModels)}
             ariaLabel="默认生图模型"
             placeholder="未设置（使用列表第一个）"
             disabled={saving === "image"}
@@ -106,10 +117,12 @@ export function ModelsTab() {
           />
           <ul className="mt-6 max-w-xl divide-y divide-line border-y border-line">
             {imageModels.map((m) => (
-              <li key={m.id} className="flex items-center gap-4 py-2.5 text-[13px]">
+              <li key={modelRef(m)} className="flex items-center gap-4 py-2.5 text-[13px]">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-fg">{m.displayName}</span>
-                  <span className="block truncate text-[12px] text-fg-muted">{m.description}</span>
+                  <span className="block truncate text-[12px] text-fg-muted">
+                    {severalKeys ? `${keyLabel(m)} · ${m.description}` : m.description}
+                  </span>
                 </span>
                 <span className="data-label shrink-0 text-fg-soft">
                   {describeCapabilities(modelCapabilities(m))}
