@@ -114,7 +114,7 @@ export function SessionSelector({
         </button>
 
         {open && (
-          <div className="glass-strong absolute top-full left-0 z-50 mt-1.5 w-[280px] overflow-hidden rounded-[14px]">
+          <div className="glass-menu absolute top-full left-0 z-50 mt-1.5 w-[280px] overflow-hidden rounded-[14px]">
             <div className="px-3 pt-3 pb-2">
               <p className="mb-2 text-[12px] font-semibold text-fg">历史对话</p>
               <div className="relative">

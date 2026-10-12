@@ -187,6 +187,7 @@ components:
 
 # Design System: GGUU AI IMAGE
 
+<!-- 2026-10-12 agent01（第 57 条）：弹层（下拉、模型选择、菜单、浮层）统一用 glass-menu（面板色 95% + 28px 模糊），glass-strong 提到 92% / 94%；工作台统一页边距 gutter-x（顶栏、页头、各页、生图页对齐到同一条线，生图页宽度和顶栏一样 1600）；图片说明用 veil-bottom（自下而上的渐进模糊 + 暗纱），横排两端用 edge-blur，竖向滚动区两端用 fade-y / fade-b；弹窗背景 10px 磨砂。顶栏「画布」「作品」都是直接链接。 -->
 <!-- 2026-10-12 agent01（第 56 条打磨）：亮色珊瑚加深一档 #e5533d → #d4412a（同 8° 色相，白字从 3.7:1 到 4.6:1；品牌标保留原珊瑚）；弱字、珊瑚字、待核对橙、成功绿压到地面色上也 ≥4.5:1；玻璃加发丝边和顶光渐变，新增 glass-ink（压在图片上的深色磨砂）；顶栏改成渐进模糊；最近生成的图卡随滚动入场。 -->
 <!-- 2026-10-10 agent01 按 impeccable document 流程，从 F2（海报 · 柔和版）已上线的代码重写：apps/web/src/app/globals.css、components/ui/{button-variants,select,poster-tabs,dialog}.tsx、components/app-sidebar.tsx、components/landing/*、components/studio/*、components/brand/brand-mark.tsx。替换 10-08 的「夜色光场」版本。改 token 时同步本文件，再跑 `node scripts/build-design-sidecar.mjs` 重新生成 .impeccable/design.json；方向合同在 .impeccable/surfaces/src-app-page-tsx.md。 -->
 
@@ -265,6 +266,8 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 
 ## Layout
 
+**页边距 gutter-x（第 57 条）**：手机 16px、平板 32px、桌面 `clamp(20px, 2.4vw, 40px)`。顶栏、页头、首页、作品、画布项目、技能、品牌套件、设置、生图页都用它，内容宽度都是 1600px：字标、页标题和内容左边对齐在同一条线上。
+
 房间模型：页面上半是墙，下半是地面，落地页首屏的地平线大约在 y≈742（1440×900）；斜切大图立在地平线上，带接触阴影和倒影。工作台不画地平线，只保留墙到地面的渐变和环境色光晕。
 
 - **容器**：内容最宽 1600px（生图页 1680px），左右边距手机 16px、平板 32px、桌面 clamp(20px, 2.4vw, 40px)。
@@ -286,6 +289,7 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 - **Picked**（`0 0 0 3px var(--ground), 0 0 0 5px var(--acc), 0 26px 46px -22px var(--acc-glow)`）：被选中的那张图。
 - **Lit**（亮：接触阴影加长投影；暗：再加一圈环境色光晕 `0 0 140px -30px rgb(var(--amb) / 0.6)`）：立在房间里的大图和编辑中的原图。
 - **Glass / Glass float / Glass strong**（e1 / e2 / e3）：三档共用同一种材质——顶边 1px 高光、一圈发丝边（`--glass-edge`，亮 白 55% / 暗 白 7%）、自上而下的顶光渐变（`--glass-sheen`）；`glass` 不模糊，`glass-float` `blur(20px) saturate(150%)`，`glass-strong` `blur(24px) saturate(150%)`，阴影一档比一档长、软。系统要求减少透明时退回实色面板。
+- **Glass menu**（`glass-menu`）：下拉、模型选择器、菜单、浮层这类会盖在文字上的弹层。面板色 95% 加 `blur(28px) saturate(170%)`，后面的页面只剩一点色调，看不出字（第 57 条：62% 的玻璃让背后的大标题和选项叠在一起）。弹窗用 `glass-strong`（亮 92% / 暗 94%）。
 - **Glass ink**（`glass-ink`）：压在图片上的深色磨砂（结果卡工具条、图上的角标和图标按钮），两套主题都是白字，`blur(14px) saturate(160%)` 加发丝边；lite 档位换成 86% 实底。
 - **Progressive veil**（`progressive-veil`）：顶栏的渐进模糊。页面滚到顶栏下面时，三层逐级加深的背景模糊（2 / 6 / 14px，各自用渐变遮罩）加一层墙色薄纱，往下 32px 渐隐，没有硬分隔线；只淡入淡出整层，不动画模糊值。lite 档位和减少透明时退回实色墙。
 
@@ -293,6 +297,11 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 **The Lit Not Lined Rule.** 用光和阴影分层，不用硬描边。描边只在输入框、分段选项这类需要「边界可点」的地方出现，并且是墨色 10–18% 的细线。
 
 **The Opaque Workbench Rule.** 要在上面精细操作的弹窗（局部重绘 / 扩图编辑器）用实色面板，不能让背后的结果列表透出来。
+
+### Edges and veils
+- **veil-bottom**：压在图片上的说明（作品页图块悬停时）：三层逐级加深的背景模糊加一层自下而上的暗纱，白字在任何图上都清楚；平时不显示（visibility），不占模糊开销。
+- **edge-blur**：横排（首页最近生成）还有内容的一端，渐进模糊加墙色渐隐，不硬切；两端由 `data-more-left` / `data-more-right` 控制。
+- **fade-y / fade-b**：竖向滚动区（生图页记录栏、设置面板底部）两端 28px 渐隐，只用遮罩不模糊。
 
 ### Scroll
 - **跟随滚动**：吸顶的只有顶栏、生图页的设置面板和最近生成的来源筛选（吸住后变成 glass-strong 小胶囊）。最近生成的图卡用滚动时间线（`scroll-rise`，`animation-timeline: view()`）从略低略淡升到原位，和滚动位置绑定；不支持的浏览器和减少动效时直接显示。长列表滚过 1.5 屏后出现「回到顶部」磨砂圆钮。

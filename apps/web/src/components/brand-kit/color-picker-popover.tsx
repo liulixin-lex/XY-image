@@ -101,7 +101,7 @@ export function ColorPickerPopover({
     <div
       ref={containerRef}
       className={cn(
-        "glass-strong absolute z-50 w-[260px] rounded-[16px] p-3",
+        "glass-menu absolute z-50 w-[260px] rounded-[16px] p-3",
         "flex flex-col gap-2.5",
       )}
     >

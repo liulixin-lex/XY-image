@@ -95,7 +95,7 @@ export default function HomePage() {
   if (creating) return <LoadingScreen label="正在准备画布" />;
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 pt-4 pb-20 sm:px-8 md:pt-10 lg:px-[clamp(20px,2.4vw,40px)]">
+    <div className="mx-auto max-w-[1600px] pt-4 pb-20 gutter-x md:pt-10">
       <section className="grid gap-x-[clamp(40px,5vw,88px)] gap-y-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,860px)_340px] xl:justify-between">
         <div className="min-w-0">
           {/* Two phrases that never break inside: the line can only wrap

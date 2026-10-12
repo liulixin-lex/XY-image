@@ -27,7 +27,7 @@ export function HistoryRail({
   return (
     <nav aria-label="记录" className={cn("glass flex flex-col rounded-[22px] py-4", className)}>
       <p className="poster-label px-3 text-center text-[15px] leading-none text-fg">记录</p>
-      <ol className="mt-4 flex min-h-0 flex-1 flex-col items-center gap-2.5 overflow-y-auto px-2 pb-1 scrollbar-hidden">
+      <ol className="mt-2 flex min-h-0 flex-1 flex-col items-center gap-2.5 overflow-y-auto px-2 py-3 scrollbar-hidden fade-y">
         {groups.map((group) => {
           const picture = group.jobs.find((job) => job.status === "succeeded" && job.url);
           const running = group.jobs.some(isActiveJob);

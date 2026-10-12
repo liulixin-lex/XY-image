@@ -235,7 +235,7 @@ export default function StudioPage() {
   const noKeySelected = account.data !== null && account.data.preferences.image_key_id === null;
 
   return (
-    <div className="mx-auto grid max-w-[1680px] grid-cols-1 gap-6 px-4 pt-2 sm:px-6 lg:grid-cols-[minmax(320px,368px)_minmax(0,1fr)] lg:gap-8 lg:px-[clamp(16px,2vw,32px)] xl:grid-cols-[368px_minmax(0,1fr)_84px]">
+    <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-6 pt-2 gutter-x lg:grid-cols-[minmax(320px,368px)_minmax(0,1fr)] lg:gap-8 xl:grid-cols-[368px_minmax(0,1fr)_84px]">
       <h1 className="sr-only">生图</h1>
 
       <div className="min-w-0 lg:sticky lg:top-[84px] lg:h-[calc(100dvh-100px)] lg:self-start">

@@ -169,7 +169,8 @@
     --live: var(--acc);
     /* Frosted glass: only for controls floating over imagery or the room. */
     --glass: rgb(255 255 255 / 0.62);
-    --glass-strong: rgb(255 255 255 / 0.86);
+    /* 第 57 条: denser, so dialogs and bars stay legible over any page. */
+    --glass-strong: rgb(255 255 255 / 0.92);
     --glass-highlight: rgb(255 255 255 / 0.95);
     /* Glass edge and sheen: a hairline that catches the light all round and
        a soft top-lit gradient, so frosted pieces read as material, not as
@@ -256,7 +257,7 @@
     --ok-wash: rgb(95 211 161 / 0.12);
     --haze: 0.34;
     --glass: rgb(40 36 48 / 0.58);
-    --glass-strong: rgb(37 34 44 / 0.9);
+    --glass-strong: rgb(37 34 44 / 0.94);
     --glass-highlight: rgb(255 255 255 / 0.1);
     --glass-edge: rgb(255 255 255 / 0.07);
     --glass-sheen: rgb(255 255 255 / 0.05);
@@ -400,6 +401,128 @@
   -webkit-backdrop-filter: blur(14px) saturate(160%);
 }
 
+/*
+ * One page gutter for the workspace (第 57 条 视觉对齐): the top bar, page
+ * headers, the studio and every page body share it, so the wordmark, the
+ * titles and the content start on the same line at every width.
+ */
+@utility gutter-x {
+  padding-inline: 16px;
+  @media (width >= 40rem) {
+    padding-inline: 32px;
+  }
+  @media (width >= 64rem) {
+    padding-inline: clamp(20px, 2.4vw, 40px);
+  }
+}
+
+/*
+ * Progressive blur at the bottom of a picture (captions over images, 第 57
+ * 条): three backdrop blurs, each masked to a lower band, under a dark veil
+ * that fades up. White text on it reads on any picture. Shown on hover or
+ * focus only (visibility, so hidden ones cost no blur).
+ */
+@utility veil-bottom {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 62%;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgb(18 14 22 / 0.72) 0%, rgb(18 14 22 / 0.32) 55%, transparent 100%);
+  & > i {
+    position: absolute;
+    inset: 0;
+  }
+  & > i:nth-child(1) {
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    mask-image: linear-gradient(0deg, #000 0%, #000 60%, transparent 100%);
+  }
+  & > i:nth-child(2) {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    mask-image: linear-gradient(0deg, #000 0%, #000 40%, transparent 72%);
+  }
+  & > i:nth-child(3) {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    mask-image: linear-gradient(0deg, #000 0%, #000 22%, transparent 48%);
+  }
+}
+
+/*
+ * Progressive blur at the ends of a horizontal strip (首页最近生成): where
+ * more pictures wait off screen, they blur and fade into the room instead
+ * of being cut by a hard edge. `data-more-left` / `data-more-right` on the
+ * strip's wrapper switch each end on.
+ */
+@utility edge-blur {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 72px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out-quart);
+  background: linear-gradient(90deg, var(--ground) 0%, color-mix(in srgb, var(--ground) 55%, transparent) 45%, transparent 100%);
+  & > i {
+    position: absolute;
+    inset: 0;
+  }
+  & > i:nth-child(1) {
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    mask-image: linear-gradient(90deg, #000 0%, #000 55%, transparent 100%);
+  }
+  & > i:nth-child(2) {
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+    mask-image: linear-gradient(90deg, #000 0%, #000 30%, transparent 60%);
+  }
+  &[data-side="right"] {
+    right: 0;
+    transform: scaleX(-1);
+  }
+  &[data-side="left"] {
+    left: 0;
+  }
+  [data-more-left] > &[data-side="left"],
+  [data-more-right] > &[data-side="right"] {
+    opacity: 1;
+  }
+}
+
+/*
+ * Soft ends on a vertical scroller (studio 记录 rail, the settings panel):
+ * items fade out over 28 px instead of being cut. Mask only, no blur, so it
+ * costs nothing while scrolling.
+ */
+@utility fade-y {
+  mask-image: linear-gradient(180deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+/* Bottom end only, for a panel whose top is its own header. */
+@utility fade-b {
+  mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent 100%);
+}
+
+/*
+ * Frosted menus (第 57 条): dropdowns, pickers, popovers and listboxes. They
+ * open over text (big page titles, the feed), where see-through glass let
+ * the letters behind run into the options. 95 % of the panel colour with a
+ * strong blur: the page behind reads as a soft tint, never as letters.
+ */
+@utility glass-menu {
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 40%),
+    color-mix(in srgb, var(--panel) 95%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-edge),
+    0 0 0 1px var(--line),
+    0 6px 16px -4px var(--shadow),
+    0 32px 72px -24px var(--shadow-2);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+}
+
 /* Elevation, one step per role (第 56 条 pass): glass panels rest on the
    room (e1), floating controls hover over pictures (e2), menus and dialogs
    sit above everything (e3). Each step lengthens and softens the shadow;
@@ -483,6 +606,7 @@
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-float,
+  .glass-menu,
   .glass-strong {
     background: var(--panel);
   }
@@ -490,6 +614,7 @@
 @media (prefers-reduced-transparency: reduce) {
   .glass,
   .glass-float,
+  .glass-menu,
   .glass-strong {
     background: var(--panel);
     backdrop-filter: none;
@@ -513,6 +638,7 @@
     -webkit-backdrop-filter: none !important;
   }
   & .glass-float,
+  & .glass-menu,
   & .glass-strong {
     background: var(--panel);
   }
@@ -527,6 +653,10 @@
   .progressive-veil {
     inset: 0;
     background: var(--ground);
+  }
+  .veil-bottom > i,
+  .edge-blur > i {
+    display: none;
   }
   header[data-scrolled] {
     background-color: var(--ground);

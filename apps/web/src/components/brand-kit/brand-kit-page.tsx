@@ -388,7 +388,7 @@ function BrandKitFrame({ children }: { children: ReactNode }) {
         description="标志、颜色、字体和品牌说明，助手出图时会参考。"
         className="w-full shrink-0 pb-5"
       />
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 sm:px-8 md:min-h-0 md:flex-1 md:flex-row lg:px-12">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 gutter-x md:min-h-0 md:flex-1 md:flex-row">
         {children}
       </div>
     </div>

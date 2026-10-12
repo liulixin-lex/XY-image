@@ -533,7 +533,7 @@ export const Composer = forwardRef<
       <div
         ref={scrollRef}
         className={cn(
-          "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pt-5 pb-4 scrollbar-hidden sm:px-6",
+          "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pt-5 pb-6 scrollbar-hidden sm:px-6 lg:fade-b",
           moreBelow && "[mask-image:linear-gradient(to_bottom,#000_calc(100%-56px),transparent)]",
         )}
       >
