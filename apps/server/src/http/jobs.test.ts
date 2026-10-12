@@ -15,7 +15,7 @@ const BATCH = "8f14e45f-ceea-4e7a-9f6c-1d2b3c4d5e6f";
 
 function job(index: number, payload: Record<string, unknown>) {
   return {
-    id: `00000000-0000-4000-8000-00000000000${index}`,
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     workspace_id: "00000000-0000-4000-8000-0000000000aa",
     project_id: null,
     canvas_id: null,
@@ -183,6 +183,8 @@ describe("studio batch routes", () => {
 
   it("returns the pictures that were queued when a later one fails", async () => {
     const { app, jobService } = await route();
+    // Created 8 at a time: the 2nd of the first chunk fails, the other 7 of
+    // that chunk are real jobs and come back; the next chunks are not tried.
     jobService.createJob
       .mockImplementationOnce(async (_user, input) => job(0, input.payload))
       .mockRejectedValueOnce(
@@ -191,20 +193,41 @@ describe("studio batch routes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/jobs/image-generation/batch",
-      payload: { prompt: "海边日落", count: 4 },
+      payload: { prompt: "海边日落", count: 20 },
     });
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({ requested: 4 });
-    expect(response.json().jobs).toHaveLength(1);
-    expect(jobService.createJob).toHaveBeenCalledTimes(2);
+    expect(response.json()).toMatchObject({ requested: 20 });
+    expect(response.json().jobs).toHaveLength(7);
+    expect(jobService.createJob).toHaveBeenCalledTimes(8);
+  });
+
+  it("queues hundreds from one click, numbered in order (第 57 条)", async () => {
+    const { app, jobService } = await route();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: {
+        prompt: "海边日落",
+        targets: [
+          { model: "gpt-image-2", count: 120 },
+          { model: "nano-banana-2.1", count: 80 },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().jobs).toHaveLength(200);
+    const indexes = jobService.createJob.mock.calls.map((call) => Number(call[1].payload.batch_index));
+    expect(new Set(indexes).size).toBe(200);
+    expect(Math.max(...indexes)).toBe(199);
   });
 
   it("refuses a batch over the limit or past the pending cap", async () => {
     const { app, billing } = await route();
+    // Only the runaway guard (IMAGE_REQUEST_MAX = 500) is left.
     const tooMany = await app.inject({
       method: "POST",
       url: "/api/jobs/image-generation/batch",
-      payload: { prompt: "海边日落", count: 5 },
+      payload: { prompt: "海边日落", count: 501 },
     });
     expect(tooMany.statusCode).toBe(400);
     billing.prepareImageJobs.mockRejectedValueOnce(
@@ -262,13 +285,12 @@ describe("studio batch routes", () => {
       { prompt: "x", model: "a", targets: [{ model: "b", count: 1 }] },
       // neither
       { prompt: "x" },
-      // more than IMAGE_REQUEST_MAX pictures
+      // more than IMAGE_REQUEST_MAX (500) pictures
       {
         prompt: "x",
         targets: [
-          { model: "a", count: 4 },
-          { model: "b", count: 4 },
-          { model: "c", count: 1 },
+          { model: "a", count: 400 },
+          { model: "b", count: 101 },
         ],
       },
       // the same model through the same key twice

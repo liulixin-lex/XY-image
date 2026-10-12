@@ -7,8 +7,8 @@
  * a long session never loses what it already showed.
  *
  * Billing rules this hook enforces:
- * - One click sends one batch request (1 to IMAGE_BATCH_MAX pictures, each
- *   its own job and charge); the submit is locked while in flight.
+ * - One click sends one batch request (any number of pictures since 第 57 条,
+ *   each its own job and charge); the submit is locked while in flight.
  * - Nothing is re-submitted automatically (no retry on any error).
  * - Pictures still waiting at the server's dispatch gate (queued, unsent)
  *   can be canceled for free; sent ones run to the end.
@@ -37,13 +37,6 @@ import {
 } from "@/lib/server-api";
 
 const POLL_MS = 4000;
-/**
- * Mirrors the server's LOOMIC_MAX_PENDING_IMAGE_JOBS (queued + generating
- * per user) and LOOMIC_MAX_CONCURRENT_JOBS (sent at once). The server is the
- * authority; these only shape the button and its explanation.
- */
-export const MAX_PENDING_JOBS = 8;
-export const MAX_IN_FLIGHT = 2;
 
 /** One model × count, or several models side by side (`targets`, 第 56 条). */
 export type StudioSubmitInput = CreateImageBatchInput;
@@ -140,13 +133,6 @@ export function useStudioJobs() {
   }, [session?.user.id]);
 
   const activeCount = useMemo(() => jobs.filter(isActiveJob).length, [jobs]);
-  // Jobs holding a generation slot. A saving job is already paid and only
-  // waits for storage; the server does not count it toward the limit either.
-  const busyCount = useMemo(
-    () => jobs.filter((job) => isActiveJob(job) && !isSavingJob(job)).length,
-    [jobs],
-  );
-
   // Poll while something develops; pause when the tab is hidden.
   useEffect(() => {
     if (activeCount === 0) return;
@@ -292,7 +278,6 @@ export function useStudioJobs() {
     cancel,
     cancelBatch,
     activeCount,
-    busyCount,
     justDeveloped,
   };
 }

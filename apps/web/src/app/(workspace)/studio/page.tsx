@@ -260,7 +260,6 @@ export default function StudioPage() {
             modelsLoading={models.data === null || models.loading}
             onSubmit={studio.submit}
             submitting={studio.submitting}
-            pendingCount={studio.busyCount}
             className="lg:h-full"
           />
         )}
@@ -341,7 +340,6 @@ export default function StudioPage() {
       <EditDialog
         target={editing}
         models={models.data ?? []}
-        pendingCount={studio.busyCount}
         submitting={studio.submitting}
         onSubmit={studio.submit}
         onClose={() => setEditing(null)}

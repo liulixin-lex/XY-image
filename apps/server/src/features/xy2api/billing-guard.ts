@@ -99,9 +99,10 @@ export class BillingGuard {
    * to the model's closest supported values, see resolveImageParams). The
    * key is `input.key_id`, or the default key / the first enabled key that
    * has the model (KeyService.resolveImageTarget, 第 56 条). Also checks that
-   * the user stays within LOOMIC_MAX_PENDING_IMAGE_JOBS queued or in flight.
-   * How many actually reach the main site at once is the worker's dispatch
-   * gate (LOOMIC_MAX_CONCURRENT_JOBS); the rest wait unsent.
+   * the user stays within LOOMIC_MAX_PENDING_IMAGE_JOBS queued or in flight
+   * (0 = no limit, the default since 第 57 条). How many actually reach the
+   * main site at once is the worker's dispatch gate
+   * (LOOMIC_MAX_CONCURRENT_JOBS, also 0 = no limit); the rest wait unsent.
    * `sendsNow` is for a route that sends from the API process without the
    * worker (the sync agent route): it keeps the old, stricter rule that the
    * user has fewer than LOOMIC_MAX_CONCURRENT_JOBS queued or running.
@@ -201,6 +202,15 @@ export class BillingGuard {
       } catch (error) {
         if (error instanceof BillingGuardError) throw error;
       }
+    }
+    if (limit <= 0) {
+      if (prepared.length > 1 || count > 8)
+        console.info(
+          `[billing-guard] user ${user.id}: ${count} picture(s) over ${prepared.length} model(s), no job limit (${prepared
+            .map((p) => `${p.model}@${p.keyId}×${p.count}`)
+            .join(", ")})`,
+        );
+      return prepared;
     }
     const { count: pending, error } = await this.getAdmin()
       .from("background_jobs")

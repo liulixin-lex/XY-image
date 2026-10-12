@@ -84,13 +84,13 @@ export async function registerJobRoutes(
   });
 
   // POST /api/jobs/image-generation/batch — pictures from one description:
-  // 1 to IMAGE_BATCH_MAX of one model, or `targets` (多模型, 第 56 条):
-  // several models side by side, possibly through different main-site keys,
-  // up to IMAGE_REQUEST_MAX in all. Each picture is its own job and its own
-  // main-site request (and charge); they share batch_id in the payload and
-  // are numbered across the targets. All of them are admitted against
-  // LOOMIC_MAX_PENDING_IMAGE_JOBS at once; the worker's dispatch gate then
-  // sends at most LOOMIC_MAX_CONCURRENT_JOBS at a time.
+  // `count` of one model, or `targets` (多模型, 第 56 条): several models side
+  // by side, possibly through different main-site keys. No product limit
+  // since 第 57 条; IMAGE_REQUEST_MAX only guards against runaway requests.
+  // Each picture is its own job and its own main-site request (and charge);
+  // they share batch_id in the payload and are numbered across the targets.
+  // LOOMIC_MAX_PENDING_IMAGE_JOBS / LOOMIC_MAX_CONCURRENT_JOBS, when set
+  // (0 = no limit), still apply.
   app.post("/api/jobs/image-generation/batch", async (request, reply) => {
     try {
       const user = await options.auth.authenticate(request);
@@ -117,9 +117,9 @@ export async function registerJobRoutes(
           payload,
           targets,
         );
-        const created: BackgroundJob[] = [];
-        let index = 0;
-        queue: for (const target of prepared) {
+        // One job per picture, numbered across the targets. Created a few
+        // at a time (a click can ask for hundreds since 第 57 条), in order.
+        const plan = prepared.flatMap((target) => {
           const input = imagePayloadSchema.parse({
             ...payload,
             model: target.model,
@@ -127,45 +127,50 @@ export async function registerJobRoutes(
             quality: target.quality,
             aspect_ratio: target.aspect_ratio,
           });
-          for (let n = 0; n < target.count; n += 1, index += 1) {
-            try {
-              created.push(
-                await options.jobService.createJob(user, {
-                  workspaceId: viewer.workspace.id,
-                  jobType: "image_generation",
-                  xy2apiKeyId: target.keyId,
-                  ...(payload.project_id
-                    ? { projectId: payload.project_id }
-                    : {}),
-                  ...(payload.canvas_id
-                    ? { canvasId: payload.canvas_id }
-                    : {}),
-                  ...(payload.session_id
-                    ? { sessionId: payload.session_id }
-                    : {}),
-                  ...(payload.thread_id
-                    ? { threadId: payload.thread_id }
-                    : {}),
-                  payload: {
-                    ...input,
-                    ...canvasPlacement(payload, index),
-                    ...imageBatchPayloadSchema.parse({
-                      batch_id: batchId,
-                      batch_index: index,
-                      batch_size: total,
-                    }),
-                  },
-                }),
-              );
-            } catch (error) {
-              // Nothing is sent at creation, so stopping part way costs
-              // nothing: return what exists and let the page say how many.
-              if (created.length === 0) throw error;
-              console.error(
-                `[jobs] batch ${batchId}: created ${created.length} of ${total}, the rest failed to queue`,
-              );
-              break queue;
-            }
+          return Array.from({ length: target.count }, () => ({
+            keyId: target.keyId,
+            input,
+          }));
+        });
+        const create = (keyId: number, input: typeof plan[number]["input"], index: number) =>
+          options.jobService.createJob(user, {
+            workspaceId: viewer.workspace.id,
+            jobType: "image_generation",
+            xy2apiKeyId: keyId,
+            ...(payload.project_id ? { projectId: payload.project_id } : {}),
+            ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
+            ...(payload.session_id ? { sessionId: payload.session_id } : {}),
+            ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
+            payload: {
+              ...input,
+              ...canvasPlacement(payload, index),
+              ...imageBatchPayloadSchema.parse({
+                batch_id: batchId,
+                batch_index: index,
+                batch_size: total,
+              }),
+            },
+          });
+        const created: BackgroundJob[] = [];
+        for (let start = 0; start < plan.length; start += CREATE_CHUNK) {
+          const chunk = plan.slice(start, start + CREATE_CHUNK);
+          const results = await Promise.allSettled(
+            chunk.map((item, offset) => create(item.keyId, item.input, start + offset)),
+          );
+          // Every job that was created is real and will be sent: keep them
+          // all (in order). Nothing is sent at creation, so stopping after a
+          // failed chunk costs nothing; the page says how many were queued.
+          for (const result of results)
+            if (result.status === "fulfilled") created.push(result.value);
+          const failure = results.find((r) => r.status === "rejected") as
+            | PromiseRejectedResult
+            | undefined;
+          if (failure) {
+            if (created.length === 0) throw failure.reason;
+            console.error(
+              `[jobs] batch ${batchId}: created ${created.length} of ${total}, the rest failed to queue`,
+            );
+            break;
           }
         }
         return created;
@@ -285,6 +290,9 @@ export async function registerJobRoutes(
 const batchParamsSchema = z.object({ batchId: z.string().uuid() });
 
 /** GET /api/jobs: filters and the page (before = created_at of the last job seen). */
+/** Jobs of one batch created at once (database round trips in parallel). */
+const CREATE_CHUNK = 8;
+
 const jobListQuerySchema = z.object({
   status: z.string().max(40).optional(),
   job_type: z.string().max(40).optional(),

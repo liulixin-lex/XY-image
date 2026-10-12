@@ -69,6 +69,9 @@ export async function processMessage(
   // queued (still free to cancel) and comes back in a few seconds; nothing
   // is counted as an attempt. Held images (charged) and redeliveries of a
   // job already running skip it: they do not send a new request.
+  // LOOMIC_MAX_CONCURRENT_JOBS=0 (the default since 第 57 条) counts nothing
+  // but still goes through the gate: its queued → running step is what
+  // keeps a job canceled at this very moment from being sent.
   if (
     ctx.dispatchGate &&
     jobType === "image_generation" &&

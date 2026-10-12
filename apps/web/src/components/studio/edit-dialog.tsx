@@ -27,11 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { PosterTabs, posterPanelProps } from "@/components/ui/poster-tabs";
 import { Picker, Segmented } from "@/components/ui/select";
-import {
-  MAX_PENDING_JOBS,
-  type StudioSubmitInput,
-  type StudioSubmitResult,
-} from "@/hooks/use-studio-jobs";
+import { type StudioSubmitInput, type StudioSubmitResult } from "@/hooks/use-studio-jobs";
 import { useAuth } from "@/lib/auth-context";
 import type { ImageJobView } from "@/lib/image-jobs";
 import { findModel, imageModelOptions, modelRef, modelRequest } from "@/lib/image-model-ref";
@@ -75,14 +71,12 @@ export type EditTarget = { job: ImageJobView; mode: ImageEditMode };
 export function EditDialog({
   target,
   models,
-  pendingCount,
   submitting,
   onSubmit,
   onClose,
 }: {
   target: EditTarget | null;
   models: ImageModelInfo[];
-  pendingCount: number;
   submitting: boolean;
   onSubmit: (input: StudioSubmitInput) => Promise<StudioSubmitResult | null>;
   onClose: () => void;
@@ -97,7 +91,6 @@ export function EditDialog({
             source={target.job.url}
             initialMode={target.mode}
             models={models}
-            pendingCount={pendingCount}
             submitting={submitting}
             onSubmit={onSubmit}
             onClose={onClose}
@@ -113,7 +106,6 @@ function EditBody({
   source,
   initialMode,
   models,
-  pendingCount,
   submitting,
   onSubmit,
   onClose,
@@ -122,7 +114,6 @@ function EditBody({
   source: string;
   initialMode: ImageEditMode;
   models: ImageModelInfo[];
-  pendingCount: number;
   submitting: boolean;
   onSubmit: (input: StudioSubmitInput) => Promise<StudioSubmitResult | null>;
   onClose: () => void;
@@ -202,22 +193,17 @@ function EditBody({
       : null;
 
   const trimmed = prompt.trim();
-  const room = Math.max(0, MAX_PENDING_JOBS - pendingCount);
   const blockedReason = !current
-    ? "当前 Key 的模型都不支持局部重绘和扩图"
-    : room === 0
-      ? `排队和生成中的已有 ${MAX_PENDING_JOBS} 张，等前面的完成`
-      : count > room
-        ? `现在最多还能排 ${room} 张`
-        : !natural
-          ? "正在读取原图"
-          : mode === "inpaint" && !painted
-            ? "先在图上涂出要修改的地方"
-            : mode === "inpaint" && !trimmed
-              ? "写下涂抹的地方要改成什么"
-              : mode === "outpaint" && !frame
-                ? "换一个比例或放大一些，现在不会多出画面"
-                : null;
+    ? "开着的 Key 里没有支持局部重绘和扩图的模型"
+    : !natural
+      ? "正在读取原图"
+      : mode === "inpaint" && !painted
+        ? "先在图上涂出要修改的地方"
+        : mode === "inpaint" && !trimmed
+          ? "写下涂抹的地方要改成什么"
+          : mode === "outpaint" && !frame
+            ? "换一个比例或放大一些，现在不会多出画面"
+            : null;
   const busy = submitting || uploading;
   const canSubmit = !blockedReason && !busy;
 

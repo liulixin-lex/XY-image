@@ -105,16 +105,20 @@ export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 
 // --- API Request schemas ---
 
-/** Most pictures of one model in one request. */
-export const IMAGE_BATCH_MAX = 4;
-/** Most models one request can run side by side (studio 多模型, 第 56 条). */
-export const IMAGE_MODELS_PER_REQUEST_MAX = 4;
 /**
- * Most pictures one request can ask for, across its models. Each one is
- * its own job and charge; the server's pending cap (8 by default) still
- * decides how many a user can have queued at once.
+ * No product limit on how many pictures one click asks for (第 57 条: the
+ * user lifted the old 4 per model / 8 per click / 4 models caps). These are
+ * structural guards only, against a malformed or runaway request (a stuck
+ * script, a typo of extra zeros): one request holds at most this many
+ * pictures, across its models. Each picture is still its own job and its
+ * own main-site request; the server's LOOMIC_MAX_PENDING_IMAGE_JOBS and
+ * LOOMIC_MAX_CONCURRENT_JOBS (0 = no limit, the default) can cap them.
  */
-export const IMAGE_REQUEST_MAX = 8;
+export const IMAGE_REQUEST_MAX = 500;
+/** Most pictures of one model in one request (the same guard). */
+export const IMAGE_BATCH_MAX = IMAGE_REQUEST_MAX;
+/** Most models one request can run side by side (studio 多模型). */
+export const IMAGE_MODELS_PER_REQUEST_MAX = 50;
 
 /**
  * A main-site key id (xy2api api_keys.id). Several of a user's keys can serve

@@ -219,7 +219,7 @@ async function main() {
     (q) => `${q}=${CONCURRENCY_BY_QUEUE[q] ?? 1}`,
   ).join(", ");
   console.log(
-    `${tag} Started. concurrency={${concurrencyDesc}}, perUserInFlight=${env.maxConcurrentJobs}, longPollTimeout=${pollTimeoutSeconds}s`,
+    `${tag} Started. concurrency={${concurrencyDesc}}, perUserInFlight=${env.maxConcurrentJobs || "unlimited"}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
 
   while (running) {

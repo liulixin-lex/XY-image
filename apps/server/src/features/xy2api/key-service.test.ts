@@ -5,13 +5,17 @@ import { Xy2apiError } from "./errors.js";
 import { createXy2apiServices } from "./services.js";
 import { memoryDatabase } from "./test-support.js";
 
-function setup() {
+/** Per-user limits a self-hosted site may set (none by default, 第 57 条). */
+const LIMITS = { LOOMIC_MAX_PENDING_IMAGE_JOBS: "8", LOOMIC_MAX_CONCURRENT_JOBS: "2" };
+
+function setup(extra: Record<string, string> = {}) {
   const env = loadServerEnv(
     {},
     {
       XY2API_BASE_URL: "https://example.com",
       LOOMIC_SECRET_KEY: randomBytes(32).toString("base64"),
       SSO_EMAIL_DOMAIN: "sso.example.com",
+      ...extra,
     },
   );
   const db = memoryDatabase({});
@@ -277,7 +281,7 @@ describe("user key synchronization", () => {
     expect(order).toEqual([1, 2]);
   });
   it("admits a batch only while the user stays within the pending limit", async () => {
-    const fixture = setup();
+    const fixture = setup(LIMITS);
     await fixture.keys.syncKeys("user-1");
     vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 5 });
     const job = (status: string, billing_status = "none") => ({
@@ -293,7 +297,7 @@ describe("user key synchronization", () => {
       job("queued", "charged"),
       { ...job("queued"), created_by: "user-2" },
     ];
-    // 6 pending + 2 = the default limit of 8.
+    // 6 pending + 2 = the configured limit of 8.
     await expect(
       fixture.billing.prepareImageJob({ id: "user-1" }, {}, { count: 2 }),
     ).resolves.toMatchObject({ model: "gpt-image-2" });
@@ -313,6 +317,23 @@ describe("user key synchronization", () => {
       aspect_ratio: "1:1",
     });
   });
+  it("has no job limit by default: any number queued, sent now or not (第 57 条)", async () => {
+    const fixture = setup();
+    await fixture.keys.syncKeys("user-1");
+    vi.spyOn(fixture.client, "getUsage").mockResolvedValue({ balance: 5 });
+    fixture.tables.background_jobs = Array.from({ length: 40 }, () => ({
+      created_by: "user-1",
+      status: "running",
+      billing_status: "pending",
+    }));
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { count: 300 }),
+    ).resolves.toMatchObject({ model: "gpt-image-2" });
+    await expect(
+      fixture.billing.prepareImageJob({ id: "user-1" }, {}, { sendsNow: true }),
+    ).resolves.toMatchObject({ model: "gpt-image-2" });
+  });
+
   it("resolves 画质 / 质量 / 比例 per model and checks references up front", async () => {
     const fixture = setup();
     await fixture.keys.syncKeys("user-1");
@@ -358,8 +379,8 @@ describe("several image keys at once (第 56 条)", () => {
    * Key 1: GPT group (gpt-image-2). Key 2: a newer Gemini group
    * (nano-banana-2.1). Key 3: a newer GPT group that also has gpt-image-2.
    */
-  async function threeKeys() {
-    const fixture = setup();
+  async function threeKeys(extra: Record<string, string> = {}) {
+    const fixture = setup(extra);
     vi.spyOn(fixture.client, "listModels").mockImplementation(
       async (apiKey: string) =>
         apiKey.endsWith("-2")
@@ -431,7 +452,7 @@ describe("several image keys at once (第 56 条)", () => {
   });
 
   it("admits several models side by side only when all of them pass", async () => {
-    const fixture = await threeKeys();
+    const fixture = await threeKeys(LIMITS);
     const usage = vi.mocked(fixture.client.getUsage);
     const prepared = await fixture.billing.prepareImageJobs(
       { id: "user-1" },

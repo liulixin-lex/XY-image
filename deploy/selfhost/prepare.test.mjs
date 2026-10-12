@@ -84,8 +84,8 @@ test("offline preparation creates isolated credentials and a closed default netw
     assert.equal(compose.services["xy-api"].deploy.replicas, 1);
     // FINDINGS O3: memory ceilings on a shared host, none on the database.
     assert.equal(compose.services["xy-api"].mem_limit, "1g");
-    assert.equal(compose.services["xy-worker"].mem_limit, "1536m");
-    assert.match(compose.services["xy-worker"].environment.NODE_OPTIONS, /max-old-space-size=1024/);
+    assert.equal(compose.services["xy-worker"].mem_limit, "3g");
+    assert.match(compose.services["xy-worker"].environment.NODE_OPTIONS, /max-old-space-size=2048/);
     assert.equal(compose.services.storage.mem_limit, "1g");
     assert.equal(compose.services.db.mem_limit, undefined);
     assert.ok(

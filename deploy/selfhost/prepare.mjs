@@ -318,11 +318,13 @@ export async function prepare(options) {
       XY2API_WEB_URL: xy2api,
       LOOMIC_CHAT_PROVIDER_ALLOW_HTTP: "false",
       LOOMIC_CHAT_PROVIDER_ALLOWED_HOSTS: "",
-      WORKER_IMAGE_CONCURRENCY: "3",
+      // No per-user image limits (0) and a worker that handles many jobs at
+      // once (第 57 条); a site that wants limits sets them here.
+      WORKER_IMAGE_CONCURRENCY: "32",
       WORKER_POLL_INTERVAL_MS: "2000",
-      WORKER_MAX_BATCH_SIZE: "3",
-      LOOMIC_MAX_CONCURRENT_JOBS: "2",
-      LOOMIC_MAX_PENDING_IMAGE_JOBS: "8",
+      WORKER_MAX_BATCH_SIZE: "10",
+      LOOMIC_MAX_CONCURRENT_JOBS: "0",
+      LOOMIC_MAX_PENDING_IMAGE_JOBS: "0",
       LOOMIC_MAX_IMAGES_PER_RUN: "6",
       LOOMIC_SKILLS_ROOT: "/opt/loomic/skills",
       // Single domain: the edge asks /api/media/authorize before serving a
@@ -424,10 +426,11 @@ export async function prepare(options) {
       environment: {
         SERVICE_MODE: "worker",
         WORKER_HEARTBEAT_FILE: "/tmp/xy-worker-heartbeat",
-        // sharp decodes 4K pictures outside the JS heap; leave it room.
-        NODE_OPTIONS: "--max-old-space-size=1024",
+        // sharp decodes 4K pictures outside the JS heap; leave it room. Up
+        // to WORKER_IMAGE_CONCURRENCY pictures can finish together.
+        NODE_OPTIONS: "--max-old-space-size=2048",
       },
-      mem_limit: "1536m",
+      mem_limit: "3g",
       healthcheck: {
         test: [
           "CMD",

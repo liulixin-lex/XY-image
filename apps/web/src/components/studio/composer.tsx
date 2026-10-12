@@ -20,19 +20,13 @@ import {
 } from "react";
 
 import {
-  IMAGE_BATCH_MAX,
   IMAGE_MODELS_PER_REQUEST_MAX,
   IMAGE_REQUEST_MAX,
   resolveImageParams,
 } from "@loomic/shared";
 
 import { ATTACHMENT_ACCEPT, useImageAttachments } from "@/hooks/use-image-attachments";
-import {
-  MAX_IN_FLIGHT,
-  MAX_PENDING_JOBS,
-  type StudioSubmitInput,
-  type StudioSubmitResult,
-} from "@/hooks/use-studio-jobs";
+import { type StudioSubmitInput, type StudioSubmitResult } from "@/hooks/use-studio-jobs";
 import { useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -111,6 +105,10 @@ export type ComposerHandle = {
  * retries it. 优化提示词 is a separate, small chat request on the user's
  * own model; the original text stays one click away (撤销).
  */
+/** Pictures from which one click asks for a second click to confirm. */
+const CONFIRM_FROM = 20;
+const CONFIRM_WINDOW_MS = 5000;
+
 export const Composer = forwardRef<
   ComposerHandle,
   {
@@ -121,12 +119,10 @@ export const Composer = forwardRef<
     initialDraft?: PendingDraft | null;
     onSubmit: (input: StudioSubmitInput) => Promise<StudioSubmitResult | null>;
     submitting: boolean;
-    /** Queued and generating pictures counted against MAX_PENDING_JOBS. */
-    pendingCount: number;
     className?: string;
   }
 >(function Composer(
-  { models, modelsLoading = false, initialDraft, onSubmit, submitting, pendingCount, className },
+  { models, modelsLoading = false, initialDraft, onSubmit, submitting, className },
   ref,
 ) {
   const { session } = useAuth();
@@ -305,9 +301,10 @@ export const Composer = forwardRef<
   const refLimit = refLimiter ? modelCapabilities(refLimiter).maxInputImages : caps.maxInputImages;
   const refCount = attachments.length;
   const overRefLimit = refCount > refLimit;
-  // Each model makes `count` pictures; one request holds at most IMAGE_REQUEST_MAX.
+  // Each model makes `count` pictures. No product limit (第 57 条); one
+  // request only has the IMAGE_REQUEST_MAX guard against runaway input.
   const modelCount = Math.max(1, selectedModels.length);
-  const countMax = Math.max(1, Math.min(IMAGE_BATCH_MAX, Math.floor(IMAGE_REQUEST_MAX / modelCount)));
+  const countMax = Math.max(1, Math.floor(IMAGE_REQUEST_MAX / modelCount));
   useEffect(() => {
     if (count > countMax) setCount(countMax);
   }, [count, countMax]);
@@ -401,32 +398,43 @@ export const Composer = forwardRef<
   }, [prompt]);
 
   const trimmed = prompt.trim();
-  const room = Math.max(0, MAX_PENDING_JOBS - pendingCount);
   const blockedReason = !current
     ? modelPending
       ? models.length > 0
         ? "正在读取默认模型"
         : "正在读取模型"
-      : "当前 Key 没有可用的生图模型"
-    : room === 0
-      ? `排队和生成中的已有 ${MAX_PENDING_JOBS} 张，等前面的完成`
-      : total > room
-        ? modelCount > 1
-          ? `现在最多还能排 ${room} 张，这次要 ${total} 张：少选个模型或调小数量`
-          : `现在最多还能排 ${room} 张，把数量调到 ${room} 或等前面的完成`
-        : isUploading
-          ? "参考图还在上传"
-          : overRefLimit
-            ? refLimit === 0
-              ? `${refLimiter?.displayName ?? current.displayName} 不支持参考图，去掉参考图或换个模型`
-              : `${refLimiter?.displayName ?? current.displayName} 最多 ${refLimit} 张参考图`
-            : attachments.some((a) => a.error)
-              ? "有参考图上传失败，重试或移除后再提交"
-              : null;
+      : "开着的 Key 里没有可用的生图模型"
+    : isUploading
+      ? "参考图还在上传"
+      : overRefLimit
+        ? refLimit === 0
+          ? `${refLimiter?.displayName ?? current.displayName} 不支持参考图，去掉参考图或换个模型`
+          : `${refLimiter?.displayName ?? current.displayName} 最多 ${refLimit} 张参考图`
+        : attachments.some((a) => a.error)
+          ? "有参考图上传失败，重试或移除后再提交"
+          : null;
   const canSubmit = Boolean(trimmed) && !blockedReason && !submitting;
+
+  // A big click (CONFIRM_FROM pictures or more) takes a second click within a
+  // few seconds: not a limit, a guard against a typo of extra digits.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    setArmed(false);
+  }, [total, trimmed]);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setTimeout(() => setArmed(false), CONFIRM_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [armed]);
 
   const submit = async () => {
     if (!canSubmit || !current) return;
+    if (total >= CONFIRM_FROM && !armed) {
+      setArmed(true);
+      console.info("[studio] big request armed", { total });
+      return;
+    }
+    setArmed(false);
     const shared = {
       prompt: trimmed,
       resolution: sendResolution,
@@ -782,6 +790,10 @@ export const Composer = forwardRef<
               <LiveDot className="bg-acc-ink" />
               正在提交
             </>
+          ) : armed ? (
+            <>
+              确认生成<span className="numeral text-[26px]">{total}</span>张
+            </>
           ) : (
             <>
               生成<span className="numeral text-[26px]">{total}</span>张
@@ -793,10 +805,12 @@ export const Composer = forwardRef<
         <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted" aria-live="polite">
           {blockedReason && trimmed ? (
             <span className="text-fg-soft">{blockedReason}</span>
+          ) : armed ? (
+            <span className="font-semibold text-acc-text">一次 {total} 张，再点一次确认发出。</span>
           ) : modelCount > 1 ? (
             `${modelCount} 个模型各出 ${count} 张，同一句描述，结果排在一起对比。`
-          ) : total > MAX_IN_FLIGHT ? (
-            `同时最多发出 ${MAX_IN_FLIGHT} 张，其余排队，还没发出的可以取消。`
+          ) : total > 1 ? (
+            "每张单独发一次请求，失败不会自动重发；还没发出的可以取消。"
           ) : (
             "每次请求只发一次，失败不会自动重发。"
           )}
@@ -929,13 +943,27 @@ export function Stepper({
   /** A small caption above the number (多模型: 「每个模型」). */
   label?: string | undefined;
 }) {
+  // The number can be typed (no product limit since 第 57 条; `max` is only
+  // the request guard). While typing, an empty field is allowed; it settles
+  // on blur or Enter.
+  const [text, setText] = useState(String(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(String(value));
+  }, [value]);
+  const settle = (raw: string) => {
+    const n = Number.parseInt(raw, 10);
+    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value;
+    setText(String(next));
+    if (next !== value) onChange(next);
+  };
   const button =
     "flex size-8 shrink-0 items-center justify-center rounded-full bg-tint/[0.07] text-fg transition-[background-color,scale] hover:bg-tint/[0.12] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:cursor-not-allowed disabled:opacity-35";
   return (
     <div
       role="group"
       aria-label="生成张数"
-      className="flex h-14 w-[118px] items-center justify-between rounded-[14px] bg-panel/75 px-2 shadow-[inset_0_0_0_1px_var(--line)]"
+      className="flex h-14 min-w-[118px] items-center justify-between gap-1 rounded-[14px] bg-panel/75 px-2 shadow-[inset_0_0_0_1px_var(--line)]"
     >
       <button
         type="button"
@@ -946,16 +974,46 @@ export function Stepper({
       >
         <MinusIcon className="size-4" strokeWidth={2.4} />
       </button>
-      <output
-        aria-live="polite"
-        aria-label={label ? `${label} ${value} 张` : `${value} 张`}
-        className="relative flex flex-col items-center leading-none"
-      >
+      <label className="relative flex flex-col items-center leading-none">
         {label ? (
           <span className="absolute -top-3 text-[10px] font-semibold whitespace-nowrap text-fg-muted">{label}</span>
         ) : null}
-        <span className="numeral text-[28px] text-fg">{value}</span>
-      </output>
+        <span className="sr-only">{label ? `${label}张数` : "张数"}</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={text}
+          onFocus={(event) => {
+            editing.current = true;
+            event.currentTarget.select();
+          }}
+          onChange={(event) => {
+            const digits = event.target.value.replace(/\D+/g, "").slice(0, 3);
+            setText(digits);
+            const n = Number.parseInt(digits, 10);
+            if (Number.isFinite(n) && n >= min) onChange(Math.min(max, n));
+          }}
+          onBlur={(event) => {
+            editing.current = false;
+            settle(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              settle(event.currentTarget.value);
+              event.currentTarget.blur();
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              onChange(Math.min(max, value + 1));
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              onChange(Math.max(min, value - 1));
+            }
+          }}
+          style={{ width: `${Math.max(1, text.length) * 0.62 + 0.3}em` }}
+          className="numeral min-w-[1ch] bg-transparent text-center text-[28px] text-fg caret-acc outline-none"
+        />
+      </label>
       <button
         type="button"
         className={button}

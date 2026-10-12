@@ -230,8 +230,11 @@ export function loadServerEnv(
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
-    maxConcurrentJobs: integer("LOOMIC_MAX_CONCURRENT_JOBS", 2),
-    maxPendingImageJobs: integer("LOOMIC_MAX_PENDING_IMAGE_JOBS", 8),
+    // Per-user image limits; 0 = no limit (第 57 条: the default since the
+    // user lifted them; main-site concurrency is not this site's concern).
+    // A self-hosted site can still set them.
+    maxConcurrentJobs: integer("LOOMIC_MAX_CONCURRENT_JOBS", 0, 100000, 0),
+    maxPendingImageJobs: integer("LOOMIC_MAX_PENDING_IMAGE_JOBS", 0, 100000, 0),
     maxImagesPerRun: integer("LOOMIC_MAX_IMAGES_PER_RUN", 6),
     sessionRevalidateMinutes: integer(
       "LOOMIC_SESSION_REVALIDATE_MINUTES",
@@ -255,9 +258,13 @@ export function loadServerEnv(
       .map((host) => host.trim().toLowerCase())
       .filter(Boolean),
     workerConcurrency: integer("WORKER_CONCURRENCY", 3),
-    workerImageConcurrency: integer("WORKER_IMAGE_CONCURRENCY", 3),
+    // Image jobs one worker handles at once, all users together. Most of a
+    // job's time is waiting on the main site (an async task or a long
+    // response), so this is set high (第 57 条); memory is used only while a
+    // finished picture is downloaded and stored.
+    workerImageConcurrency: integer("WORKER_IMAGE_CONCURRENCY", 32),
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),
-    workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 3),
+    workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 10),
     xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
     xy2apiAsyncImages: source.XY2API_ASYNC_IMAGES === "on" ? "on" : "off",
     xy2apiAsyncImageUsers: (source.XY2API_ASYNC_IMAGE_USERS ?? "")

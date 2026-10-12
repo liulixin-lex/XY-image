@@ -47,7 +47,9 @@ export function outputSlots(
 ): Rect[] {
   const n = Math.min(IMAGE_BATCH_MAX, Math.max(1, Math.round(count)));
   const size = outputSize(aspectRatio);
-  const columns = n === 1 ? 1 : 2;
+  // Up to 4 in a 2-wide grid as before; bigger runs (第 57 条) as a squarish
+  // grid, so 50 pictures are 8 wide, not 25 rows down.
+  const columns = n === 1 ? 1 : n <= 4 ? 2 : Math.ceil(Math.sqrt(n));
   const rows = Math.ceil(n / columns);
   const gridHeight = rows * size.height + (rows - 1) * OUTPUT_GAP;
   const left = generator.x + generator.width + OUTPUT_OFFSET;
