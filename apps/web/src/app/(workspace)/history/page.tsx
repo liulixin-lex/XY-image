@@ -326,7 +326,10 @@ function HistoryTile({
             {label}
           </span>
         </button>
-        <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity duration-200 group-focus-within/tile:opacity-100 pointer-coarse:opacity-100 pointer-fine:group-hover/tile:opacity-100">
+        {/* Fine pointers only: on a phone the three buttons covered the top
+            of every tile; a tap opens the picture, whose dialog has the same
+            actions (再来一次, 以此为参考, 下载). */}
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity duration-200 pointer-coarse:hidden pointer-fine:group-focus-within/tile:opacity-100 pointer-fine:group-hover/tile:opacity-100">
           <button type="button" onClick={onReuse} title="再来一次：带上描述和设置去生图" aria-label="再来一次" className={action}>
             <RotateCcwIcon strokeWidth={2} />
           </button>
