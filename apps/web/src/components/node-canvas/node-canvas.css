@@ -90,3 +90,24 @@
 .node-canvas .react-flow__attribution a {
   color: var(--fg-muted);
 }
+
+/*
+ * 第 56 条: an edge's ends can be picked up (move to another node, or drop
+ * on empty canvas to 断开). React Flow's grab circles are invisible; on a
+ * hovered or selected edge they show as small knobs, with a grab cursor.
+ */
+.node-canvas .react-flow__edgeupdater {
+  cursor: grab;
+  fill: transparent;
+  stroke: transparent;
+  transition: fill 120ms ease, stroke 120ms ease;
+}
+.node-canvas .react-flow__edge:is(:hover, .selected) .react-flow__edgeupdater {
+  fill: color-mix(in srgb, var(--acc) 16%, transparent);
+  stroke: color-mix(in srgb, var(--acc) 55%, transparent);
+  stroke-width: 1;
+}
+.node-canvas .react-flow__edge .flow-edge-hover,
+.node-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--acc) 85%, transparent);
+}

@@ -116,6 +116,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const followUpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imageModelsRequested = useRef(false);
   const chatModelsRequested = useRef(false);
+  // A list was asked for before there was a session (a page that mounts
+  // before auth settles): load it once the token arrives.
+  const imageModelsWanted = useRef(false);
+  const chatModelsWanted = useRef(false);
 
   // Reset everything when the signed-in user changes or signs out.
   useEffect(() => {
@@ -202,12 +206,21 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const ensureImageModels = useCallback(() => {
+    imageModelsWanted.current = true;
     if (!imageModelsRequested.current) void refreshImageModels();
   }, [refreshImageModels]);
 
   const ensureChatModels = useCallback(() => {
+    chatModelsWanted.current = true;
     if (!chatModelsRequested.current) void refreshChatModels();
   }, [refreshChatModels]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a session appears or changes user
+  useEffect(() => {
+    if (!token) return;
+    if (imageModelsWanted.current && !imageModelsRequested.current) void refreshImageModels();
+    if (chatModelsWanted.current && !chatModelsRequested.current) void refreshChatModels();
+  }, [userId, token === null]);
 
   const syncKeys = useCallback(async () => {
     const current = tokenRef.current;

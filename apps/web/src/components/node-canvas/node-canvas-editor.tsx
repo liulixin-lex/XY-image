@@ -264,7 +264,11 @@ function nodeIdAt(event: MouseEvent | TouchEvent): string | null {
   const point = "changedTouches" in event ? event.changedTouches[0] : event;
   if (!point || typeof document === "undefined") return null;
   const hit = document.elementFromPoint(point.clientX, point.clientY);
-  const node = hit instanceof Element ? hit.closest(".react-flow__node") : null;
+  // A frame is a container: its empty inside is canvas, not a node to join.
+  const node =
+    hit instanceof Element
+      ? hit.closest(".react-flow__node:not(.react-flow__node-frame)")
+      : null;
   return node?.getAttribute("data-id") ?? null;
 }
 
