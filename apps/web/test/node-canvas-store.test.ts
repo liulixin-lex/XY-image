@@ -659,9 +659,10 @@ describe("generator runtime", () => {
   });
 
   it("sends the node's key with its model, and runs several generators at once", async () => {
+    // Close below the first: on their own, both would take the same space.
     const second = el("gen2", "generator", {
       x: 300,
-      y: 600,
+      y: 150,
       width: 296,
       height: 360,
       customData: { generator: { model: "nano-banana-pro", count: 1, prompt: "" } },
@@ -683,6 +684,13 @@ describe("generator runtime", () => {
     const bodies = api.createImageBatch.mock.calls.map((call) => call[1]);
     expect(bodies[0]).toMatchObject({ model: "gpt-image-2", key_id: 9, canvas_source_id: "gen1" });
     expect(bodies[1]).toMatchObject({ model: "nano-banana-pro", key_id: 3, canvas_source_id: "gen2", prompt: "雨夜的霓虹街道" });
+    // Sent together, their pictures still get separate places.
+    type Slot = { x: number; y: number; width: number; height: number };
+    const overlaps = (a: Slot, b: Slot) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    const slotsA = bodies[0].canvas_slots as Slot[];
+    const slotsB = bodies[1].canvas_slots as Slot[];
+    expect(slotsA.some((a) => slotsB.some((b) => overlaps(a, b)))).toBe(false);
   });
 
   it("uploads a picture that only exists in this page before sending", async () => {

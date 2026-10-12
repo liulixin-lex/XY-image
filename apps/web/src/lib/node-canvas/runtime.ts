@@ -249,6 +249,12 @@ export class GeneratorRuntime {
   private readonly sinceSuccess = new Map<string, number>();
   /** Uploaded copies of pictures that only exist in this page (fileId → URL). */
   private readonly referenceUrls = new Map<string, string>();
+  /**
+   * Slots of runs being sent, by generator, until their pending pictures
+   * are on the canvas: generators sent together (全部生成) must not pick
+   * the same free space for their pictures.
+   */
+  private readonly reservedSlots = new Map<string, Rect[]>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
   private disposed = false;
@@ -467,11 +473,16 @@ export class GeneratorRuntime {
       return false;
     }
 
-    const obstacles = this.store.scene.nodes
-      .filter(
-        (n) => n.id !== generatorId && n.type !== "frame" && n.type !== "line",
-      )
-      .map(rectOf);
+    const obstacles = [
+      ...this.store.scene.nodes
+        .filter(
+          (n) => n.id !== generatorId && n.type !== "frame" && n.type !== "line",
+        )
+        .map(rectOf),
+      ...[...this.reservedSlots.entries()].flatMap(([id, rects]) =>
+        id === generatorId ? [] : rects,
+      ),
+    ];
     const slots = outputSlots(
       rectOf(node),
       config.count,
@@ -483,6 +494,7 @@ export class GeneratorRuntime {
       width: Math.round(slot.width),
       height: Math.round(slot.height),
     }));
+    this.reservedSlots.set(generatorId, slots);
     const body: CreateImageBatchInput = {
       prompt,
       model: params.model,
@@ -513,6 +525,7 @@ export class GeneratorRuntime {
     try {
       batch = await this.deps.api.createImageBatch(token, body);
     } catch (error) {
+      this.reservedSlots.delete(generatorId);
       const spec = this.deps.report(error);
       if (spec?.action === "reload_models") this.deps.onModelsStale?.();
       const next = new Map(this.state.errors);
@@ -542,6 +555,8 @@ export class GeneratorRuntime {
       { record: false },
     );
     this.store.showPending(generatorId, run.jobs);
+    // The pending pictures now hold their slots on the canvas themselves.
+    this.reservedSlots.delete(generatorId);
     const nextPartial = new Map(this.state.partial);
     if (views.length < batch.requested)
       nextPartial.set(generatorId, {
