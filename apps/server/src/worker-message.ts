@@ -8,6 +8,7 @@ import {
   BillingGuardError,
   DeliveryPendingError,
 } from "./features/xy2api/errors.js";
+import { ImageTaskParkedError } from "./features/xy2api/image-task.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
 
 const TERMINAL: string[] = ["succeeded", "dead_letter", "canceled"];
@@ -113,6 +114,17 @@ export async function processMessage(
   try {
     result = await executor(jobId, msg.message as Record<string, unknown>, ctx);
   } catch (err) {
+    if (err instanceof ImageTaskParkedError) {
+      // An async task still generating at the main site: this worker is
+      // stopping (or another process polls it). The job stays running with
+      // its task id; the message comes back and the task is polled again,
+      // never sent again.
+      await ctx.pgmq.setVt(queue, msg.msg_id, err.retryInSeconds);
+      console.log(
+        `${tag} Job ${jobId} task left running at the main site; polled again in ${err.retryInSeconds}s`,
+      );
+      return;
+    }
     if (err instanceof DeliveryPendingError) {
       // The charged image is held in the database. Keep the message and let it
       // come back for the next storage attempt; xy2api is not called again.

@@ -32,6 +32,14 @@ export function memoryDatabase(initial: Record<string, Row[]>) {
         predicates.push((row) => value.includes(row[key]));
         return query;
       },
+      // Like PostgREST: a null never compares (ISO timestamps compare as text).
+      lt(key: string, value: string | number) {
+        predicates.push(
+          (row) =>
+            row[key] !== null && row[key] !== undefined && String(row[key]) < String(value),
+        );
+        return query;
+      },
       order(_key: string) {
         return query;
       },

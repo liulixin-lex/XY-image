@@ -13,6 +13,11 @@ import {
   record,
   withRequestId,
 } from "../../features/xy2api/errors.js";
+import {
+  TASK_DEADLINE_MS,
+  imageTaskFetch,
+  imageTaskOutcome,
+} from "../../features/xy2api/image-task.js";
 import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 import type {
   GeneratedImage,
@@ -31,7 +36,10 @@ import {
   xaiMaskPng,
   xaiOutpaintMask,
 } from "../mask-edit.js";
-import { fetchReferenceImage } from "./xy2api-reference.js";
+import {
+  downloadImageResult,
+  fetchReferenceImage,
+} from "./xy2api-reference.js";
 
 /**
  * xAI Image API through the main site (catalog protocol "xai-images").
@@ -178,8 +186,18 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
     let diagnostics: GatewayDiagnostics | undefined;
     const startedAt = Date.now();
     try {
-      const timeout = AbortSignal.timeout(600000);
-      const response = await fetch(
+      // Async (features/xy2api/image-task.ts): submitted as a task and polled;
+      // the answer is the task's result, shaped like the synchronous one.
+      const send = ctx.imageTask
+        ? imageTaskFetch(ctx.imageTask, {
+            apiKey: ctx.apiKey,
+            baseUrl: ctx.baseUrl,
+          })
+        : fetch;
+      const timeout = AbortSignal.timeout(
+        ctx.imageTask ? TASK_DEADLINE_MS + 5 * 60_000 : 600000,
+      );
+      const response = await send(
         `${ctx.baseUrl}/v1/images/${"image" in body ? "edits" : "generations"}`,
         {
           method: "POST",
@@ -232,20 +250,10 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
       let bytes: Buffer;
       if (typeof output.b64_json === "string" && output.b64_json)
         bytes = Buffer.from(output.b64_json, "base64");
-      else if (typeof output.url === "string") {
-        const url = new URL(output.url);
-        if (url.protocol !== "https:")
-          throw new Error("Invalid image response");
+      else if (typeof output.url === "string")
         // No cause chain: a failed download is after the charge, never "not sent".
-        const download = await fetch(url, {
-          signal: AbortSignal.timeout(60000),
-          redirect: "error",
-        }).catch(() => {
-          throw new Error("Image download failed");
-        });
-        if (!download.ok) throw new Error("Image download failed");
-        bytes = Buffer.from(await download.arrayBuffer());
-      } else throw new GatewayError(mapGatewayError({}));
+        bytes = await downloadImageResult(output.url);
+      else throw new GatewayError(mapGatewayError({}));
       const metadata = await sharp(bytes).metadata();
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
@@ -258,6 +266,9 @@ export class Xy2apiXaiImageProvider implements ImageProvider {
         ...(requestId ? { requestId } : {}),
       };
     } catch (error) {
+      const outcome = imageTaskOutcome(error);
+      if (outcome) throw outcome;
+      requestId ??= ctx.imageTask?.handle?.requestId;
       if (
         error instanceof BillingGuardError &&
         !(error instanceof GatewayError)

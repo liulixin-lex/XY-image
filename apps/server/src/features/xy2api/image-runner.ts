@@ -12,6 +12,7 @@ import {
   BillingGuardError,
   DeliveryPendingError,
   GatewayError,
+  type GatewayFailure,
   describeDiagnostics,
   mapGatewayError,
 } from "./errors.js";
@@ -20,8 +21,49 @@ import {
   type PendingDeliveryStore,
   deliveryRetrySeconds,
 } from "./pending-delivery.js";
+import {
+  AsyncImageUnavailableError,
+  ImageTaskParkedError,
+  type ImageTaskMode,
+  asyncImagesOff,
+  markAsyncImagesOff,
+} from "./image-task.js";
 import type { Xy2apiServices } from "./services.js";
 import { checkStoreError, integrationClient } from "./store.js";
+
+/**
+ * Key groups and catalog protocols the main site serves as async image tasks
+ * (xy2api AsyncImageHandler: OpenAI and Grok; Gemini stays synchronous).
+ */
+const ASYNC_PLATFORMS = new Set(["openai", "grok"]);
+const ASYNC_PROTOCOLS = new Set(["openai-images", "xai-images"]);
+/** A resumed task is only polled by one process: whoever stamped it last. */
+export const TASK_LEASE_MS = 60_000;
+/** How often a poller renews that stamp (xy2api_task_polled_at). */
+const LEASE_RENEW_MS = 15_000;
+
+/**
+ * Whether this job goes to the main site as an async task (XY2API_ASYNC_IMAGES,
+ * features/xy2api/image-task.ts). Off unless switched on; limited to the
+ * users in XY2API_ASYNC_IMAGE_USERS when that is set (canary); skipped for
+ * ten minutes after the main site said async is unavailable for the group.
+ */
+export function asyncImageEligible(
+  env: Pick<ServerEnv, "xy2apiAsyncImages" | "xy2apiAsyncImageUsers">,
+  userId: string,
+  platform: string,
+  protocol: string,
+): boolean {
+  if (env.xy2apiAsyncImages !== "on") return false;
+  if (!ASYNC_PLATFORMS.has(platform) || !ASYNC_PROTOCOLS.has(protocol))
+    return false;
+  if (
+    env.xy2apiAsyncImageUsers?.length &&
+    !env.xy2apiAsyncImageUsers.includes(userId)
+  )
+    return false;
+  return !asyncImagesOff(platform);
+}
 
 export async function executeImageJob(
   jobId: string,
@@ -32,6 +74,11 @@ export async function executeImageJob(
     renewVt?: (seconds: number) => Promise<void>;
     /** Keeps charged images whose storage write failed (M6). Without it they fail as storage_failed. */
     deliveries?: PendingDeliveryStore;
+    /**
+     * Aborted when the worker shuts down: an async task stops being polled
+     * (ImageTaskParkedError) and the next worker resumes it.
+     */
+    park?: AbortSignal;
   },
 ): Promise<ImageJobResult> {
   const admin = options.getAdminClient();
@@ -50,7 +97,21 @@ export async function executeImageJob(
     row.status === "canceled"
   )
     throw new BillingGuardError("invalid_input");
-  if (["pending", "charged", "unknown"].includes(row.billing_status)) {
+  // Submitted as an async task before this process (or another) stopped:
+  // poll the same task, never send again.
+  const resume =
+    row.billing_status === "pending" && row.xy2api_task_id
+      ? {
+          taskId: String(row.xy2api_task_id),
+          ...(row.xy2api_request_id
+            ? { requestId: String(row.xy2api_request_id) }
+            : {}),
+          submittedAt: Date.parse(
+            String(row.xy2api_task_submitted_at ?? row.started_at ?? row.created_at),
+          ),
+        }
+      : undefined;
+  if (!resume && ["pending", "charged", "unknown"].includes(row.billing_status)) {
     // A charged image held after a storage failure: upload the held copy.
     if (row.billing_status === "charged" && options.deliveries)
       return redeliver(jobId, row, options.deliveries, admin);
@@ -69,51 +130,133 @@ export async function executeImageJob(
     }
     throw new GatewayError(mapGatewayError({}));
   }
-  const parsed = imagePayloadSchema.safeParse(row.payload);
-  if (!parsed.success) throw new BillingGuardError("invalid_input");
-  const payload = parsed.data;
-  await options.xy2api.accounts.requireAccount(row.created_by);
-  const credential = await options.xy2api.keys.resolveImageCredential(
-    row.created_by,
-    row.xy2api_key_id,
-  );
-  const model = findImageModel(options.xy2api.keys.catalog, payload.model);
-  // A model removed from the catalog (LOOMIC_IMAGE_MODELS) since queueing,
-  // or no longer on the key: refuse before anything is sent.
-  if (!model || !credential.imageModels.includes(payload.model))
-    throw new BillingGuardError("model_not_accessible", 403);
-  if (
-    (payload.input_images?.length ?? 0) > model.maxInputImages ||
-    (payload.input_images?.length && !model.supportsEdit)
-  )
-    throw new BillingGuardError("invalid_input");
-  if (payload.edit)
-    checkMaskEdit(model, payload.input_images?.length ?? 0);
-  const { data: member, error: memberError } = await admin
-    .from("workspace_members")
-    .select("user_id")
-    .eq("user_id", row.created_by)
-    .eq("workspace_id", row.workspace_id)
-    .maybeSingle();
-  if (memberError || !member) throw new BillingGuardError("invalid_input");
-  // Compare-and-set before dispatch. Redelivery can never issue a second paid call.
-  const { data: claimed, error: claimError } = await db
-    .from("background_jobs")
-    .update({ billing_status: "pending" })
-    .eq("id", jobId)
-    .eq("billing_status", "none")
-    .neq("status", "canceled")
-    .select("id")
-    .maybeSingle();
-  checkStoreError(claimError);
-  if (!claimed) throw new GatewayError(mapGatewayError({}));
+  // Checked above; named so the closures below keep the narrowing.
+  const createdBy = row.created_by;
+  const keyId = row.xy2api_key_id;
+  const prepare = async () => {
+    const parsed = imagePayloadSchema.safeParse(row.payload);
+    if (!parsed.success) throw new BillingGuardError("invalid_input");
+    const payload = parsed.data;
+    await options.xy2api.accounts.requireAccount(row.created_by);
+    const credential = await options.xy2api.keys.resolveImageCredential(
+      createdBy,
+      keyId,
+    );
+    const model = findImageModel(options.xy2api.keys.catalog, payload.model);
+    // A model removed from the catalog (LOOMIC_IMAGE_MODELS) since queueing,
+    // or no longer on the key: refuse before anything is sent.
+    if (!model || !credential.imageModels.includes(payload.model))
+      throw new BillingGuardError("model_not_accessible", 403);
+    if (
+      (payload.input_images?.length ?? 0) > model.maxInputImages ||
+      (payload.input_images?.length && !model.supportsEdit)
+    )
+      throw new BillingGuardError("invalid_input");
+    if (payload.edit)
+      checkMaskEdit(model, payload.input_images?.length ?? 0);
+    const { data: member, error: memberError } = await admin
+      .from("workspace_members")
+      .select("user_id")
+      .eq("user_id", row.created_by)
+      .eq("workspace_id", row.workspace_id)
+      .maybeSingle();
+    if (memberError || !member) throw new BillingGuardError("invalid_input");
+    return { payload, credential, model };
+  };
+  let prepared: Awaited<ReturnType<typeof prepare>>;
+  try {
+    prepared = await prepare();
+  } catch (error) {
+    if (!resume) throw error;
+    // The task was sent; whatever stops us from reading it now (key gone,
+    // model removed), its charge is settled from the usage list.
+    console.warn(
+      `[image-runner] job ${jobId} task ${resume.taskId} cannot be resumed (${error instanceof BillingGuardError ? error.code : describeErrorForLog(error)}); left to the usage list`,
+    );
+    await settleUnknown(db, jobId, resume.requestId);
+    throw new GatewayError({
+      ...mapGatewayError({}),
+      ...(resume.requestId ? { requestId: resume.requestId } : {}),
+    });
+  }
+  const { payload, credential, model } = prepared;
+  if (resume) {
+    // Lease: only one process polls a task. A worker that died stopped
+    // stamping a minute ago; one that still polls keeps its claim.
+    const { data: leased, error: leaseError } = await db
+      .from("background_jobs")
+      .update({ xy2api_task_polled_at: new Date().toISOString() })
+      .eq("id", jobId)
+      .eq("billing_status", "pending")
+      .eq("xy2api_task_id", resume.taskId)
+      .lt(
+        "xy2api_task_polled_at",
+        new Date(Date.now() - TASK_LEASE_MS).toISOString(),
+      )
+      .select("id")
+      .maybeSingle();
+    checkStoreError(leaseError);
+    if (!leased) throw new ImageTaskParkedError(30);
+  } else {
+    // Compare-and-set before dispatch. Redelivery can never issue a second paid call.
+    const { data: claimed, error: claimError } = await db
+      .from("background_jobs")
+      .update({ billing_status: "pending" })
+      .eq("id", jobId)
+      .eq("billing_status", "none")
+      .neq("status", "canceled")
+      .select("id")
+      .maybeSingle();
+    checkStoreError(claimError);
+    if (!claimed) throw new GatewayError(mapGatewayError({}));
+  }
+  let leaseRenewed = Date.now();
+  const renewLease = async () => {
+    if (Date.now() - leaseRenewed < LEASE_RENEW_MS) return;
+    leaseRenewed = Date.now();
+    await db
+      .from("background_jobs")
+      .update({ xy2api_task_polled_at: new Date().toISOString() })
+      .eq("id", jobId);
+  };
+  const mode: ImageTaskMode | undefined = resume
+    ? { resume, onPoll: renewLease, ...(options.park ? { park: options.park } : {}) }
+    : asyncImageEligible(
+          options.env,
+          row.created_by,
+          credential.platform,
+          model.protocol,
+        )
+      ? {
+          onAccepted: async (handle) => {
+            leaseRenewed = Date.now();
+            checkStoreError(
+              (
+                await db
+                  .from("background_jobs")
+                  .update({
+                    xy2api_task_id: handle.taskId,
+                    xy2api_request_id: handle.requestId ?? null,
+                    xy2api_task_submitted_at: new Date(
+                      handle.submittedAt,
+                    ).toISOString(),
+                    xy2api_task_polled_at: new Date().toISOString(),
+                  })
+                  .eq("id", jobId)
+              ).error,
+            );
+          },
+          onPoll: renewLease,
+          ...(options.park ? { park: options.park } : {}),
+        }
+      : undefined;
   const timer = setInterval(() => {
     void options.renewVt?.(120);
   }, 60000);
   try {
     let generated: import("../../generation/types.js").GeneratedImage;
-    try {
-      generated = await generateImage(
+    const run = (imageTask: ImageTaskMode | undefined) =>
+      generateImage(
         resolveImageProviderName(payload.model),
         {
           prompt: payload.prompt,
@@ -123,10 +266,11 @@ export async function executeImageJob(
           ...(payload.aspect_ratio
             ? { aspectRatio: payload.aspect_ratio }
             : {}),
-          ...(payload.input_images
+          // Resuming sends nothing, so the references are not read again.
+          ...(payload.input_images && !imageTask?.resume
             ? { inputImages: payload.input_images }
             : {}),
-          ...(payload.edit ? { edit: payload.edit } : {}),
+          ...(payload.edit && !imageTask?.resume ? { edit: payload.edit } : {}),
         },
         {
           apiKey: credential.apiKey,
@@ -137,19 +281,56 @@ export async function executeImageJob(
                 assetFetch: createSupabaseFetch(options.env),
               }
             : {}),
+          ...(imageTask ? { imageTask } : {}),
         },
       );
+    try {
+      try {
+        generated = await run(mode);
+      } catch (error) {
+        if (!(error instanceof AsyncImageUnavailableError)) throw error;
+        // Answered 404 before a task existed: nothing sent, nothing charged.
+        markAsyncImagesOff(credential.platform);
+        console.warn(
+          `[image-runner] job ${jobId}: async image tasks unavailable for ${credential.platform} keys ("${error.detail}"); sending synchronously, async off for this group kind for 10 minutes`,
+        );
+        generated = await run(undefined);
+      }
     } catch (error) {
-      const failure =
+      // Shutting down: the task runs on at the main site, its id is on the
+      // job, and the next worker resumes it. Billing stays pending; the
+      // lease is handed over so that worker need not wait it out.
+      if (error instanceof ImageTaskParkedError) {
+        if (mode?.handle)
+          await db
+            .from("background_jobs")
+            .update({ xy2api_task_polled_at: new Date(0).toISOString() })
+            .eq("id", jobId)
+            .eq("xy2api_task_id", mode.handle.taskId)
+            .then(
+              () => {},
+              () => {},
+            );
+        console.log(
+          `[image-runner] job ${jobId}${mode?.handle ? ` task ${mode.handle.taskId}` : ""} parked for the next worker`,
+        );
+        throw error;
+      }
+      const failure: Pick<GatewayFailure, "code" | "billing"> & {
+        requestId?: string;
+      } =
         error instanceof GatewayError
           ? error.failure
-          : error instanceof BillingGuardError
-            ? { code: error.code, billing: "not_charged" as const }
+          : // A resumed task was sent before; nothing here can prove it free.
+            error instanceof BillingGuardError && !resume
+            ? { code: error.code, billing: "not_charged" }
             : mapGatewayError({});
+      // An async task's id came with its 202, before anything could fail.
+      const requestId = failure.requestId ?? mode?.handle?.requestId;
       // L1: what the main site (or whatever answered for it) actually said.
       // No key, no prompt; the message is cut to 200 scrubbed characters.
       console.warn(
-        `[image-runner] job ${jobId} ${payload.model} ${payload.resolution}/${payload.quality} key ${row.xy2api_key_id} failed: ${failure.code} billing=${failure.billing} request=${("requestId" in failure && failure.requestId) || "none"} ${
+        `[image-runner] job ${jobId} ${payload.model} ${payload.resolution}/${payload.quality} key ${row.xy2api_key_id}${mode?.handle ? ` task ${mode.handle.taskId}` : ""} failed: ${failure.code} billing=${failure.billing} request=${requestId ?? "none"} ${
           error instanceof GatewayError
             ? describeDiagnostics(error.failure.diagnostics)
             : error instanceof BillingGuardError
@@ -164,9 +345,7 @@ export async function executeImageJob(
             .update({
               billing_status: failure.billing,
               // Lets support reconcile 待核对 jobs against xy2api usage rows.
-              ...("requestId" in failure && failure.requestId
-                ? { xy2api_request_id: failure.requestId }
-                : {}),
+              ...(requestId ? { xy2api_request_id: requestId } : {}),
             })
             .eq("id", jobId)
         ).error,
@@ -182,7 +361,10 @@ export async function executeImageJob(
         );
       if (failure.code === "xy2api_reauth_required")
         await options.xy2api.accounts.markReauth(row.created_by);
-      throw error instanceof BillingGuardError
+      // The job shows what was recorded: a resumed task's local refusal is
+      // 待核对 like the rest, not "参数无效".
+      throw error instanceof GatewayError ||
+        (error instanceof BillingGuardError && !resume)
         ? error
         : new GatewayError(mapGatewayError({}));
     }
@@ -192,7 +374,8 @@ export async function executeImageJob(
           .from("background_jobs")
           .update({
             billing_status: "charged",
-            xy2api_request_id: generated.requestId ?? null,
+            xy2api_request_id:
+              generated.requestId ?? mode?.handle?.requestId ?? null,
           })
           .eq("id", jobId)
       ).error,
@@ -240,6 +423,26 @@ export async function executeImageJob(
   } finally {
     clearInterval(timer);
   }
+}
+
+/** pending → unknown (待核对), keeping the request id when there is one. */
+async function settleUnknown(
+  db: ReturnType<typeof integrationClient>,
+  jobId: string,
+  requestId: string | undefined,
+) {
+  checkStoreError(
+    (
+      await db
+        .from("background_jobs")
+        .update({
+          billing_status: "unknown",
+          ...(requestId ? { xy2api_request_id: requestId } : {}),
+        })
+        .eq("id", jobId)
+        .eq("billing_status", "pending")
+    ).error,
+  );
 }
 
 export type ImageJobResult = {

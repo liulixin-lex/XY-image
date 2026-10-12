@@ -125,3 +125,60 @@ export async function fetchReferenceImage(
     );
   }
 }
+
+/** A 4K PNG is ~15 MB; xy2api re-hosts up to 32 MB per picture. */
+const RESULT_LIMIT = 64 * 1024 * 1024;
+const RESULT_ATTEMPTS = 3;
+
+/**
+ * Reads a generated picture the main site answered with a link: Grok's own
+ * links, and every async task result (its object storage, presigned). The
+ * picture is already charged, so reading is retried (free) a few times; a
+ * failure leaves the job 待核对 and the reconciler finds the charge. The
+ * error deliberately has no cause chain: it is never "not sent".
+ * The link is never logged (a presigned URL carries a token).
+ */
+export async function downloadImageResult(
+  link: string,
+  options: { fetch?: typeof fetch; retryDelayMs?: number } = {},
+): Promise<Buffer> {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    throw new Error("Invalid image response");
+  }
+  if (url.protocol !== "https:") throw new Error("Invalid image response");
+  let last = "";
+  for (let attempt = 1; attempt <= RESULT_ATTEMPTS; attempt++) {
+    try {
+      const response = await (options.fetch ?? fetch)(url, {
+        signal: AbortSignal.timeout(60000),
+        redirect: "error",
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error(`status ${response.status}`);
+      }
+      if (Number(response.headers.get("content-length")) > RESULT_LIMIT) {
+        await response.body?.cancel();
+        throw new Error("larger than 64 MB");
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length > RESULT_LIMIT) throw new Error("larger than 64 MB");
+      if (attempt > 1)
+        console.log(`[image-result] ${url.host} read on attempt ${attempt}`);
+      return bytes;
+    } catch (error) {
+      last = describeErrorForLog(error);
+      console.warn(
+        `[image-result] ${url.host} read attempt ${attempt}/${RESULT_ATTEMPTS} failed: ${last}`,
+      );
+      if (attempt < RESULT_ATTEMPTS)
+        await new Promise((resolve) =>
+          setTimeout(resolve, (options.retryDelayMs ?? 1500) * attempt),
+        );
+    }
+  }
+  throw new Error("Image download failed");
+}

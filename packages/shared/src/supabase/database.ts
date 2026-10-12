@@ -264,6 +264,7 @@ export type Database = {
       background_jobs: {
         Row: {
           attempt_count: number
+          billing_checked_at: string | null
           billing_status: string
           canceled_at: string | null
           canvas_id: string | null
@@ -291,9 +292,13 @@ export type Database = {
           workspace_id: string
           xy2api_key_id: number | null
           xy2api_request_id: string | null
+          xy2api_task_id: string | null
+          xy2api_task_polled_at: string | null
+          xy2api_task_submitted_at: string | null
         }
         Insert: {
           attempt_count?: number
+          billing_checked_at?: string | null
           billing_status?: string
           canceled_at?: string | null
           canvas_id?: string | null
@@ -321,9 +326,13 @@ export type Database = {
           workspace_id: string
           xy2api_key_id?: number | null
           xy2api_request_id?: string | null
+          xy2api_task_id?: string | null
+          xy2api_task_polled_at?: string | null
+          xy2api_task_submitted_at?: string | null
         }
         Update: {
           attempt_count?: number
+          billing_checked_at?: string | null
           billing_status?: string
           canceled_at?: string | null
           canvas_id?: string | null
@@ -351,6 +360,9 @@ export type Database = {
           workspace_id?: string
           xy2api_key_id?: number | null
           xy2api_request_id?: string | null
+          xy2api_task_id?: string | null
+          xy2api_task_polled_at?: string | null
+          xy2api_task_submitted_at?: string | null
         }
         Relationships: [
           {
@@ -1458,6 +1470,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      xy2api_pending_deliveries: {
+        Row: {
+          attempts: number
+          bytes: string
+          created_at: string
+          height: number
+          job_id: string
+          last_error: string | null
+          mime_type: string
+          object_path: string
+          updated_at: string
+          width: number
+        }
+        Insert: {
+          attempts?: number
+          bytes: string
+          created_at?: string
+          height: number
+          job_id: string
+          last_error?: string | null
+          mime_type: string
+          object_path: string
+          updated_at?: string
+          width: number
+        }
+        Update: {
+          attempts?: number
+          bytes?: string
+          created_at?: string
+          height?: number
+          job_id?: string
+          last_error?: string | null
+          mime_type?: string
+          object_path?: string
+          updated_at?: string
+          width?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "xy2api_pending_deliveries_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: true
+            referencedRelation: "background_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       xy2api_preferences: {
         Row: {

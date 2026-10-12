@@ -84,6 +84,15 @@ export type ServerEnv = {
   /** Worker settles 待核对 image jobs from the xy2api usage list (default on). */
   xy2apiBillingReconcile?: boolean;
   /**
+   * XY2API_ASYNC_IMAGES=on sends OpenAI and Grok image calls as main-site
+   * async tasks (submit, poll; features/xy2api/image-task.ts). Off by
+   * default. A main site without them answers 404 and the call goes
+   * synchronously, so "on" is safe against any xy2api version.
+   */
+  xy2apiAsyncImages?: "on" | "off";
+  /** XY2API_ASYNC_IMAGE_USERS: when set, only these user ids (canary). */
+  xy2apiAsyncImageUsers?: string[];
+  /**
    * Worker deletes canvas image objects no canvas references (default "on";
    * "dry-run" only logs them). features/canvas/canvas-files-sweeper.ts
    */
@@ -250,6 +259,11 @@ export function loadServerEnv(
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),
     workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 3),
     xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
+    xy2apiAsyncImages: source.XY2API_ASYNC_IMAGES === "on" ? "on" : "off",
+    xy2apiAsyncImageUsers: (source.XY2API_ASYNC_IMAGE_USERS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     canvasFilesSweep:
       source.CANVAS_FILES_SWEEP === "off" ||
       source.CANVAS_FILES_SWEEP === "dry-run"

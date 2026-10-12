@@ -172,6 +172,37 @@ order by created_at desc;
 
 超过 30 小时（`billingUnknownHours`）仍是“待核对”的任务，运维监控报 `billing_unknown_stale`，直到人工处理完。人工在主站核对后可以直接改结论（只改仍是 `unknown` 的任务）：`update public.background_jobs set billing_status = 'charged' where id = '<job_id>' and billing_status = 'unknown';`，没扣费就改成 `'not_charged'`。
 
+### 异步生图
+
+大图要 1～3 分钟。同步调用要一直占着一条连接，中途被代理或网络掐断，结果就不明（待核对）。异步调用时，主站收下请求立刻返回任务号，图在主站后台生成，本站每隔几秒查一次结果，连接断了只是少查一次（代码 `features/xy2api/image-task.ts`，迁移 `20261012000001`）。
+
+- **开关**：`XY2API_ASYNC_IMAGES=on`（默认 `off`）。`XY2API_ASYNC_IMAGE_USERS` 填逗号分隔的用户 ID 时，只有这些用户走异步（灰度），留空就是所有人。API 和 Worker 都读这两个变量，改完重建两个容器。
+- **范围**：OpenAI 和 Grok 的 Key（目录协议 `openai-images`、`xai-images`）。Gemini 主站没有异步接口，仍走同步。
+- **主站前提**：主站管理员要在「备份 → 异步图片对象存储」里开启存储。没开时提交返回 404 "async image tasks are not enabled"，这时什么都没发出去，本站改走同步，并在 10 分钟内不再对这类 Key 试异步（日志 `async image tasks unavailable for <平台> keys`）。主站的调度模式还必须是 `sub2api`（gguuai.com 从 09-29 起就是）：在 `controlled` 模式下，xy2api 0.2.5/0.2.6 会把后台任务绑在提交请求的连接上，202 一返回任务就失败（主站日志 `upstream request failed: context canceled`，不扣费，本站显示主站繁忙）。主站要切到 `controlled` 时，先把本站异步关掉。
+- **流程**：`POST /v1/images/{generations,edits}/async` 返回 202、任务号和 `X-Client-Request-ID`；任务号、请求 ID、提交时间写进任务行（`xy2api_task_id`、`xy2api_request_id`、`xy2api_task_submitted_at`）之后才开始查。`GET /v1/images/tasks/<任务号>` 前 30 秒每 3 秒查一次，2 分钟内每 5 秒，之后每 10 秒，主站给了 `Retry-After` 就不早于它（最多 30 秒）。完成后结果是主站对象存储里的链接，本站只接受 https，最多读 3 次、最大 64 MiB，之后和同步结果一样保存。
+- **计费**：请求 ID 在 202 时就拿到了，之后的失败都带着它。主站明确拒绝的（安全拦截、参数错误等 4xx）和同步时一样记为未扣费；图生成之后才失败的（写对象存储失败、主站 30 分钟超时、结果无效、崩溃），以及查询时任务已过期或 Key 已删除（404/401/403），都记为待核对，由上一节的自动核对按请求 ID 结清。本站最多等 35 分钟，过了也记为待核对。
+- **Worker 重启**：Worker 停机时不等异步任务，把它们“挂起”：计费状态保持 pending，交出租约，队列消息 5 秒后回来，新 Worker 接着查同一个任务，不会重新发送。演练里 Worker 2 秒内重启完，6 秒后新 Worker 接上，主站只记一次用量。
+- **API 进程里的生图**（`POST /api/agent/generate-image`，没有队列消息）：API 中途退出时，Worker 里的任务恢复器（`features/xy2api/task-resumer.ts`，每分钟一次）把 2 分钟没人查、又没有队列消息的任务放回队列，由 Worker 接着查。
+- **租约**：正在查的进程每 15 秒更新 `xy2api_task_polled_at`；超过 60 秒没更新，其他进程才能接手。生图并发名额（dispatch gate）按租约计入还在查的异步任务。
+- **关掉**：`XY2API_ASYNC_IMAGES=off` 后重建 API 和 Worker。已经提交的任务仍会查到结束（接着查不看开关）。
+
+日志关键字：`[image-task]`（`accepted: task … request …`、`completed after …s (N polls)`、`failed after`、`poll N failed (N in a row)`、`resuming task`、`not stored on the job`）、`parked for the next worker`、`async image tasks unavailable`、`[task-resumer]`（`queued for the worker` 是有任务被接回，`sweep failed` 是数据库不可用）。
+
+查看正在等结果的异步任务：
+
+```sql
+select id, status, xy2api_task_id, xy2api_request_id,
+       now() - xy2api_task_submitted_at as running_for,
+       now() - xy2api_task_polled_at as since_last_poll
+from public.background_jobs
+where xy2api_task_id is not null and billing_status = 'pending'
+order by xy2api_task_submitted_at;
+```
+
+`since_last_poll` 超过 2 分钟、状态还是 `running` 的任务说明没人在查：先看 Worker 是否在跑、日志里有没有 `[task-resumer]`。异步任务的平均耗时可以按 `xy2api_task_submitted_at` 到 `completed_at` 算。主站对象存储里的结果图不会自动删除，存储桶要配生命周期规则（只针对结果前缀，例如 `images/`，保留 7 天），这一步在主站做。
+
+实验环境演练：`~/xy-lab/e2e/async-setup.sh on|off`（实验主站的对象存储和调度模式），`~/xy-lab/e2e/async.sh`（`image` 正常出图、`resume` 重启 Worker、`edge` 主站断开 20 秒、`inline` 杀掉 API、`fallback` 主站关掉异步后回退同步），都在全量回归里。
+
 ### 工作区成员与数据隔离
 
 产品没有邀请功能，每个用户只有自己的个人工作区，成员只由 `bootstrap_viewer` 在首次登录时建立。迁移 `20261009000007` 之前，任何登录用户都能通过 Supabase REST 把别人加进自己的工作区；被加的人在 Agent 里生成的图，可能存进加人者的工作区（代码已改为按 owner 查个人工作区）。上线 `20261009000007` 前后各查一次，正常应为 0 行：
