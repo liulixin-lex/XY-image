@@ -2,9 +2,13 @@
  * A prompt typed on the landing page before signing in. It survives the
  * login round-trip in sessionStorage and is placed back into the studio
  * input, together with the ratio and 画质 picked on the landing page.
+ * 最近生成 (第 56 条) hands pictures to the studio the same way: 再来一次
+ * with its model, key and 质量, or 以此为参考 with the picture attached.
  * It is never auto-submitted: generation costs money, so only an explicit
  * click in the studio starts it.
  */
+import { IMAGE_QUALITIES, type ImageQuality } from "@loomic/shared";
+
 import {
   type AspectRatio,
   type ImageResolution,
@@ -18,6 +22,12 @@ export type PendingDraft = {
   prompt: string;
   aspectRatio?: AspectRatio;
   resolution?: ImageResolution;
+  quality?: ImageQuality;
+  /** The model, and the key it went through, to pick again. */
+  model?: string;
+  keyId?: number;
+  /** A finished picture to attach as a reference. */
+  reference?: { url: string; assetId: string; name: string };
 };
 
 export function savePendingDraft(draft: PendingDraft) {
@@ -47,10 +57,25 @@ export function takePendingDraft(): PendingDraft | null {
       prompt?: unknown;
       aspectRatio?: unknown;
       resolution?: unknown;
+      model?: unknown;
+      keyId?: unknown;
+      reference?: { url?: unknown; assetId?: unknown; name?: unknown } | null;
       /** Older builds: standard / hd = 1K / 2K. */
       quality?: unknown;
     };
-    if (typeof parsed.prompt !== "string" || !parsed.prompt) return null;
+    if (typeof parsed.prompt !== "string") return null;
+    const reference =
+      parsed.reference &&
+      typeof parsed.reference.url === "string" &&
+      typeof parsed.reference.assetId === "string"
+        ? {
+            url: parsed.reference.url,
+            assetId: parsed.reference.assetId,
+            name: typeof parsed.reference.name === "string" ? parsed.reference.name : "参考图",
+          }
+        : null;
+    // A picture handed over as a reference may come without a description.
+    if (!parsed.prompt && !reference) return null;
     const resolution = RESOLUTIONS.includes(parsed.resolution as ImageResolution)
       ? (parsed.resolution as ImageResolution)
       : parsed.quality === "hd"
@@ -58,10 +83,17 @@ export function takePendingDraft(): PendingDraft | null {
         : parsed.quality === "standard"
           ? "1K"
           : undefined;
+    const quality = (IMAGE_QUALITIES as readonly unknown[]).includes(parsed.quality)
+      ? (parsed.quality as ImageQuality)
+      : undefined;
     return {
       prompt: parsed.prompt,
       ...(isAspectRatio(parsed.aspectRatio) ? { aspectRatio: parsed.aspectRatio } : {}),
       ...(resolution ? { resolution } : {}),
+      ...(quality ? { quality } : {}),
+      ...(typeof parsed.model === "string" && parsed.model ? { model: parsed.model } : {}),
+      ...(typeof parsed.keyId === "number" && Number.isInteger(parsed.keyId) ? { keyId: parsed.keyId } : {}),
+      ...(reference ? { reference } : {}),
     };
   } catch {
     return null;

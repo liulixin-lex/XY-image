@@ -17,6 +17,8 @@ import {
   imageBatchPayloadSchema,
   imageBatchResponseSchema,
   imageBatchTargets,
+  IMAGE_JOB_SOURCES,
+  type ImageJobSource,
   JOB_PAGE_MAX,
   jobListResponseSchema,
   jobResponseSchema,
@@ -240,11 +242,13 @@ export async function registerJobRoutes(
         jobType?: BackgroundJobType;
         before?: string;
         limit?: number;
+        source?: ImageJobSource;
       } = {};
       if (query.status) filters.status = query.status as BackgroundJobStatus;
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
       if (query.before) filters.before = query.before;
       if (query.limit) filters.limit = query.limit;
+      if (query.source) filters.source = query.source;
       const jobs = await options.jobService.listJobs(user, filters);
       const last = jobs.at(-1);
 
@@ -286,6 +290,7 @@ const jobListQuerySchema = z.object({
   job_type: z.string().max(40).optional(),
   before: z.iso.datetime({ offset: true }).optional(),
   limit: z.coerce.number().int().min(1).max(JOB_PAGE_MAX).optional(),
+  source: z.enum(IMAGE_JOB_SOURCES).optional(),
 });
 
 /**

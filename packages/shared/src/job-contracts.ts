@@ -313,6 +313,14 @@ export type JobResponse = z.infer<typeof jobResponseSchema>;
 /** Most jobs one page of GET /api/jobs returns. */
 export const JOB_PAGE_MAX = 100;
 
+/**
+ * Where a picture was made (第 56 条, 最近生成 filter): the studio (no
+ * canvas), a 生成 node on a canvas (`canvas_source_id`), or the design
+ * assistant (a canvas, no node).
+ */
+export const IMAGE_JOB_SOURCES = ["studio", "canvas", "assistant"] as const;
+export type ImageJobSource = (typeof IMAGE_JOB_SOURCES)[number];
+
 export const jobListResponseSchema = z.object({
   jobs: z.array(backgroundJobSchema),
   /**

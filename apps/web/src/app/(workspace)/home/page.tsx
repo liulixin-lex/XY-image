@@ -160,10 +160,10 @@ export default function HomePage() {
           </h2>
           <Link
             href="/projects"
-            className="inline-flex items-center gap-1 text-[13px] text-fg-soft hover:text-fg"
+            className="group inline-flex items-center gap-1 text-[13px] font-semibold text-fg-soft hover:text-fg"
           >
-            全部项目
-            <ArrowRightIcon className="size-3.5" strokeWidth={1.75} />
+            查看全部
+            <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </Link>
         </div>
         {projectsFailed ? (

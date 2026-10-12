@@ -1,9 +1,10 @@
 "use client";
 
+import { NavigationMenu } from "@base-ui/react/navigation-menu";
 import {
   BlocksIcon,
-  FolderOpenIcon,
   HouseIcon,
+  ImagesIcon,
   type LucideIcon,
   Settings2Icon,
   SparklesIcon,
@@ -18,6 +19,8 @@ import { cn } from "@/lib/utils";
 
 import { AccountChip } from "./account/account-chip";
 import { BrandLockup } from "./brand/brand-mark";
+import { WorksMenuItem, WorksMenuPortal } from "./works/works-menu";
+import { isWorksPath } from "./works/works-nav";
 
 interface NavItem {
   href: string;
@@ -25,21 +28,34 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-const NAV_ITEMS: NavItem[] = [
+/**
+ * Top bar order. 作品 (第 56 条) is a menu: 最近生成 (/history) and 画布项目
+ * (/projects), see components/works.
+ */
+const NAV_ITEMS: (NavItem | "works")[] = [
   { href: "/home", label: "首页", icon: HouseIcon },
   { href: "/studio", label: "生图", icon: SparklesIcon },
-  { href: "/projects", label: "画布项目", icon: FolderOpenIcon },
+  "works",
   { href: "/brand-kit", label: "品牌套件", icon: SwatchBookIcon },
   { href: "/skills", label: "技能", icon: BlocksIcon },
   { href: "/settings", label: "设置", icon: Settings2Icon },
 ];
 
-/** Bottom bar on phones: the four places used most. */
-const MOBILE_ITEMS = [NAV_ITEMS[0]!, NAV_ITEMS[1]!, NAV_ITEMS[2]!, NAV_ITEMS[5]!];
+/** Bottom bar on phones: the four places used most; 作品 opens 最近生成. */
+const MOBILE_ITEMS: NavItem[] = [
+  { href: "/home", label: "首页", icon: HouseIcon },
+  { href: "/studio", label: "生图", icon: SparklesIcon },
+  { href: "/history", label: "作品", icon: ImagesIcon },
+  { href: "/settings", label: "设置", icon: Settings2Icon },
+];
 
 function useIsActive() {
   const pathname = usePathname();
-  return (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  return (href: string) =>
+    pathname === href ||
+    pathname.startsWith(`${href}/`) ||
+    // 作品 on phones stands for both of its pages.
+    (href === "/history" && isWorksPath(pathname));
 }
 
 /**
@@ -52,6 +68,7 @@ function useIsActive() {
  */
 export function AppSidebar() {
   const isActive = useIsActive();
+  const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -72,24 +89,31 @@ export function AppSidebar() {
             <BrandLockup tagClassName="md:max-xl:hidden" />
           </Link>
 
-          <nav aria-label="主导航" className="hidden min-w-0 items-center gap-1 md:flex">
-            {NAV_ITEMS.map((item) => {
-              const active = isActive(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-colors lg:px-3.5",
-                    active ? "bg-fg text-ground" : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
-                  )}
-                >
-                  <span className="sk-in">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+          <NavigationMenu.Root aria-label="主导航" delay={80} closeDelay={160} className="hidden min-w-0 md:block">
+            <NavigationMenu.List className="flex items-center gap-1">
+              {NAV_ITEMS.map((item) => {
+                if (item === "works") return <WorksMenuItem key="works" active={isWorksPath(pathname)} />;
+                const active = isActive(item.href);
+                return (
+                  <NavigationMenu.Item key={item.href}>
+                    <NavigationMenu.Link
+                      render={<Link href={item.href} />}
+                      closeOnClick
+                      active={active}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "sk inline-flex h-[34px] items-center rounded-[10px] px-3 text-[13.5px] font-semibold whitespace-nowrap transition-colors outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc lg:px-3.5",
+                        active ? "bg-fg text-ground" : "text-fg-soft hover:bg-tint/[0.06] hover:text-fg",
+                      )}
+                    >
+                      <span className="sk-in">{item.label}</span>
+                    </NavigationMenu.Link>
+                  </NavigationMenu.Item>
+                );
+              })}
+            </NavigationMenu.List>
+            <WorksMenuPortal />
+          </NavigationMenu.Root>
 
           <AccountChip className="ml-auto" />
         </div>

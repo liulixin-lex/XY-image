@@ -64,6 +64,28 @@ export default function StudioPage() {
     }
   }, []);
 
+  // A picture handed over from 最近生成 (再来一次 / 以此为参考) brings its
+  // model, key and reference: applied once the models are listed.
+  const draftApplied = useRef(false);
+  useEffect(() => {
+    if (!pendingDraft || draftApplied.current || !models.data?.length || !composer.current) return;
+    draftApplied.current = true;
+    if (pendingDraft.model || pendingDraft.quality)
+      composer.current.applyParams({
+        prompt: pendingDraft.prompt,
+        model: pendingDraft.model ?? null,
+        keyId: pendingDraft.keyId ?? null,
+        ...(pendingDraft.resolution ? { resolution: pendingDraft.resolution } : {}),
+        quality: pendingDraft.quality ?? null,
+        aspectRatio: pendingDraft.aspectRatio ?? null,
+      });
+    if (pendingDraft.reference) composer.current.addReference(pendingDraft.reference);
+    console.info("[studio] draft from history applied", {
+      model: pendingDraft.model ?? null,
+      reference: Boolean(pendingDraft.reference),
+    });
+  }, [pendingDraft, models.data]);
+
   const visible = useMemo(
     // Canceled pictures that never left stay in 设置 › 记录; the feed shows what happened.
     () => studio.jobs.filter((job) => !(job.status === "canceled" && job.billing === "none" && !job.batchId)),

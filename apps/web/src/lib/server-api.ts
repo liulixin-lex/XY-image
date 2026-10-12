@@ -2,6 +2,7 @@ import type {
   AssetSignedUrlResponse,
   BackgroundJob,
   ImageEdit,
+  ImageJobSource,
   CancelImageBatchResponse,
   ImageBatchResponse,
   OptimizePromptResponse,
@@ -690,6 +691,8 @@ export async function fetchJobs(
     before?: string;
     /** 1–100; the server defaults to 50. */
     limit?: number;
+    /** Image jobs: studio, a canvas 生成 node, or the design assistant. */
+    source?: ImageJobSource;
   } = {},
 ): Promise<JobListResponse> {
   const params = new URLSearchParams();
@@ -697,6 +700,7 @@ export async function fetchJobs(
   if (filters.jobType) params.set("job_type", filters.jobType);
   if (filters.before) params.set("before", filters.before);
   if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.source) params.set("source", filters.source);
   const query = params.toString();
   const response = await fetch(
     `${getServerBaseUrl()}/api/jobs${query ? `?${query}` : ""}`,

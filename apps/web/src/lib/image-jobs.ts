@@ -6,6 +6,7 @@ import {
   type BackgroundJob,
   IMAGE_EDIT_MODES,
   type ImageEditMode,
+  type ImageJobSource,
   type ImageQuality,
   type ImageResolution,
   isLegacyImageQuality,
@@ -33,6 +34,8 @@ export type ImageJobView = {
   /** The canvas it was made on (generator node or design assistant); null for the studio. */
   canvasId: string | null;
   projectId: string | null;
+  /** Where it was made: the studio, a canvas 生成 node, or the design assistant. */
+  source: ImageJobSource;
   /** 画质 asked for (older jobs: read from their single quality field). */
   resolution: ImageResolution;
   /** 质量 asked for; null for jobs from before the setting existed. */
@@ -89,6 +92,7 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     keyId: num(job.xy2api_key_id),
     canvasId: job.canvas_id ?? null,
     projectId: job.project_id ?? null,
+    source: !job.canvas_id ? "studio" : str(payload.canvas_source_id) ? "canvas" : "assistant",
     resolution: params.resolution,
     quality: legacy ? null : params.quality,
     aspectRatio: str(payload.aspect_ratio),

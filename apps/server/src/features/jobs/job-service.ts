@@ -2,6 +2,7 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
+  ImageJobSource,
   Json,
 } from "@loomic/shared";
 import { checkStoreError, integrationClient } from "../xy2api/store.js";
@@ -69,6 +70,8 @@ export type JobService = {
       jobType?: BackgroundJobType;
       before?: string;
       limit?: number;
+      /** Image jobs only: where the picture was made. */
+      source?: ImageJobSource;
     },
   ): Promise<BackgroundJob[] & { more?: boolean }>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
@@ -274,6 +277,15 @@ export function createJobService(options: {
       if (filters?.status) query = query.eq("status", filters.status);
       if (filters?.jobType) query = query.eq("job_type", filters.jobType);
       if (filters?.before) query = query.lt("created_at", filters.before);
+      if (filters?.source === "studio") query = query.is("canvas_id", null);
+      else if (filters?.source === "canvas")
+        query = query
+          .not("canvas_id", "is", null)
+          .not("payload->>canvas_source_id", "is", null);
+      else if (filters?.source === "assistant")
+        query = query
+          .not("canvas_id", "is", null)
+          .is("payload->>canvas_source_id", null);
 
       const { data: jobs, error } = await query;
       if (error) {

@@ -348,8 +348,15 @@ describe("job history pages (第 56 条)", () => {
     jobService.listJobs.mockResolvedValueOnce([job(3, { prompt: "c" })]);
     const last = await app.inject({ method: "GET", url: "/api/jobs" });
     expect(last.json().next_before).toBeNull();
-    // A bad cursor or page size is the caller's mistake, not a 500.
-    for (const query of ["before=yesterday", "limit=0", "limit=101"]) {
+    // 最近生成 filters by where a picture was made.
+    jobService.listJobs.mockResolvedValueOnce([]);
+    await app.inject({ method: "GET", url: "/api/jobs?job_type=image_generation&source=canvas" });
+    expect(jobService.listJobs).toHaveBeenLastCalledWith(expect.anything(), {
+      jobType: "image_generation",
+      source: "canvas",
+    });
+    // A bad cursor, page size or source is the caller's mistake, not a 500.
+    for (const query of ["before=yesterday", "limit=0", "limit=101", "source=everywhere"]) {
       const bad = await app.inject({ method: "GET", url: `/api/jobs?${query}` });
       expect(bad.statusCode, query).toBe(400);
     }

@@ -2,7 +2,8 @@
 
 /**
  * The latest finished pictures as one row. The newest one lights the room.
- * Read-only: clicking opens the studio, where details and actions live.
+ * Read-only: clicking opens 最近生成 (第 56 条), where every picture is, with
+ * its details and actions.
  */
 import { ArrowRightIcon } from "lucide-react";
 import Link from "next/link";
@@ -31,7 +32,7 @@ export function RecentPrints() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetchJobs(token, { jobType: "image_generation", status: "succeeded" })
+    fetchJobs(token, { jobType: "image_generation", status: "succeeded", limit: 16 })
       .then(({ jobs }) => {
         if (cancelled) return;
         setPrints(
@@ -66,11 +67,11 @@ export function RecentPrints() {
           最近生成
         </h2>
         <Link
-          href="/studio"
-          className="inline-flex items-center gap-1 text-[13px] text-fg-soft hover:text-fg"
+          href="/history"
+          className="group inline-flex items-center gap-1 text-[13px] font-semibold text-fg-soft hover:text-fg"
         >
-          去生图
-          <ArrowRightIcon className="size-3.5" strokeWidth={1.75} />
+          查看全部
+          <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
         </Link>
       </div>
 
@@ -99,7 +100,7 @@ export function RecentPrints() {
           {prints.map((job, index) => (
             <li key={job.id} className="shrink-0">
               <Link
-                href="/studio"
+                href="/history"
                 className="group block w-[156px] rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc"
                 title={jobLabel(job)}
               >
