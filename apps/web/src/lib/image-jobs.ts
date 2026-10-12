@@ -28,6 +28,11 @@ export type ImageJobView = {
   /** Short title the design assistant gives its pictures; null for studio jobs. */
   title: string | null;
   model: string | null;
+  /** The main-site key it went through (null on older servers). */
+  keyId: number | null;
+  /** The canvas it was made on (generator node or design assistant); null for the studio. */
+  canvasId: string | null;
+  projectId: string | null;
   /** 画质 asked for (older jobs: read from their single quality field). */
   resolution: ImageResolution;
   /** 质量 asked for; null for jobs from before the setting existed. */
@@ -81,6 +86,9 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     prompt: str(payload.prompt) ?? "",
     title: str(payload.title),
     model: str(payload.model),
+    keyId: num(job.xy2api_key_id),
+    canvasId: job.canvas_id ?? null,
+    projectId: job.project_id ?? null,
     resolution: params.resolution,
     quality: legacy ? null : params.quality,
     aspectRatio: str(payload.aspect_ratio),

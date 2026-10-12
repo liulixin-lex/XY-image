@@ -9,8 +9,9 @@
  * - account/balance: on sign-in, when the tab becomes visible again, and
  *   after each generation settles (immediately, then once more after the
  *   server's 15 s balance cache expires);
- * - models: lazily on first use, and again after the selected key changes
- *   (chat models also after the user's own providers change);
+ * - models: lazily on first use, and again after the default key or the
+ *   keys that are on change (chat models also after the user's own
+ *   providers change);
  * - keys: on demand (settings) and after a sync.
  */
 import {
@@ -77,8 +78,16 @@ interface AccountContextValue {
   refreshChatModels: () => Promise<void>;
   /** Re-sync keys from the main site, then reload everything that depends on them. */
   syncKeys: () => Promise<void>;
-  /** Send only changed fields. Throws ApiApplicationError on rejection. */
-  updatePreferences: (patch: PreferencesPatch) => Promise<AccountPreferences>;
+  /**
+   * Send only changed fields. Throws ApiApplicationError on rejection.
+   * `reloadModels: false` keeps the image model list as it is when the
+   * default key changes (a pick in the studio must not reorder the list
+   * under the user); the balance still follows the new key.
+   */
+  updatePreferences: (
+    patch: PreferencesPatch,
+    options?: { reloadModels?: boolean },
+  ) => Promise<AccountPreferences>;
   /** Call when a generation finished (any outcome) so the balance catches up. */
   notifyGenerationSettled: () => void;
 }
@@ -213,7 +222,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [refreshAccount, refreshChatModels, refreshImageModels, refreshKeys]);
 
   const updatePreferences = useCallback(
-    async (patch: PreferencesPatch) => {
+    async (patch: PreferencesPatch, options?: { reloadModels?: boolean }) => {
       const current = tokenRef.current;
       if (!current) throw new Error("not signed in");
       const { preferences } = await updateAccountPreferences(current, patch);
@@ -221,9 +230,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         prev.data ? { ...prev, data: { ...prev.data, preferences } } : prev,
       );
       const tasks: Promise<void>[] = [];
-      if (patch.imageKeyId !== undefined) {
+      if (patch.imageKeyId !== undefined || patch.disabledImageKeyIds !== undefined) {
         tasks.push(refreshAccount({ force: true }));
-        if (imageModelsRequested.current) tasks.push(refreshImageModels());
+        // The list holds every key that is on (第 56 条) and the default first.
+        if (imageModelsRequested.current && options?.reloadModels !== false)
+          tasks.push(refreshImageModels());
       }
       if (patch.chatKeyId !== undefined && chatModelsRequested.current)
         tasks.push(refreshChatModels());
@@ -338,7 +349,10 @@ export function useAccount(): AccountContextValue {
   return ctx;
 }
 
-/** Image models for the selected image key, loaded on first use. */
+/**
+ * Image models of every image key that is on (第 56 条), default key first,
+ * loaded on first use. Pick them by ref (lib/image-model-ref.ts).
+ */
 export function useImageModels() {
   const { imageModels, ensureImageModels, refreshImageModels } = useAccount();
   useEffect(() => {

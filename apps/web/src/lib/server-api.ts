@@ -356,6 +356,14 @@ export type { ImageQuality, ImageResolution };
 export type ImageModelInfo = {
   /** Exact id to send back (may be a `*-preview` alias). */
   id: string;
+  /**
+   * The main-site key this entry comes through (第 56 条: the list holds the
+   * models of every key that is on, so one model can appear under two keys).
+   * Absent from older servers, which list the selected key only.
+   */
+  keyId?: number;
+  keyName?: string;
+  groupName?: string | null;
   displayName: string;
   description: string;
   provider: string;
@@ -383,16 +391,31 @@ export type ImageModelInfo = {
   minTier?: string;
 };
 
-/** Image models available to the selected image key. */
+/** An image key whose models are listed (no secret). */
+export type ImageKeyInfo = {
+  keyId: number;
+  name: string;
+  groupName: string | null;
+  isDefault: boolean;
+};
+
+/**
+ * Image models of every key that is on (第 56 条), grouped by key: the
+ * default key first. Older servers list the selected key only, without
+ * `keys` or the key fields on each model.
+ */
 export async function fetchImageModels(
   accessToken: string,
-): Promise<{ models: ImageModelInfo[] }> {
+): Promise<{ models: ImageModelInfo[]; keys?: ImageKeyInfo[] }> {
   return dedupeRequest(`image-models:${accessToken.slice(-12)}`, async () => {
     const response = await fetch(`${getServerBaseUrl()}/api/image-models`, {
       headers: authHeaders(accessToken),
     });
     if (!response.ok) return handleErrorResponse(response);
-    return (await response.json()) as { models: ImageModelInfo[] };
+    return (await response.json()) as {
+      models: ImageModelInfo[];
+      keys?: ImageKeyInfo[];
+    };
   });
 }
 
@@ -598,6 +621,8 @@ export async function generateImageDirect(
 export type CreateImageJobInput = {
   prompt: string;
   model?: string;
+  /** The key `model` was picked under (ImageModelInfo.keyId). */
+  key_id?: number;
   /** 画质: 1K / 2K / 4K. */
   resolution?: ImageResolution;
   /** 质量: auto / low / medium / high. */
@@ -615,6 +640,17 @@ export type CreateImageJobInput = {
   session_id?: string;
   thread_id?: string;
 };
+
+/**
+ * A batch: `count` pictures of `model`, or `targets` (多模型, 第 56 条):
+ * several models side by side, each through its key, with their own counts.
+ */
+export type CreateImageBatchInput =
+  | (CreateImageJobInput & { count: number; targets?: undefined })
+  | (Omit<CreateImageJobInput, "model" | "key_id"> & {
+      targets: { model: string; key_id?: number; count: number }[];
+      count?: undefined;
+    });
 
 /** Queue an image generation job (studio). Returns 201 `{ job }`. */
 export async function createImageJob(
@@ -647,11 +683,20 @@ export async function fetchJob(
 /** Latest 50 jobs of the user, newest first. */
 export async function fetchJobs(
   accessToken: string,
-  filters: { status?: BackgroundJob["status"]; jobType?: BackgroundJob["job_type"] } = {},
+  filters: {
+    status?: BackgroundJob["status"];
+    jobType?: BackgroundJob["job_type"];
+    /** 历史 pages: `next_before` of the previous page. */
+    before?: string;
+    /** 1–100; the server defaults to 50. */
+    limit?: number;
+  } = {},
 ): Promise<JobListResponse> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.jobType) params.set("job_type", filters.jobType);
+  if (filters.before) params.set("before", filters.before);
+  if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
   const response = await fetch(
     `${getServerBaseUrl()}/api/jobs${query ? `?${query}` : ""}`,
@@ -670,7 +715,7 @@ export async function fetchJobs(
  */
 export async function createImageBatch(
   accessToken: string,
-  input: CreateImageJobInput & { count: number },
+  input: CreateImageBatchInput,
 ): Promise<ImageBatchResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/jobs/image-generation/batch`,

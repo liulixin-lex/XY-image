@@ -138,6 +138,10 @@ export function createJobService(options: {
         BackgroundJob["billing_status"]
       >,
       xy2api_request_id: (row.xy2api_request_id as string) ?? null,
+      xy2api_key_id:
+        row.xy2api_key_id === null || row.xy2api_key_id === undefined
+          ? null
+          : Number(row.xy2api_key_id),
       payload: (row.payload as Record<string, unknown>) ?? {},
       result: (row.result as Record<string, unknown>) ?? null,
       error_code: (row.error_code as string) ?? null,
@@ -155,7 +159,7 @@ export function createJobService(options: {
   }
 
   const SELECT_COLS =
-    "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, billing_status, xy2api_request_id, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+    "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, billing_status, xy2api_request_id, xy2api_key_id, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
 
   return {
     async createJob(user, input) {

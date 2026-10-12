@@ -83,7 +83,8 @@ export function BatchFeed({
   groups: JobGroup[];
   selectedId: string | null;
   justFinished: Set<string>;
-  modelName: (id: string | null) => string;
+  /** The model a picture was asked of, with its key when that matters. */
+  modelName: (job: Pick<ImageJobView, "model" | "keyId">) => string;
   usageUrl: string | null;
   actions: FeedActions;
 }) {
@@ -116,7 +117,8 @@ function BatchBlock({
   group: JobGroup;
   selectedId: string | null;
   justFinished: Set<string>;
-  modelName: (id: string | null) => string;
+  /** The model a picture was asked of, with its key when that matters. */
+  modelName: (job: Pick<ImageJobView, "model" | "keyId">) => string;
   usageUrl: string | null;
   actions: FeedActions;
 }) {
@@ -126,12 +128,15 @@ function BatchBlock({
   const unsent = jobs.filter(isUnsentJob);
   const active = jobs.some(isActiveJob);
   const titleId = `${groupAnchor(group.key)}-title`;
+  // 多模型 (第 56 条): one request, several models; each card names its own.
+  const models = new Set(jobs.map((job) => `${job.keyId ?? ""}:${job.model ?? ""}`));
+  const sideBySide = models.size > 1;
   const meta = [
     lead.edit ? IMAGE_EDIT_LABEL[lead.edit] : null,
     lead.aspectRatio ?? "默认比例",
     describeImageParams({ resolution: lead.resolution, quality: lead.quality }),
     `${group.size} 张`,
-    modelName(lead.model),
+    sideBySide ? `${models.size} 个模型对比` : modelName(lead),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -190,6 +195,7 @@ function BatchBlock({
               reveal={justFinished.has(job.id)}
               usageUrl={usageUrl}
               actions={actions}
+              modelLabel={sideBySide ? modelName(job) : null}
             />
           </li>
         ))}
@@ -205,6 +211,7 @@ function PictureCard({
   reveal,
   usageUrl,
   actions,
+  modelLabel,
 }: {
   job: ImageJobView;
   index: number;
@@ -212,6 +219,8 @@ function PictureCard({
   reveal: boolean;
   usageUrl: string | null;
   actions: FeedActions;
+  /** Set in a 多模型 request: which model made this one. */
+  modelLabel: string | null;
 }) {
   const outcome = describeOutcome(job);
   const number = String(index + 1).padStart(2, "0");
@@ -273,6 +282,11 @@ function PictureCard({
           </span>
         ) : null}
       </figcaption>
+      {modelLabel ? (
+        <p className="mt-1 truncate text-[12px] font-semibold text-fg-soft" title={modelLabel}>
+          {modelLabel}
+        </p>
+      ) : null}
     </figure>
   );
 }

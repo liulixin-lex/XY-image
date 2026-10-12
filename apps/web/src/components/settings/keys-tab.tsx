@@ -1,12 +1,18 @@
 "use client";
 
 /**
- * Which main-site API key pays for what. The list is a synced copy of the
+ * Which main-site API keys pay for what. The list is a synced copy of the
  * user's keys on the main site; secrets never reach the browser. Choosing
- * a key only stores its id in this site's preferences.
+ * only stores ids in this site's preferences.
+ *
+ * 生图 (第 56 条): every key that can make images is used at once, all on by
+ * default; the studio and canvas list the models of all of them, grouped by
+ * key. A switch takes a key out (`disabledImageKeyIds`); one stays on. The
+ * 默认 key is the one the header balance reads and whose models come first.
+ * 对话 still uses one key.
  */
-import { ArrowUpRightIcon, CopyIcon, RefreshCwIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRightIcon, CopyIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAccount } from "@/lib/account-context";
 import { cn } from "@/lib/utils";
@@ -16,6 +22,7 @@ import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
 import { Button, buttonVariants } from "../ui/button";
 import { Picker } from "../ui/select";
+import { Switch } from "../ui/switch";
 import { SettingsSection, Tag } from "./section";
 
 /** Mirrors the server's isKeyUsable(); the server stays the authority. */
@@ -45,6 +52,8 @@ export function KeysTab() {
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState<"image" | "chat" | null>(null);
   const requested = useRef(false);
+  // Sent to the main site to add a key: sync once when the tab comes back.
+  const awaitingReturn = useRef(false);
 
   useEffect(() => {
     if (requested.current) return;
@@ -57,22 +66,12 @@ export function KeysTab() {
   const links = account.data?.links;
   const egressIp = config?.egressIp ?? "";
 
-  const imageOptions = useMemo(
-    () =>
-      list
-        .filter((k) => k.imageCapable)
-        .map((k) => {
-          const problem = keyProblem(k);
-          return {
-            value: String(k.keyId),
-            text: k.name || k.maskedKey,
-            label: k.name || k.maskedKey,
-            description: [k.groupName, problem].filter(Boolean).join(" · ") || k.maskedKey,
-            disabled: Boolean(problem),
-          };
-        }),
-    [list],
+  const imageKeys = useMemo(() => list.filter((k) => k.imageCapable), [list]);
+  const disabledIds = useMemo(
+    () => new Set(prefs?.disabled_image_key_ids ?? []),
+    [prefs?.disabled_image_key_ids],
   );
+  const enabledUsable = imageKeys.filter((k) => !keyProblem(k) && !disabledIds.has(k.keyId));
   const chatOptions = useMemo(
     () =>
       list
@@ -91,15 +90,50 @@ export function KeysTab() {
     [list],
   );
 
-  const sync = async () => {
-    setSyncing(true);
+  const sync = useCallback(
+    async (quiet = false) => {
+      setSyncing(true);
+      try {
+        await syncKeys();
+        if (!quiet) success("已从主站同步 Key 列表");
+      } catch (error) {
+        report(error);
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [report, success, syncKeys],
+  );
+
+  // Back from adding a key on the main site: pick it up without a click.
+  useEffect(() => {
+    const back = () => {
+      if (!awaitingReturn.current || document.visibilityState !== "visible") return;
+      awaitingReturn.current = false;
+      console.info("[settings] back from the main site: syncing keys");
+      void sync(true);
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => {
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("focus", back);
+    };
+  }, [sync]);
+
+  const toggleImageKey = async (keyId: number, on: boolean) => {
+    const next = new Set(disabledIds);
+    if (on) next.delete(keyId);
+    else next.add(keyId);
+    setSaving("image");
     try {
-      await syncKeys();
-      success("已从主站同步 Key 列表");
+      await updatePreferences({ disabledImageKeyIds: [...next].sort((a, b) => a - b) });
+      success(on ? "已用这个 Key 生图" : "这个 Key 不再用于生图");
+      console.info("[settings] image key", { keyId, on });
     } catch (error) {
       report(error);
     } finally {
-      setSyncing(false);
+      setSaving(null);
     }
   };
 
@@ -109,7 +143,7 @@ export function KeysTab() {
     setSaving(kind);
     try {
       await updatePreferences(kind === "image" ? { imageKeyId: keyId } : { chatKeyId: keyId });
-      success(kind === "image" ? "生图 Key 已切换" : "对话 Key 已切换");
+      success(kind === "image" ? "默认生图 Key 已切换" : "对话 Key 已切换");
     } catch (error) {
       report(error);
     } finally {
@@ -127,19 +161,45 @@ export function KeysTab() {
   return (
     <div>
       <SettingsSection
-        title="使用哪个 Key"
-        description="生图和对话分别用所选 Key。可选模型由 Key 所在分组决定，换 Key 后模型列表会跟着变。"
+        title="生图用哪些 Key"
+        description="开着的 Key 一起用：生图页和画布会列出它们所有的生图模型，按 Key 分组，每次生成可以选不同 Key 下的模型。"
+      >
+        <ImageKeyList
+          keys={imageKeys}
+          disabledIds={disabledIds}
+          defaultId={prefs?.image_key_id ?? null}
+          loading={loading}
+          saving={saving === "image"}
+          lastOn={enabledUsable.length <= 1}
+          onToggle={(keyId, on) => void toggleImageKey(keyId, on)}
+          onMakeDefault={(keyId) => void choose("image", String(keyId))}
+        />
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {links?.keys ? (
+            <a
+              href={links.keys}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => {
+                awaitingReturn.current = true;
+              }}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <PlusIcon strokeWidth={2} />
+              添加 Key
+            </a>
+          ) : null}
+          <span className="text-[12.5px] text-fg-muted">
+            在主站新建（选开放生图的分组），回到这页会自动同步。
+          </span>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="对话用哪个 Key"
+        description="设计助手的对话用一个 Key。可选的对话模型由它所在分组决定。"
       >
         <div className="grid max-w-xl gap-5 sm:grid-cols-2">
-          <KeyPicker
-            label="生图 Key"
-            hint="只列出所在分组开放了生图的 Key"
-            value={prefs?.image_key_id ?? null}
-            options={imageOptions}
-            loading={loading}
-            saving={saving === "image"}
-            onChange={(v) => void choose("image", v)}
-          />
           <KeyPicker
             label="对话 Key"
             hint="设计助手的对话用这个 Key"
@@ -157,7 +217,7 @@ export function KeysTab() {
         description="这里是主站 Key 的只读副本。新建、停用、改额度或 IP 限制都在主站操作，回来点同步。"
       >
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={sync} disabled={syncing}>
+          <Button variant="outline" onClick={() => void sync()} disabled={syncing}>
             <RefreshCwIcon className={cn(syncing && "animate-spin")} strokeWidth={1.75} />
             {syncing ? "正在同步" : "从主站同步"}
           </Button>
@@ -202,7 +262,7 @@ export function KeysTab() {
               <KeyRow
                 key={key.keyId}
                 item={key}
-                forImage={prefs?.image_key_id === key.keyId}
+                forImage={key.imageCapable && !keyProblem(key) && !disabledIds.has(key.keyId)}
                 forChat={prefs?.chat_key_id === key.keyId}
               />
             ))}
@@ -229,6 +289,98 @@ export function KeysTab() {
         ) : null}
       </SettingsSection>
     </div>
+  );
+}
+
+/**
+ * Image keys as switches. A key with a problem can't be switched on; the
+ * last key on can't be switched off (the server refuses it too).
+ */
+function ImageKeyList({
+  keys,
+  disabledIds,
+  defaultId,
+  loading,
+  saving,
+  lastOn,
+  onToggle,
+  onMakeDefault,
+}: {
+  keys: KeyMetadata[];
+  disabledIds: ReadonlySet<number>;
+  defaultId: number | null;
+  loading: boolean;
+  saving: boolean;
+  lastOn: boolean;
+  onToggle: (keyId: number, on: boolean) => void;
+  onMakeDefault: (keyId: number) => void;
+}) {
+  if (loading)
+    return (
+      <div className="max-w-2xl space-y-2" aria-label="读取中">
+        {[0, 1].map((i) => (
+          <div key={i} className="h-[60px] animate-breathe rounded-lg" />
+        ))}
+      </div>
+    );
+  if (keys.length === 0)
+    return (
+      <p className="max-w-2xl rounded-lg border border-dashed border-line-strong px-4 py-3.5 text-[13px] text-fg-soft">
+        还没有能生图的 Key。到主站新建一个（选开放生图的分组），再回来。
+      </p>
+    );
+  return (
+    <ul aria-label="生图 Key" className="max-w-2xl divide-y divide-line overflow-hidden rounded-lg glass">
+      {keys.map((key) => {
+        const problem = keyProblem(key);
+        const on = !problem && !disabledIds.has(key.keyId);
+        const isDefault = on && key.keyId === defaultId;
+        const label = key.name || key.maskedKey;
+        return (
+          <li
+            key={key.keyId}
+            className={cn(
+              "flex items-center gap-3.5 px-4 py-3 transition-colors",
+              !on && "bg-tint/[0.025]",
+            )}
+          >
+            <Switch
+              checked={on}
+              disabled={saving || Boolean(problem) || (on && lastOn)}
+              onCheckedChange={(checked) => onToggle(key.keyId, checked)}
+              aria-label={`用 ${label} 生图`}
+            />
+            <div className={cn("min-w-0 flex-1", !on && "opacity-60")}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate text-[14px] font-medium text-fg">{label}</span>
+                {isDefault ? <Tag tone="ink">默认</Tag> : null}
+                {problem ? <Tag tone="marker">{problem}</Tag> : null}
+              </div>
+              <p className="mt-0.5 truncate text-[12.5px] text-fg-soft">
+                {[
+                  key.groupName ?? "未分组",
+                  key.imageModels.length ? `${key.imageModels.length} 个生图模型` : null,
+                  on && lastOn ? "至少留一个开着" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            </div>
+            {on && !isDefault ? (
+              <button
+                type="button"
+                onClick={() => onMakeDefault(key.keyId)}
+                disabled={saving}
+                title="顶栏余额读这个 Key，它的模型排在最前"
+                className="shrink-0 rounded-md px-2 py-1 text-[12.5px] font-semibold text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg disabled:opacity-50"
+              >
+                设为默认
+              </button>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -288,8 +440,8 @@ function KeyRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-[14px] font-medium text-fg">{item.name || "未命名 Key"}</span>
           <span className="font-mono text-[12px] text-fg-muted">{item.maskedKey}</span>
-          {forImage ? <Tag tone="ink">生图在用</Tag> : null}
-          {forChat ? <Tag tone="ink">对话在用</Tag> : null}
+          {forImage ? <Tag tone="ink">生图</Tag> : null}
+          {forChat ? <Tag tone="ink">对话</Tag> : null}
           {problem ? <Tag tone="marker">{problem}</Tag> : null}
         </div>
         <p className="mt-1 truncate text-[12.5px] text-fg-soft">

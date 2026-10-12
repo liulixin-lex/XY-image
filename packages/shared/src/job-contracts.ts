@@ -85,6 +85,8 @@ export const backgroundJobSchema = z.object({
     .enum(["none", "pending", "charged", "not_charged", "unknown"])
     .optional(),
   xy2api_request_id: z.string().nullable().optional(),
+  /** The main-site key the job went through (第 56 条: several can be on). */
+  xy2api_key_id: z.number().int().nullable().optional(),
   payload: z.record(z.string(), z.unknown()),
   result: z.record(z.string(), z.unknown()).nullable(),
   error_code: z.string().nullable(),

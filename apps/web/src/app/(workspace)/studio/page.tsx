@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { KeyGate, isKeyProblem } from "@/components/account/key-gate";
@@ -17,6 +18,7 @@ import { useAccount, useImageModels } from "@/lib/account-context";
 import { downloadImage } from "@/lib/download";
 import { type ImageJobView, type JobGroup, downloadName, groupByBatch, listImage } from "@/lib/image-jobs";
 import { findModelMeta, modelCapabilities } from "@/lib/image-model-meta";
+import { findModel, modelLabel } from "@/lib/image-model-ref";
 import { type PendingDraft, takePendingDraft } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
 
@@ -46,7 +48,7 @@ export default function StudioPage() {
   const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
-  // 局部重绘 / 扩图 only when a model on the key can do it.
+  // 局部重绘 / 扩图 only when a model on a key that is on can do it.
   const canEdit = useMemo(() => Boolean(models.data?.some((m) => m.maskEdit)), [models.data]);
   const canReference = useMemo(
     () => Boolean(models.data?.some((m) => modelCapabilities(m).maxInputImages > 0)),
@@ -102,9 +104,15 @@ export default function StudioPage() {
   }, [studio.jobs, loupe]);
 
   const modelName = useCallback(
-    (id: string | null) => {
-      if (!id) return "默认模型";
-      return models.data?.find((m) => m.id === id)?.displayName ?? findModelMeta(id)?.displayName ?? id;
+    ({ model, keyId }: Pick<ImageJobView, "model" | "keyId">) => {
+      if (!model) return "默认模型";
+      const list = models.data ?? [];
+      const listed = keyId
+        ? list.find((m) => m.id === model && m.keyId === keyId)
+        : findModel(list, { id: model, keyId: null });
+      if (listed) return modelLabel(listed, list);
+      // Its key is off or gone: the name alone.
+      return findModel(list, model)?.displayName ?? findModelMeta(model)?.displayName ?? model;
     },
     [models.data],
   );
@@ -120,6 +128,7 @@ export default function StudioPage() {
       composer.current?.applyParams({
         prompt: job.prompt,
         model: job.model,
+        keyId: job.keyId,
         resolution: job.resolution,
         quality: job.quality,
         aspectRatio: job.aspectRatio,
@@ -149,6 +158,7 @@ export default function StudioPage() {
       composer.current?.applyParams({
         prompt: job.prompt,
         model: job.model,
+        keyId: job.keyId,
         resolution: job.resolution,
         quality: job.quality,
         aspectRatio: job.aspectRatio,
@@ -265,8 +275,23 @@ export default function StudioPage() {
               usageUrl={account.data?.links.usage ?? null}
               actions={actions}
             />
-            {studio.jobs.length >= 50 ? (
-              <p className="mt-12 text-xs text-fg-muted">这里只显示最近 50 张，更早的在 设置 › 记录。</p>
+            {studio.hasOlder ? (
+              <div className="mt-14 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void studio.loadOlder()}
+                  disabled={studio.loadingOlder}
+                >
+                  {studio.loadingOlder ? "读取中…" : "加载更早的"}
+                </Button>
+                <Link
+                  href="/history"
+                  className="text-[13px] font-semibold text-fg-soft underline-offset-4 hover:text-fg hover:underline"
+                >
+                  在「最近生成」按日期看全部
+                </Link>
+              </div>
             ) : null}
           </>
         )}
@@ -283,7 +308,7 @@ export default function StudioPage() {
 
       <LoupeDialog
         job={loupe}
-        modelName={loupe ? modelName(loupe.model) : ""}
+        modelName={loupe ? modelName(loupe) : ""}
         onClose={() => setLoupe(null)}
         onReuse={reuse}
         {...(canReference ? { onUseAsReference: addAsReference } : {})}

@@ -33,6 +33,7 @@ import {
 } from "@/hooks/use-studio-jobs";
 import { useAuth } from "@/lib/auth-context";
 import type { ImageJobView } from "@/lib/image-jobs";
+import { findModel, imageModelOptions, modelRef, modelRequest } from "@/lib/image-model-ref";
 import {
   RESOLUTIONS,
   RESOLUTION_HINT,
@@ -133,10 +134,14 @@ function EditBody({
 
   const capable = useMemo(() => models.filter((m) => m.maskEdit), [models]);
   const [mode, setMode] = useState<ImageEditMode>(initialMode);
-  const [model, setModel] = useState<string | null>(
-    () => capable.find((m) => m.id === job.model)?.id ?? capable[0]?.id ?? null,
-  );
-  const current = capable.find((m) => m.id === model) ?? null;
+  // A (key, model) ref: the picture's own model on its own key if it can
+  // edit, else the same model on another key, else the first that can.
+  const [model, setModel] = useState<string | null>(() => {
+    const own = findModel(capable, { id: job.model, keyId: job.keyId });
+    const first = own ?? capable[0];
+    return first ? modelRef(first) : null;
+  });
+  const current = findModel(capable, model);
   const caps = modelCapabilities(current);
 
   // The picture's own size: from the job, else read from the image.
@@ -245,7 +250,7 @@ function EditBody({
     }
     const result = await onSubmit({
       prompt: (trimmed || DEFAULT_OUTPAINT_PROMPT).slice(0, PROMPT_MAX),
-      model: current.id,
+      ...modelRequest(current),
       resolution: ask.resolution,
       quality: ask.quality,
       aspect_ratio: ask.aspectRatio,
@@ -261,13 +266,7 @@ function EditBody({
   };
 
   const modelOptions = useMemo(
-    () =>
-      capable.map((m) => ({
-        value: m.id,
-        text: m.displayName,
-        label: m.displayName,
-        description: m.description,
-      })),
+    () => imageModelOptions(capable, { describe: (m) => m.description }),
     [capable],
   );
 
