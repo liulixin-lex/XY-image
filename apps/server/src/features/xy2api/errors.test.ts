@@ -208,6 +208,15 @@ describe("gateway errors", () => {
       true,
     );
     expect(neverSent(fetchFailed(system("CERT_HAS_EXPIRED")))).toBe(true);
+    // Closed before TLS was set up (the private route reached no server,
+    // seen on ovh 2026-10-12): nothing can have been sent.
+    const beforeTls = Object.assign(
+      new Error(
+        "Client network socket disconnected before secure TLS connection was established",
+      ),
+      { code: "ECONNRESET" },
+    );
+    expect(neverSent(fetchFailed(beforeTls))).toBe(true);
     // The request may have arrived: still unknown.
     expect(neverSent(fetchFailed(system("ECONNRESET")))).toBe(false);
     expect(neverSent(fetchFailed(system("UND_ERR_HEADERS_TIMEOUT")))).toBe(

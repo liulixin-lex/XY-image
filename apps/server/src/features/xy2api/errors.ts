@@ -208,19 +208,30 @@ const NEVER_SENT_CODES = new Set([
  * "fetch failed" with the system error as its cause (an AggregateError when
  * several addresses were tried); the OpenAI client wraps that once more.
  * A reset or a timeout after connecting is not here: the request may have
- * arrived, and the outcome stays unknown (待核对).
+ * arrived, and the outcome stays unknown (待核对). The one reset that is here
+ * comes before TLS was set up, so no byte of the request can have left:
+ * the private route to the main site (deploy/selfhost/xy2api-route.mjs)
+ * accepts the connection and closes it like this when it reaches neither the
+ * main site nor Cloudflare.
  */
 export function neverSent(error: unknown): boolean {
   const queue: unknown[] = [error];
   for (let seen = 0; queue.length > 0 && seen < 16; seen++) {
     const current = queue.shift();
     if (!current || typeof current !== "object") continue;
-    const { code, cause, errors } = current as {
+    const { code, cause, errors, message } = current as {
       code?: unknown;
       cause?: unknown;
       errors?: unknown;
+      message?: unknown;
     };
     if (typeof code === "string" && NEVER_SENT_CODES.has(code)) return true;
+    if (
+      code === "ECONNRESET" &&
+      typeof message === "string" &&
+      message.includes("before secure TLS connection was established")
+    )
+      return true;
     queue.push(cause);
     if (Array.isArray(errors)) queue.push(...errors);
   }

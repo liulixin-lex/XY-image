@@ -179,6 +179,99 @@ node deploy/selfhost/prepare.mjs \
 
 数值是 10-11 生产实际用量的几倍（API 145 MiB、Worker 115 MiB、storage 175 MiB、imgproxy 20 MiB、studio 195 MiB）。Node 的堆上限低于容器上限，所以会先做垃圾回收，不会直接被杀。已有的部署目录要手动把这些值加进 `compose.json`，然后用 `up -d --no-deps --force-recreate <服务>` 重建对应容器。
 
+## 主站私有回源（10-12 agent01，FINDINGS G7）
+
+主站 gguuai.com 在 Cloudflare 后面，源站地址不能公开。Cloudflare 等源站回应最多 125 秒（非 Enterprise 计划不能调），4K 高质量经常超过这个时间。超时后连接被切断，主站照样出图、照样扣费，生图站却拿不到图。
+
+现在的做法：生图服务器和主站服务器之间建一条 WireGuard 隧道，生图站后端调主站时走这条隧道，用户访问 gguuai.com 照旧经过 Cloudflare。主站的 DNS 不变，HTTP 入口也不变。生图站的 API 和 Worker 仍然请求 `https://gguuai.com`，配置一项都不用改：
+
+- `xy2api-route.mjs enable` 给部署加一个 `xy2api-route` 服务（HAProxy），它在本部署的 Docker 网络里以 `gguuai.com` 这个别名出现。
+- HAProxy 只转发 TCP，不解开 TLS，证书仍是主站自己的。它把连接经隧道送到主站的 Caddy（`443`），隧道连不上时改走 Cloudflare。
+- 只在建立连接时切换，已经发出的请求不会重发，所以不会重复扣费。HAProxy 连不上任何一边时，会在 TLS 建立之前关掉连接；服务端把这种情况算作「未发出」（`neverSent`），不标待核对。
+- `xy2api-route` 停掉以后别名随之消失，API 和 Worker 直接走公网，不需要重启。
+
+### 两台服务器上的 WireGuard（手工，一次）
+
+地址用 `10.77.0.0/30`：主站 `10.77.0.1`，生图服务器 `10.77.0.2`，先确认两边都没有占用这个网段。私钥只在各自机器上生成，交换的只有公钥。
+
+```bash
+# 两边各自执行
+apt-get install -y --no-install-recommends wireguard-tools
+umask 077; wg genkey > /etc/wireguard/xy-image.key; wg pubkey < /etc/wireguard/xy-image.key
+```
+
+主站 `/etc/wireguard/wg-xyimage.conf`：
+
+```ini
+[Interface]
+Address = 10.77.0.1/30
+ListenPort = 51820
+PostUp = wg set %i private-key /etc/wireguard/xy-image.key
+[Peer]
+PublicKey = <生图服务器公钥>
+AllowedIPs = 10.77.0.2/32
+```
+
+生图服务器 `/etc/wireguard/wg-xyimage.conf`：
+
+```ini
+[Interface]
+Address = 10.77.0.2/30
+PostUp = wg set %i private-key /etc/wireguard/xy-image.key
+[Peer]
+PublicKey = <主站公钥>
+Endpoint = <主站公网地址>:51820
+AllowedIPs = 10.77.0.1/32
+PersistentKeepalive = 25
+```
+
+主站防火墙只放行两条：生图服务器的公网地址到 UDP 51820，隧道里 `10.77.0.2` 到 `10.77.0.1:443`。
+
+```bash
+ufw allow in on <公网网卡> proto udp from <生图服务器公网地址> to any port 51820 comment "xy-image private link"
+ufw allow in on wg-xyimage proto tcp from 10.77.0.2 to 10.77.0.1 port 443 comment "xy-image private link"
+systemctl enable --now wg-quick@wg-xyimage   # 两边都执行
+```
+
+主站的 Caddy 不用改：隧道里的连接到达它的 443，和平常一样拿到 gguuai.com 自己的证书。在生图服务器上检查：
+
+```bash
+ping -c 3 10.77.0.1
+curl -sS -o /dev/null -w "%{http_code} %{remote_ip}\n" --resolve gguuai.com:443:10.77.0.1 https://gguuai.com/api/v1/settings/public
+```
+
+### 打开和关掉
+
+```bash
+node deploy/selfhost/xy2api-route.mjs enable --dir "$XY_DEPLOY_DIR" --private 10.77.0.1:443 --stats-port 18404
+./deploy/selfhost/compose.sh --profile app up -d xy2api-route
+# 关掉：先确认没有在途任务
+./deploy/selfhost/compose.sh --profile app rm -sf xy2api-route
+node deploy/selfhost/xy2api-route.mjs disable --dir "$XY_DEPLOY_DIR"
+```
+
+监控（`operations.json`）加 `"xy2apiRouteStatsUrl": "http://127.0.0.1:18404/stats;csv"`：
+
+- 隧道断了、改走 Cloudflare 时报 `xy2api_private_route_down`；
+- 两边都不通时再报 `xy2api_route_down`。
+
+HAProxy 每 5 秒向隧道对面发起一次 TCP 连接做检查，主站 Caddy 的日志里不会出现这些检查。
+
+正式环境 10-12 实测：
+
+- 隧道往返 4.8 ms。
+- 同一个请求，走隧道 34 ms，走 Cloudflare 68 ms。
+- 隧道被挡住时，第一个请求等 3 秒连接超时后由 Cloudflare 回应，没有报错；之后的请求直接走 Cloudflare。
+- 恢复后 15 秒内回到隧道。
+- 主站看到的客户端地址是 `10.77.0.2`。
+
+### 要注意的
+
+- 主站上的 xy2api 看到的生图站客户端地址是 `10.77.0.2`，不再是生图服务器的公网地址。给 Key 设了 IP 白名单的用户，要把这个地址加进去。
+- 经隧道的请求不过 Cloudflare 的 WAF 和限流；来源只有生图服务器一个。
+- Node 自带 fetch 默认最多等响应头 300 秒，所以经隧道最长可以等到 300 秒，不再是 125 秒。
+- 主站防火墙收紧 443（比如只放行 Cloudflare 的地址段）时，要保留隧道那条规则。
+
 ## 备份与恢复
 
 `backup.mjs` 是停写的一致性备份，**会造成维护窗口**，仅在部署运维需要时执行；本轮没有运行真实备份。它停止正在运行的写入服务（保留DB），等待应用优雅停止；保存 postgres 和 `_supabase` 的自定义格式dump、角色SQL、Storage文件、DB自定义密钥配置、应用和Supabase环境文件、部署版本及恢复服务清单，另含 `deployment-config.tar.gz`（实际使用的Envoy脱敏配置、functions、pooler与DB顶层初始化SQL，不含DB数据目录）。手动和调度共享锁，停写失败标记阻止下一轮误报成功。全部成功生成SHA-256清单后才恢复原来运行的服务。失败保留部分结果和停机状态，人工检查 `resume.json` 后恢复，不把部分备份当成功。

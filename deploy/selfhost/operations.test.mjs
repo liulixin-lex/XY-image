@@ -480,3 +480,62 @@ test("monitor without offsite or webhook: probes the public site, failure rate, 
     await rm(root, { recursive: true, force: true });
   }
 });
+test("monitor tells the private route to the main site from Cloudflare and from nothing at all", async () => {
+  const { root, config } = await setup();
+  try {
+    delete config.alertFile;
+    config.xy2apiRouteStatsUrl = "http://127.0.0.1:18404/stats;csv";
+    config.hotBackupRoot = path.join(root, "hot");
+    await mkdir(config.hotBackupRoot, { recursive: true });
+    await atomicJson(path.join(config.hotBackupRoot, "latest.json"), { status: "complete", at: fixedNow().toISOString() });
+    // HAProxy 3.2 stats CSV, columns cut down (the monitor reads the header).
+    let route = { private: "UP", public: "UP" };
+    let statsOk = true;
+    const stats = () =>
+      [
+        "# pxname,svname,qcur,status,weight",
+        "xy2api_in,FRONTEND,,OPEN,",
+        `main_site,private,0,${route.private},1`,
+        `main_site,public,0,${route.public},1`,
+        "main_site,BACKEND,0,UP,1",
+      ].join("\n");
+    const lines = [];
+    const warn = console.warn;
+    console.warn = (line) => lines.push(line);
+    const dependencies = {
+      now: fixedNow,
+      statfs: async () => ({ bavail: 1024 ** 3, bsize: 4096 }),
+      run: async (_command, args) =>
+        args.includes("psql")
+          ? "0|0\n"
+          : JSON.stringify(config.requiredServices.map((Service) => ({ Service, State: "running", Health: "healthy" }))),
+      fetch: async (url) =>
+        String(url).includes("/stats")
+          ? new Response(statsOk ? stats() : "", { status: statsOk ? 200 : 503 })
+          : new Response(null, { status: 200 }),
+    };
+    try {
+      assert.equal((await monitor(config, dependencies)).status, "ok");
+      // Going down: still "UP 1/2" until the second failed check.
+      route = { private: "UP 1/2", public: "UP" };
+      assert.equal((await monitor(config, dependencies)).status, "ok");
+      route = { private: "DOWN", public: "UP" };
+      assert.deepEqual((await monitor(config, dependencies)).problems, ["xy2api_private_route_down"]);
+      route = { private: "DOWN", public: "DOWN" };
+      assert.deepEqual((await monitor(config, dependencies)).problems, ["xy2api_private_route_down", "xy2api_route_down"]);
+      statsOk = false;
+      assert.deepEqual((await monitor(config, dependencies)).problems, ["xy2api_route_check_unknown"]);
+      statsOk = true;
+      route = { private: "UP", public: "UP" };
+      assert.equal((await monitor(config, dependencies)).status, "ok");
+      assert.match(lines.join("\n"), /ALERT firing: xy2api_private_route_down/);
+    } finally {
+      console.warn = warn;
+    }
+    // The stats page lists the route's servers: loopback only.
+    await writeFile(path.join(root, "route.json"), JSON.stringify({ ...config, xy2apiRouteStatsUrl: "http://10.0.0.5:18404/stats;csv" }), { mode: 0o600 });
+    await assert.rejects(loadConfig(path.join(root, "route.json"), { forMonitor: true }), /invalid_route_stats_url/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

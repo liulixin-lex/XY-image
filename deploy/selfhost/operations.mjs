@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { acquireLock } from "./operation-lock.mjs";
+import { routeServers } from "./xy2api-route.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fail = (code) => {
   throw new Error(code);
@@ -103,6 +104,13 @@ export async function loadConfig(file, { forMonitor = false } = {}) {
     const url = new URL(config.publicUrl);
     if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash)
       fail("invalid_public_url");
+  }
+  // HAProxy's stats of the private route to the main site
+  // (xy2api-route.mjs). Loopback only: the page lists the route's servers.
+  if (config.xy2apiRouteStatsUrl != null) {
+    const url = new URL(config.xy2apiRouteStatsUrl);
+    if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.username || url.password || url.hash)
+      fail("invalid_route_stats_url");
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(config.host))
     fail("invalid_host");
@@ -502,6 +510,27 @@ export async function monitor(config, dependencies = {}) {
         } catch {
           problems.push(problem);
         }
+      }
+    }
+    // The private route to the main site (xy2api-route.mjs, G7): off the
+    // WireGuard link calls still work through Cloudflare, but long ones are
+    // cut again after ~125 s; with neither server up nothing reaches the
+    // main site at all.
+    if (config.xy2apiRouteStatsUrl) {
+      try {
+        const result = await fetcher(config.xy2apiRouteStatsUrl, {
+          redirect: "error",
+          signal: AbortSignal.timeout(5_000),
+        });
+        const servers = result.ok ? routeServers(await result.text()) : null;
+        if (!servers?.has("private")) problems.push("xy2api_route_check_unknown");
+        else {
+          const up = (name) => /^UP\b/.test(servers.get(name) ?? "");
+          if (!up("private")) problems.push("xy2api_private_route_down");
+          if (!up("private") && !up("public")) problems.push("xy2api_route_down");
+        }
+      } catch {
+        problems.push("xy2api_route_check_unknown");
       }
     }
     // A group or model that stopped working shows up as most pictures of
