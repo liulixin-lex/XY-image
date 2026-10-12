@@ -117,7 +117,7 @@ GET `/api/image-models`：
 }
 ```
 
-v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models` 里每项带 `keyId`、`keyName`、`groupName`：列出所有启用的 Key 的模型，默认 Key 在前，同一个模型可能在两个 Key 下各出现一次，按 (keyId, id) 区分。生图请求带 `key_id` 指定走哪个 Key（被关掉的 Key 403 `key_unavailable`）；批量接口可以用 `targets: [{ model, key_id?, count }]`（最多 4 个模型、总数 ≤ 8）代替 `model` + `count`，同一句描述多个模型并行出图。任务行带 `xy2api_key_id`。`GET /api/jobs` 支持 `before`（上一页的 `next_before`）、`limit`（1–100，默认 50）、`source=studio|canvas|assistant`。
+v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models` 里每项带 `keyId`、`keyName`、`groupName`：列出所有启用的 Key 的模型，默认 Key 在前，同一个模型可能在两个 Key 下各出现一次，按 (keyId, id) 区分。生图请求带 `key_id` 指定走哪个 Key（被关掉的 Key 403 `key_unavailable`）；批量接口可以用 `targets: [{ model, key_id?, count }]`（v0.0.7 是最多 4 个模型、总数 ≤ 8；v0.0.8 起最多 50 个模型、总数 ≤ 500，只是防误输的结构上限）代替 `model` + `count`，同一句描述多个模型并行出图。任务行带 `xy2api_key_id`。`GET /api/jobs` 支持 `before`（上一页的 `next_before`）、`limit`（1–100，默认 50）、`source=studio|canvas|assistant`。
 
 两个接口都需要令牌。生图模型只返回启用的主站 Key 的能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
 
@@ -153,7 +153,7 @@ v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models
 
 异步接口 POST `/api/jobs/image-generation` 使用 snake_case：`{ prompt, model?, quality?, aspect_ratio?, input_images?, project_id?, canvas_id?, session_id?, thread_id? }`。成功 201 `{ job }`。GET `/api/jobs/:jobId` 及 GET `/api/jobs` 保持原响应；POST `/api/jobs/:jobId/cancel` 只对未开始任务有效。HTTP 任务响应增加 `billing_status` 和 `xy2api_request_id`，没有密钥信息。停止 Agent 不代表已发送请求被取消或退款。
 
-默认每用户 queued + running 最多 2 项，每轮 Agent 最多 6 次生图。队列和同步画布共用守卫。成功 `status=succeeded`、`billing_status=charged`；失败通常进入 `dead_letter`。`pending`/`unknown` 表示需核对主站用量，不能根据任务失败就认定没扣费。`storage_failed` 表示上游已生成，可能已扣费，不能自动重试生成。任务结果仍有 `asset_id`、`signed_url`、`object_path`、尺寸和 MIME；该 URL 来自已有公开 project-assets 桶。
+v0.0.8 起默认不限每用户的排队和生成中张数（`LOOMIC_MAX_PENDING_IMAGE_JOBS` / `LOOMIC_MAX_CONCURRENT_JOBS` 为 0；自建站点可设正数恢复限制，超出时返回 429），每轮 Agent 最多 6 次生图。队列和同步画布共用守卫。成功 `status=succeeded`、`billing_status=charged`；失败通常进入 `dead_letter`。`pending`/`unknown` 表示需核对主站用量，不能根据任务失败就认定没扣费。`storage_failed` 表示上游已生成，可能已扣费，不能自动重试生成。任务结果仍有 `asset_id`、`signed_url`、`object_path`、尺寸和 MIME；该 URL 来自已有公开 project-assets 桶。
 
 ## Agent 与错误处理
 
