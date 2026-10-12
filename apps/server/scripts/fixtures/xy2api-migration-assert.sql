@@ -10,6 +10,15 @@ begin
   if has_table_privilege('authenticated','public.background_jobs','UPDATE') or has_table_privilege('authenticated','public.background_jobs','INSERT') or has_table_privilege('authenticated','public.background_jobs','DELETE') then raise exception 'Browser can mutate job billing'; end if;
   if not has_table_privilege('authenticated','public.background_jobs','SELECT') then raise exception 'Realtime read grant missing'; end if;
 end $$;
+-- 第 56 条: image keys switched off for generation, none by default.
+do $$ begin
+  if not exists(
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='xy2api_preferences'
+      and column_name='disabled_image_key_ids' and is_nullable='NO'
+      and column_default like '''{}''%'
+  ) then raise exception 'disabled_image_key_ids missing or not defaulting to none'; end if;
+end $$;
 insert into auth.users values ('00000000-0000-0000-0000-000000000001');
 set role service_role;
 insert into public.xy2api_accounts(user_id,xy2api_user_id,email) values ('00000000-0000-0000-0000-000000000001',1,'fixture@example.com');
