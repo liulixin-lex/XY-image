@@ -25,12 +25,16 @@
 | 项目 | 结果 |
 | --- | --- |
 | 单元和集成测试 | typecheck 8/8；server 727、web 275、shared 60、workspace 10、selfhost 32（另 2 项真实 nginx 测试在 CI 里跑）；`next build` 通过 |
-| 全量回归 | `regress.sh` 跑在 v0.0.8 的构建上，结果见下文。改过的演练：04-canvas-files 用张数输入框，load 在不限时要求同时发出超过 2 张（`LOAD_MAX_RUNNING=2` 可测旧闸门），08-mobile 底栏 5 项 |
+| 全量回归 | `regress.sh` 23 项全部通过，跑在 v0.0.8 的构建上（16:01–16:26 UTC）；压力演练 6 张同时发出（以前最多 2 张），全部成功、每张只记一次。改过的演练：04-canvas-files 用张数输入框，load 在不限时要求同时发出超过 2 张（`LOAD_MAX_RUNNING=2` 可测旧闸门），08-mobile 底栏 5 项 |
 | 浏览器走查 | 本地假数据：顶栏两个直接入口、弹层不透字、作品页排版和筛选、首页横排按钮和拖动、生图页张数输入和二次确认、画布张数输入；亮暗主题、手机 |
 
-### 正式站验证
+### 正式站验证（image.gguuai.com，真实主站 gguuai.com）
 
-部署后补充。
+| 项目 | 结果 |
+| --- | --- |
+| 部署 | 2026-10-12 16:28 UTC，前端发布 `2026-10-12T16-28-05-151Z`；部署前没有在途任务和运行；`server.env` 四项改成 0 / 0 / 32 / 10（备份 `server.env.bak-r58`），`compose.json` 里 xy-worker 改成 3g / 2048（备份 `compose.json.bak-r58`）；迁移仍是 46 份；Worker 日志 `concurrency=32, perUserInFlight=unlimited`；`/api/ready` 8/8，入口放行和拒绝规则照旧，`/`、`/studio`、`/history`、`/projects` 200；监控正常 |
+| 只读冒烟（`smoke-release.mjs`，两个测试账号） | 版本 0.0.8；生图模型 12、13 个，默认模型没变；顶栏 首页 / 生图 / 画布→`/projects` / 作品→`/history` / 品牌套件 / 技能 / 设置，都是直接链接、没有弹出菜单；生图页张数是输入框；各页面没有控制台错误或失败请求 |
+| 付费实测 | 这一版没做（大批量和高并发没有在真实主站上花钱验证） |
 
 ### 已知限制
 
