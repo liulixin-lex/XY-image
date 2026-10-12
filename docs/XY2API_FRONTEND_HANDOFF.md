@@ -90,8 +90,9 @@ type KeyMetadata = {
 `pricing` 是主站元数据，P0 不用它算账单或展示预估价。Key 的 IP 限制提示使用 auth/config 的 `egressIp`；值为空则提示联系管理员确认出口 IP。空列表提供「去主站创建」链接。
 
 - POST `/api/account/keys/sync` 无 body，返回 `{ ok: true }`；随后重取账户、Key 列表及两类模型。同步失败保留当前选择，401 要重新登录。
-- PUT `/api/account/preferences` 请求 `{ imageKeyId?, chatKeyId?, defaultImageModel?, defaultChatModel?, defaultChatProviderId? }`，返回 `{ preferences }`。Key ID 为正整数，不接受 null；defaultChatProviderId 为服务商 UUID 或 null（主站）。只发送发生变化的字段。对话模型偏好填写裸 ID（如 `gpt-5.4`），不加 `openai:`。
-- 切换生图 Key 后重取 `/api/image-models`；切换对话 Key 后重取 `/api/models`。不允许选择其他用户的 Key 或不可用模型。
+- PUT `/api/account/preferences` 请求 `{ imageKeyId?, chatKeyId?, defaultImageModel?, defaultChatModel?, defaultChatProviderId?, disabledImageKeyIds? }`，返回 `{ preferences }`。Key ID 为正整数，不接受 null；defaultChatProviderId 为服务商 UUID 或 null（主站）。只发送发生变化的字段。对话模型偏好填写裸 ID（如 `gpt-5.4`），不加 `openai:`。
+- **多个生图 Key（v0.0.7 起）**：能生图、可用的 Key 默认全部启用；`disabledImageKeyIds`（响应里 `disabled_image_key_ids`）列出用户关掉的。至少要留一个启用（否则 400 `invalid_input`）。`image_key_id` 是「默认」Key：顶栏余额读它，它的模型排在最前，不带 `key_id` 的请求（设计助手、老前端）走它；关掉默认 Key 时服务端换一个启用的。只给 `defaultImageModel` 时，服务端选第一个有这个模型的启用 Key。
+- 改了启用的 Key 或默认 Key 后重取 `/api/image-models`；切换对话 Key 后重取 `/api/models`。不允许选择其他用户的 Key 或不可用模型。
 - P1 `/api/account/keys/create` 尚未实现，不展示该按钮。
 
 ## 模型和生图
@@ -116,7 +117,9 @@ GET `/api/image-models`：
 }
 ```
 
-两个接口都需要令牌。生图模型只返回当前主站 Key 能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
+v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models` 里每项带 `keyId`、`keyName`、`groupName`：列出所有启用的 Key 的模型，默认 Key 在前，同一个模型可能在两个 Key 下各出现一次，按 (keyId, id) 区分。生图请求带 `key_id` 指定走哪个 Key（被关掉的 Key 403 `key_unavailable`）；批量接口可以用 `targets: [{ model, key_id?, count }]`（最多 4 个模型、总数 ≤ 8）代替 `model` + `count`，同一句描述多个模型并行出图。任务行带 `xy2api_key_id`。`GET /api/jobs` 支持 `before`（上一页的 `next_before`）、`limit`（1–100，默认 50）、`source=studio|canvas|assistant`。
+
+两个接口都需要令牌。生图模型只返回启用的主站 Key 的能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
 
 生图请求（`/api/jobs/image`、`/api/agent/generate-image`）用两个参数：`resolution` 画质 `1K` / `2K` / `4K`，`quality` 质量 `auto` / `low` / `medium` / `high`，另有 `aspect_ratio`。`qualities` 为空表示模型没有质量设置，只能用 `auto`。`maxRatio` 是某个画质能做的最宽比例（长边 ÷ 短边），没有条目表示不限。超出模型能力的值由后端按 `@loomic/shared` 的 `resolveImageParams` 移到最接近的支持值：比例取最近的形状，画质取不高于所选的最大档（比例放不下时再往上升），质量回到 `auto`。前端用同一个函数显示实际发送值。旧请求只带 `quality: standard / hd / ultra` 时按 1K 低 / 2K 中 / 4K 自动处理。默认目录：
 
