@@ -3,6 +3,7 @@
 import {
   type ImageEdit,
   IMAGE_BATCH_MAX,
+  IMAGE_EDIT_LABEL,
   OUTPAINT_ANCHORS,
   type OutpaintAnchor,
   aspectRatioValue,
@@ -46,7 +47,6 @@ import {
   BRUSH_MAX,
   BRUSH_MIN,
   DEFAULT_OUTPAINT_PROMPT,
-  IMAGE_EDIT_LABEL,
   type ImageEditMode,
   inpaintModelNote,
   type MaskStroke,

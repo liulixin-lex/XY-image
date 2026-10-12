@@ -30,7 +30,9 @@ import {
   undersized,
 } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
-import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
+// Straight from shared: a re-export through lib/mask-edit is reported as
+// missing by the production build on the server (webpack import check).
+import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@loomic/shared";
 import { cn } from "@/lib/utils";
 
 import { RevealImage } from "../ambient/reveal-image";

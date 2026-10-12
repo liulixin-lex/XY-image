@@ -21,7 +21,9 @@ import {
   undersized,
 } from "@/lib/image-jobs";
 import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
-import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@/lib/mask-edit";
+// Straight from shared: a re-export through lib/mask-edit is reported as
+// missing by the production build on the server (webpack import check).
+import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@loomic/shared";
 
 import { BillingBadge, needsReconcile } from "../billing/billing-badge";
 import { useToast } from "../toast";
