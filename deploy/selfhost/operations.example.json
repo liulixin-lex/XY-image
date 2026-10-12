@@ -23,6 +23,7 @@
   "minAvailableMiB": 1024,
   "readyUrl": "http://127.0.0.1:3101/api/ready",
   "publicUrl": "https://image.example.com",
+  "xy2apiRouteStatsUrl": "http://127.0.0.1:18404/stats;csv",
   "requiredServices": [
     "db",
     "auth",
