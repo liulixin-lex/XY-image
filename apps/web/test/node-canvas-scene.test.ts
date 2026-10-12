@@ -266,6 +266,7 @@ describe("elements ⇄ node canvas scene", () => {
       inputImages: ["https://example.com/a.png"],
       generator: {
         model: "nano-banana-pro",
+        keyId: null,
         aspectRatio: "3:4",
         resolution: "2K",
         quality: "medium",
@@ -286,6 +287,7 @@ describe("generator settings", () => {
             aspectRatio: "7:3",
             resolution: "8K",
             count: 99,
+            keyId: "7",
             run: { jobs: [{ jobId: 3 }] },
           },
         },
@@ -293,12 +295,24 @@ describe("generator settings", () => {
     );
     expect(config).toEqual({
       model: "",
+      keyId: null,
       aspectRatio: "1:1",
       resolution: "2K",
       quality: "auto",
       count: 4,
       prompt: "",
     });
+  });
+
+  it("keeps the key a node's model goes through (第 56 条)", () => {
+    const config = readGenerator(
+      el("g", "generator", {
+        customData: { generator: { model: "gpt-image-2", keyId: 12 } },
+      }),
+    );
+    expect(config.model).toBe("gpt-image-2");
+    expect(config.keyId).toBe(12);
+    expect(readGenerator(el("g", "generator", { customData: { generator: { keyId: -3 } } })).keyId).toBeNull();
   });
 
   it("stores a run with its slots and clears it", () => {

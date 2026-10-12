@@ -71,6 +71,32 @@ const LINKABLE = new Set([
 
 export const PENDING_PREFIX = "pending-";
 
+/** Whether `to` can be reached from `from` along the edges' direction. */
+export function reaches(
+  edges: readonly { source: string; target: string }[],
+  from: string,
+  to: string,
+): boolean {
+  const next = new Map<string, string[]>();
+  for (const edge of edges) {
+    const list = next.get(edge.source);
+    if (list) list.push(edge.target);
+    else next.set(edge.source, [edge.target]);
+  }
+  const seen = new Set<string>([from]);
+  const queue = [from];
+  while (queue.length) {
+    const id = queue.pop() as string;
+    if (id === to) return true;
+    for (const target of next.get(id) ?? []) {
+      if (seen.has(target)) continue;
+      seen.add(target);
+      queue.push(target);
+    }
+  }
+  return false;
+}
+
 function toSceneFiles(
   files: Record<string, Record<string, unknown>>,
 ): SceneFiles {
@@ -285,17 +311,30 @@ export class NodeCanvasStore {
     this.set({});
   };
 
+  /** The edge being dragged to a new end; it does not count against its own move. */
+  private reconnecting: string | null = null;
+
+  /**
+   * Whether `source → target` may be drawn: both ends linkable, not the
+   * same node, not there already, and no loop (a generator fed, through
+   * any chain, by its own pictures would wait on itself forever).
+   */
   isValidConnection = (connection: Connection | SceneEdge): boolean => {
     const { source, target } = connection;
     if (!source || !target || source === target) return false;
-    const { nodes, edges } = this.state.scene;
+    const { nodes } = this.state.scene;
+    const edges = this.reconnecting
+      ? this.state.scene.edges.filter((e) => e.id !== this.reconnecting)
+      : this.state.scene.edges;
     const kinds = new Map(nodes.map((n) => [n.id, n.type]));
     if (
       !LINKABLE.has(kinds.get(source) ?? "") ||
       !LINKABLE.has(kinds.get(target) ?? "")
     )
       return false;
-    return !edges.some((e) => e.source === source && e.target === target);
+    if (edges.some((e) => e.source === source && e.target === target))
+      return false;
+    return !reaches(edges, target, source);
   };
 
   /** A new edge from the user: an arrow bound at both ends. */
@@ -303,6 +342,57 @@ export class NodeCanvasStore {
     if (!this.isValidConnection(connection)) return;
     this.connect(connection.source, connection.target);
   };
+
+  /** An edge end was picked up (React Flow onReconnectStart). */
+  beginReconnect = (edgeId: string) => {
+    this.reconnecting = edgeId;
+  };
+
+  /**
+   * An edge end was dropped on another node: the same arrow, re-bound (its
+   * label and id stay; the adapter gives it a new version). One undo step.
+   */
+  onReconnect = (old: SceneEdge, connection: Connection) => {
+    const valid = this.isValidConnection(connection);
+    if (
+      !valid ||
+      (old.source === connection.source && old.target === connection.target)
+    )
+      return;
+    const { scene } = this.state;
+    this.change({
+      ...scene,
+      edges: scene.edges.map((edge) =>
+        edge.id === old.id
+          ? { ...edge, source: connection.source, target: connection.target }
+          : edge,
+      ),
+    });
+    console.info(
+      `[node-canvas] reconnected ${old.id}: ${old.source} → ${old.target} is now ${connection.source} → ${connection.target}`,
+    );
+  };
+
+  /**
+   * The drag of an edge end ended. Dropped on empty canvas: the edge is
+   * disconnected (断开); dropped on a node it can't join: it stays.
+   */
+  endReconnect = (edgeId: string, droppedOnNode: boolean) => {
+    this.reconnecting = null;
+    if (droppedOnNode) return;
+    console.info(`[node-canvas] edge ${edgeId} dragged off: disconnecting`);
+    this.disconnect(edgeId);
+  };
+
+  /** Removes one edge (断开): its arrow and label become tombstones. */
+  disconnect(edgeId: string) {
+    const edge = this.state.scene.edges.find((e) => e.id === edgeId);
+    if (!edge || edge.deletable === false) return;
+    this.removeElements([edgeId]);
+    console.info(
+      `[node-canvas] disconnected ${edge.source} → ${edge.target}`,
+    );
+  }
 
   connect(
     source: string,

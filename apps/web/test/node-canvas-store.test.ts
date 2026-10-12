@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildCanvasSavePayload } from "../src/lib/canvas-save";
 import { readGenerator } from "../src/lib/node-canvas/generator";
+import { planGenerator } from "../src/lib/node-canvas/generator-plan";
 import {
   GeneratorRuntime,
   type RuntimeApi,
   composePrompt,
   generatorInputs,
 } from "../src/lib/node-canvas/runtime";
-import { NodeCanvasStore } from "../src/lib/node-canvas/store";
+import { NodeCanvasStore, reaches } from "../src/lib/node-canvas/store";
+import type { ImageModelInfo } from "../src/lib/server-api";
 import type { SceneElement } from "../src/lib/node-canvas/types";
 
 const el = (
@@ -257,6 +259,68 @@ describe("node canvas store", () => {
     ).toBe(false);
   });
 
+  it("refuses a connection that would close a loop (第 56 条)", () => {
+    const second = el("gen2", "generator", { x: 800, width: 296, height: 360 });
+    const store = makeStore([
+      prompt,
+      generator,
+      second,
+      link("e1", "p1", "gen1"),
+      link("e2", "gen1", "gen2"),
+    ]);
+    expect(reaches(store.scene.edges, "p1", "gen2")).toBe(true);
+    const back = { source: "gen2", target: "p1", sourceHandle: null, targetHandle: null };
+    expect(store.isValidConnection(back)).toBe(false);
+    expect(
+      store.isValidConnection({ source: "gen2", target: "gen1", sourceHandle: null, targetHandle: null }),
+    ).toBe(false);
+    store.onConnect(back);
+    expect(store.scene.edges).toHaveLength(2);
+  });
+
+  it("断开: removes one edge as a tombstone, one undo step", () => {
+    const store = makeStore([prompt, generator, link("e1", "p1", "gen1")]);
+    store.disconnect("e1");
+    expect(store.scene.edges).toEqual([]);
+    expect(store.getState().saveStatus).toBe("dirty");
+    store.undo();
+    expect(store.scene.edges.map((e) => e.id)).toEqual(["e1"]);
+  });
+
+  it("moves an edge end to another node and keeps the same arrow", () => {
+    const other = el("p2", "prompt", { y: 300, text: "海边" });
+    const store = makeStore([prompt, other, generator, link("e1", "p1", "gen1")]);
+    store.beginReconnect("e1");
+    // Dropped back where it was: allowed, and nothing changes.
+    expect(
+      store.isValidConnection({ source: "p1", target: "gen1", sourceHandle: null, targetHandle: null }),
+    ).toBe(true);
+    const edge = store.scene.edges[0];
+    if (!edge) throw new Error("no edge");
+    store.onReconnect(edge, { source: "p2", target: "gen1", sourceHandle: null, targetHandle: null });
+    store.endReconnect("e1", true);
+    expect(store.scene.edges).toMatchObject([{ id: "e1", source: "p2", target: "gen1" }]);
+    const arrow = store.liveElements().find((e) => e.id === "e1");
+    expect(arrow).toMatchObject({ startBinding: { elementId: "p2" }, endBinding: { elementId: "gen1" } });
+    expect(arrow?.version).toBeGreaterThan(1);
+    store.undo();
+    expect(store.scene.edges).toMatchObject([{ id: "e1", source: "p1" }]);
+  });
+
+  it("an edge end dragged onto empty canvas disconnects; onto a node it stays", () => {
+    const store = makeStore([prompt, generator, link("e1", "p1", "gen1")]);
+    store.beginReconnect("e1");
+    store.endReconnect("e1", true);
+    expect(store.scene.edges).toHaveLength(1);
+    store.beginReconnect("e1");
+    store.endReconnect("e1", false);
+    expect(store.scene.edges).toEqual([]);
+    // The reconnect flag is cleared: a repeat is refused again.
+    expect(
+      store.isValidConnection({ source: "p1", target: "gen1", sourceHandle: null, targetHandle: null }),
+    ).toBe(true);
+  });
+
   it("deleting a node deletes its edges; a deleted placed picture goes as an id", () => {
     const placed = el("img1", "image", {
       x: 700,
@@ -388,6 +452,98 @@ describe("generator inputs", () => {
   });
 });
 
+describe("chained generators (链式)", () => {
+  const upstream = el("gen0", "generator", {
+    x: -400,
+    width: 296,
+    height: 360,
+    customData: {
+      generator: {
+        model: "m",
+        count: 2,
+        prompt: "上游",
+        run: {
+          batchId: "b0",
+          startedAt: 1,
+          jobs: [
+            { jobId: "job-a", slot: { x: 0, y: 0, width: 10, height: 10 } },
+            { jobId: "job-b", slot: { x: 0, y: 20, width: 10, height: 10 } },
+          ],
+        },
+      },
+    },
+  });
+  const placedA = el("imgA", "image", { y: 20, fileId: "fa", customData: { jobId: "job-a" } });
+  const placedB = el("imgB", "image", { y: 0, fileId: "fb", customData: { jobId: "job-b" } });
+
+  it("hands on the latest run's pictures in slot order, and waits for the rest", () => {
+    const waiting = makeStore([upstream, placedA, generator, link("e1", "gen0", "gen1")]);
+    const partial = generatorInputs(waiting.scene.nodes, waiting.scene.edges, "gen1");
+    expect(partial.images.map((e) => e.id)).toEqual(["imgA"]);
+    expect(partial.upstream).toEqual([{ id: "gen0", pictures: 1, waiting: true }]);
+    expect(partial.links).toEqual([{ edgeId: "e1", sourceId: "gen0", kind: "generator" }]);
+
+    const done = makeStore([upstream, placedB, placedA, generator, link("e1", "gen0", "gen1")]);
+    const inputs = generatorInputs(done.scene.nodes, done.scene.edges, "gen1");
+    expect(inputs.images.map((e) => e.id)).toEqual(["imgA", "imgB"]);
+  });
+
+  it("an upstream with no pictures blocks the plan with a reason", () => {
+    const fresh = el("gen0", "generator", { x: -400, width: 296, height: 360 });
+    const store = makeStore([fresh, generator, link("e1", "gen0", "gen1")]);
+    const inputs = generatorInputs(store.scene.nodes, store.scene.edges, "gen1");
+    const plan = planGenerator({
+      config: readGenerator(store.element("gen1") as SceneElement),
+      inputs: { ...inputs, imageCount: inputs.images.length },
+      models: [{ id: "gpt-image-2", displayName: "GPT Image 2", description: "", keyId: 3 } as ImageModelInfo],
+      prefs: null,
+      accountSettled: true,
+      modelsLoading: false,
+      modelsError: null,
+    });
+    expect(plan.blockedReason).toBe("上游「生成」还没有图，先生成上游");
+    expect(plan.params).toBeNull();
+  });
+});
+
+describe("generator plan (第 56 条)", () => {
+  const models = [
+    { id: "gpt-image-2", displayName: "GPT Image 2", description: "", keyId: 3, keyName: "A" },
+    { id: "nano-banana-pro", displayName: "Nano Banana Pro", description: "", keyId: 3, keyName: "A" },
+    { id: "gpt-image-2", displayName: "GPT Image 2", description: "", keyId: 9, keyName: "B" },
+  ] as ImageModelInfo[];
+  const base = {
+    inputs: { prompts: ["猫"], upstream: [], imageCount: 0 },
+    prefs: { image_key_id: 3, default_image_model: "nano-banana-pro" },
+    accountSettled: true,
+    modelsLoading: false,
+    modelsError: null,
+    models,
+  };
+  const config = (extra: object) =>
+    readGenerator(el("g", "generator", { customData: { generator: extra } }));
+
+  it("sends the node's model through the node's key", () => {
+    const plan = planGenerator({ ...base, config: config({ model: "gpt-image-2", keyId: 9 }) });
+    expect(plan.params).toMatchObject({ model: "gpt-image-2", keyId: 9 });
+  });
+
+  it("a key that went away falls back to the same model on another key", () => {
+    const plan = planGenerator({ ...base, config: config({ model: "gpt-image-2", keyId: 44 }) });
+    expect(plan.params).toMatchObject({ model: "gpt-image-2", keyId: 3 });
+    expect(plan.pickedHere).toBe(true);
+  });
+
+  it("no model of its own: the account default, once the account is in", () => {
+    expect(planGenerator({ ...base, config: config({}) }).params).toMatchObject({
+      model: "nano-banana-pro",
+      keyId: 3,
+    });
+    const early = planGenerator({ ...base, accountSettled: false, config: config({}) });
+    expect(early.blockedReason).toBe("正在读取默认模型");
+  });
+});
+
 describe("generator runtime", () => {
   const job = (
     id: string,
@@ -500,6 +656,33 @@ describe("generator runtime", () => {
     expect(store.scene.nodes.filter((n) => n.type === "pending")).toHaveLength(
       2,
     );
+  });
+
+  it("sends the node's key with its model, and runs several generators at once", async () => {
+    const second = el("gen2", "generator", {
+      x: 300,
+      y: 600,
+      width: 296,
+      height: 360,
+      customData: { generator: { model: "nano-banana-pro", count: 1, prompt: "" } },
+    });
+    const store = makeStore([prompt, generator, second, link("e1", "p1", "gen1"), link("e2", "p1", "gen2")]);
+    const runtime = new GeneratorRuntime(store, deps);
+    const sent = await runtime.generateMany([
+      {
+        generatorId: "gen1",
+        params: { model: "gpt-image-2", keyId: 9, aspectRatio: "1:1", resolution: "2K", quality: "auto" },
+      },
+      {
+        generatorId: "gen2",
+        params: { model: "nano-banana-pro", keyId: 3, aspectRatio: "1:1", resolution: "2K", quality: "auto" },
+      },
+    ]);
+    expect(sent).toBe(2);
+    expect(api.createImageBatch).toHaveBeenCalledTimes(2);
+    const bodies = api.createImageBatch.mock.calls.map((call) => call[1]);
+    expect(bodies[0]).toMatchObject({ model: "gpt-image-2", key_id: 9, canvas_source_id: "gen1" });
+    expect(bodies[1]).toMatchObject({ model: "nano-banana-pro", key_id: 3, canvas_source_id: "gen2", prompt: "雨夜的霓虹街道" });
   });
 
   it("uploads a picture that only exists in this page before sending", async () => {

@@ -16,6 +16,10 @@ import type { NodeCanvasStore, StoreState } from "../../lib/node-canvas/store";
 export type NodeCanvasActions = {
   /** A generator right of a picture, fed by it, selected. */
   generateFrom: (imageId: string) => void;
+  /** 链式: a new generator fed by this generator's latest pictures, selected. */
+  chainFrom: (generatorId: string) => void;
+  /** Selects a node and brings it into view. */
+  focus: (id: string) => void;
   download: (imageId: string) => void;
 };
 

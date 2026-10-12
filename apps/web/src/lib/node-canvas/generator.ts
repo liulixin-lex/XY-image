@@ -35,6 +35,12 @@ export type GeneratorRun = {
 export type GeneratorConfig = {
   /** "" = the account's default image model. */
   model: string;
+  /**
+   * The main-site key the model goes through (第 56 条: each node can use a
+   * model of any key that is on). null = whichever key has the model, the
+   * default key first; also what older canvases read as.
+   */
+  keyId: number | null;
   aspectRatio: string;
   resolution: ImageResolution;
   quality: ImageQuality;
@@ -49,6 +55,7 @@ export const GENERATOR_MIN_HEIGHT = 320;
 
 export const GENERATOR_DEFAULTS: GeneratorConfig = {
   model: "",
+  keyId: null,
   aspectRatio: "1:1",
   resolution: "2K",
   quality: "auto",
@@ -58,6 +65,12 @@ export const GENERATOR_DEFAULTS: GeneratorConfig = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readKeyId(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
 }
 
 export function clampCount(value: unknown): number {
@@ -104,6 +117,7 @@ export function readGenerator(el: SceneElement): GeneratorConfig {
   const run = readRun(raw.run);
   return {
     model: typeof raw.model === "string" ? raw.model : "",
+    keyId: readKeyId(raw.keyId),
     aspectRatio,
     resolution,
     quality,
@@ -150,6 +164,7 @@ export function migrateLegacyGenerator(el: SceneElement): SceneElement {
   );
   const generator: GeneratorConfig = {
     model: typeof legacy.model === "string" ? legacy.model : "",
+    keyId: null,
     aspectRatio:
       typeof legacy.aspectRatio === "string" &&
       (IMAGE_ASPECT_RATIOS as readonly string[]).includes(legacy.aspectRatio)
