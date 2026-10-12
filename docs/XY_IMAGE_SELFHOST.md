@@ -174,7 +174,7 @@ node deploy/selfhost/prepare.mjs \
 | storage、imgproxy | 1g | |
 | studio、realtime | 512m | |
 | xy-api | 1g | `NODE_OPTIONS=--max-old-space-size=768` |
-| xy-worker | 1536m | `NODE_OPTIONS=--max-old-space-size=1024` |
+| xy-worker | 3g | `NODE_OPTIONS=--max-old-space-size=2048`（v0.0.8 起 Worker 同时处理 32 张，原来 1536m / 1024） |
 | db | 不设 | 超限会被内核直接杀掉，不如让它慢一点 |
 
 数值是 10-11 生产实际用量的几倍（API 145 MiB、Worker 115 MiB、storage 175 MiB、imgproxy 20 MiB、studio 195 MiB）。Node 的堆上限低于容器上限，所以会先做垃圾回收，不会直接被杀。已有的部署目录要手动把这些值加进 `compose.json`，然后用 `up -d --no-deps --force-recreate <服务>` 重建对应容器。
