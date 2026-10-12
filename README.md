@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-11，v0.0.5）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com，两个真实账号付费实测通过。** 实测覆盖 OpenAI、Grok、Gemini 生图（含 4K 高质量和一次多张），设计助手（主站对话模型和第三方服务商），手机和桌面走查。本版修复了正式站实测发现的全部问题：审核拒绝和「模型没有可用账号」的提示，经 Cloudflare 被切断的请求记为待核对并自动和主站用量对上，设计助手的品牌套件、空结果、并行出图和停止，项目图片只对工作区成员可见，删除的项目 24 小时后清理，每日备份和恢复演练，监控。实验环境（模拟上游）全量回归照常通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-12，v0.0.6）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版解决大图被中途切断的问题：生图站经私有链路直连主站，OpenAI 和 Grok 生图改用主站异步任务，连接中断和本站重启都不会丢图，计费按请求 ID 精确核对；正式站付费实测和实验环境全量回归都已通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -42,7 +42,7 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 716 项
+pnpm --filter @loomic/server test # 717 项
 pnpm --filter @loomic/web test    # 254 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
