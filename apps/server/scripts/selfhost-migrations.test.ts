@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -45,6 +46,37 @@ describe("selfhost migration ledger", () => {
     );
     expect(files.length).toBeGreaterThanOrEqual(32);
     expect(new Set(files.map((f) => f.version)).size).toBe(files.length);
+  });
+  it("never changes a released migration (supabase/migrations.lock)", async () => {
+    // 20261011000006 was edited after production applied it; the next deploy
+    // stopped at "Migration history mismatch" and the ledger had to be
+    // repaired by hand. Released files are pinned; a fix is a new migration.
+    const files = await readMigrations(
+      fileURLToPath(new URL("../../../supabase/migrations/", import.meta.url)),
+    );
+    const lock = new Map(
+      (
+        await readFile(
+          fileURLToPath(new URL("../../../supabase/migrations.lock", import.meta.url)),
+          "utf8",
+        )
+      )
+        .split("\n")
+        .filter((line) => line.trim() && !line.startsWith("#"))
+        .map((line) => line.trim().split(/\s+/) as [string, string]),
+    );
+    for (const file of files) {
+      const pinned = lock.get(file.version);
+      if (!pinned)
+        throw new Error(
+          `${file.name} is not in supabase/migrations.lock; add "${file.version} ${file.checksum}"`,
+        );
+      if (pinned !== file.checksum)
+        throw new Error(
+          `${file.name} changed after release; databases that applied it refuse to migrate. Revert it and add a new migration instead.`,
+        );
+    }
+    expect([...lock.keys()].sort()).toEqual(files.map((f) => f.version));
   });
   it("status is read-only and releases the session lock", async () => {
     const db = client();

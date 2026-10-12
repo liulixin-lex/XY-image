@@ -58,7 +58,7 @@ export XY_DEPLOY_DIR=/workspace/xy-env/selfhost
 ./deploy/selfhost/compose.sh --profile tools run --rm xy-migrate
 ```
 
-默认 `up` 只启 Supabase，API/Worker 在 `app` profile，迁移在 `tools` profile，因此不会在空库上运行应用。迁移工具检查 Auth/Storage/服务角色及 pgmq 可用性、持有会话级 advisory lock、每份SQL单独事务、写入SHA-256账本，重跑跳过已完成项；失败回滚当前文件。检测历史文件修改、缺失或乱序时拒绝。已有应用表但无该工具账本时拒绝自动接管，需要人工核对真实迁移记录；不能伪造基线或重跑旧DDL。不会导入测试账号或改历史迁移。
+默认 `up` 只启 Supabase，API/Worker 在 `app` profile，迁移在 `tools` profile，因此不会在空库上运行应用。迁移工具检查 Auth/Storage/服务角色及 pgmq 可用性、持有会话级 advisory lock、每份SQL单独事务、写入SHA-256账本，重跑跳过已完成项；失败回滚当前文件。检测历史文件修改、缺失或乱序时拒绝。所以已发布的迁移不能再改，要修就加新迁移：每份迁移的校验值记在 `supabase/migrations.lock`，改了旧文件服务端测试会失败，新迁移要在里面加一行。已有应用表但无该工具账本时拒绝自动接管，需要人工核对真实迁移记录；不能伪造基线或重跑旧DDL。不会导入测试账号或改历史迁移。
 
 迁移成功后，采用固定 postgres-meta 镜像从实际数据库生成类型：
 
