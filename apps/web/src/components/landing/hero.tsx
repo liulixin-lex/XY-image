@@ -85,7 +85,7 @@ export const Hero = forwardRef<
   const toStage = (entry: ShowcaseItem): StageImage => ({
     src: entry.large,
     srcSet: `${entry.src} 540w, ${entry.large} 900w`,
-    alt: `${SAMPLE_ALT}：${entry.prompt}`,
+    alt: `${SAMPLE_ALT}：${entry.title}`,
     focus: entry.focus,
   });
   const at = (offset: number) => items[(selected + offset) % items.length] ?? current;
@@ -105,7 +105,7 @@ export const Hero = forwardRef<
             {current.ratio} · 4K
           </span>
           <span className="mt-1 line-clamp-2 block text-[14px] leading-[1.55] font-semibold text-fg">
-            {current.prompt}
+            {current.title}
           </span>
         </figcaption>
       </figure>

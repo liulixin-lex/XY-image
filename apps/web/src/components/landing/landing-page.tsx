@@ -16,11 +16,20 @@ import { getXy2apiWebUrl } from "@/lib/env";
 import type { AspectRatio, ImageResolution } from "@/lib/image-model-meta";
 import { fetchAuthConfig } from "@/lib/xy2api-api";
 
-/** Pictures in the feature cards: studio batch (4), canvas board (3), templates (2). */
-const FEATURE_SAMPLES = SHOWCASE_ITEMS.slice(0, 9);
 /** The sample `index` places along the list, wrapping (the list is never empty). */
 const sampleAt = (index: number) => SHOWCASE_ITEMS[index % SHOWCASE_ITEMS.length] as ShowcaseItem;
-const BILLING_SAMPLE = sampleAt(3);
+const sample = (id: string) => SHOWCASE_ITEMS.find((item) => item.id === id) ?? sampleAt(0);
+/**
+ * Pictures in the feature cards, chosen to fit what each card shows: a
+ * studio batch of four looks, a canvas board of one sci-fi set, and two
+ * portraits for the 写实人像 template.
+ */
+const FEATURE_SAMPLES = [
+  ...["silk-sky", "red-cloak", "ruby-crown", "neon-city"],
+  ...["fog-mech", "mech-river", "desert-ark"],
+  ...["amber-eyes", "film-portrait"],
+].map(sample);
+const BILLING_SAMPLE = sample("dawn-veil");
 /** The two samples fanned out behind the one on show at the end of the page. */
 function closingFan(selected: number): [ShowcaseItem, ShowcaseItem] {
   return [sampleAt(selected + 3), sampleAt(selected + 7)];

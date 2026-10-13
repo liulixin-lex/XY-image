@@ -392,9 +392,9 @@ function EmptyFeed({ onPick }: { onPick: (item: ShowcaseItem) => void }) {
                 </span>
               </span>
               <span className="mt-2.5 line-clamp-2 block text-[13.5px] leading-relaxed text-fg-soft group-hover:text-fg">
-                {item.prompt}
+                {item.title}
               </span>
-              <span className="mt-1.5 inline-flex text-[12.5px] font-semibold text-acc-text">用这句描述</span>
+              <span className="mt-1.5 inline-flex text-[12.5px] font-semibold text-acc-text">用它的描述</span>
             </button>
           </li>
         ))}

@@ -103,6 +103,10 @@ export function GallerySection({
         const tween = gsap.to(row, {
           x: () => -distance(),
           ease: "none",
+          // On the tween, not the trigger: with scrub smoothing the trigger's
+          // onUpdate fires before the row has caught up, so cards and counter
+          // would lag one step behind what is on screen.
+          onUpdate: place,
           scrollTrigger: {
             trigger: section.current,
             start: "top top",
@@ -114,7 +118,6 @@ export function GallerySection({
               measure();
               place();
             },
-            onUpdate: place,
           },
         });
         pinned.current = tween.scrollTrigger ?? null;
@@ -320,7 +323,7 @@ function GalleryCard({
           src={item.src}
           srcSet={`${item.src} 600w, ${item.large} 1200w`}
           sizes="(min-width: 1024px) 30vw, 70vw"
-          alt={`${SAMPLE_ALT}：${item.prompt}`}
+          alt={`${SAMPLE_ALT}：${item.title}`}
           loading="lazy"
           decoding="async"
           draggable={false}
@@ -329,7 +332,7 @@ function GalleryCard({
         />
       </div>
       <div className="mt-4 flex max-w-full items-start justify-between gap-3" style={{ width: "100%" }}>
-        <p className="line-clamp-2 min-w-0 flex-1 text-[14px] leading-[1.6] font-medium text-fg">{item.prompt}</p>
+        <p className="line-clamp-2 min-w-0 flex-1 text-[15px] leading-[1.5] font-semibold text-fg">{item.title}</p>
         <button
           type="button"
           onClick={onUse}

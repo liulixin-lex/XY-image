@@ -244,7 +244,7 @@ function NodeBoard({ board }: { board: ShowcaseItem[] }) {
       </svg>
       <div className="glass absolute top-[18%] left-[3%] w-[27%] rounded-[12px] p-3">
         <span className="poster-label text-[13px] text-fg">描述</span>
-        <p className="mt-1.5 line-clamp-3 text-[11.5px] leading-[1.55] text-fg-soft">{board[0]?.prompt}</p>
+        <p className="mt-1.5 line-clamp-3 text-[11.5px] leading-[1.55] text-fg-soft">{board[0]?.title}</p>
       </div>
       <div className="absolute top-[41%] left-[41%] flex h-[19%] min-w-[16.5%] items-center justify-center gap-1 rounded-[12px] bg-fg px-3 font-display text-[15px] whitespace-nowrap text-ground shadow-[0_14px_24px_-14px_var(--shadow-2)]">
         生成<span className="numeral text-[18px]">×3</span>
@@ -258,7 +258,7 @@ function NodeBoard({ board }: { board: ShowcaseItem[] }) {
           {/* biome-ignore lint/performance/noImgElement: static export */}
           <img
             src={item.src}
-            alt={`${SAMPLE_ALT}：${item.prompt}`}
+            alt={`${SAMPLE_ALT}：${item.title}`}
             loading="lazy"
             decoding="async"
             className="h-full w-full object-cover"
@@ -287,14 +287,14 @@ function TemplateMini({ samples }: { samples: ShowcaseItem[] }) {
     <div className="grid h-full grid-cols-2 gap-4 rounded-[18px] bg-well p-5 sm:p-7">
       <div className="flex flex-col gap-3">
         <div className="rounded-[14px] bg-panel p-4 shadow-[0_10px_24px_-18px_var(--shadow-2)]">
-          <span className="poster-label text-[13px] text-fg">商品场景图</span>
+          <span className="poster-label text-[13px] text-fg">写实人像</span>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-[12px]">
-            <dt className="text-fg-muted">商品</dt>
-            <dd className="truncate text-fg">玻璃香水瓶</dd>
-            <dt className="text-fg-muted">场景</dt>
-            <dd className="truncate text-fg">流动的金色液体</dd>
+            <dt className="text-fg-muted">人物</dt>
+            <dd className="truncate text-fg">短发女孩，琥珀色眼睛</dd>
             <dt className="text-fg-muted">光线</dt>
-            <dd className="truncate text-fg">影棚柔光</dd>
+            <dd className="truncate text-fg">黄金时刻逆光</dd>
+            <dt className="text-fg-muted">镜头感</dt>
+            <dd className="truncate text-fg">85mm 人像</dd>
           </dl>
         </div>
         {first ? <Thumb item={first} className="w-[78%] self-end shadow-[0_18px_30px_-18px_var(--shadow-2)]" /> : null}

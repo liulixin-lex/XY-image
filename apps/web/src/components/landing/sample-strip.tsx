@@ -127,7 +127,7 @@ export function SampleStrip({
               role="radio"
               data-index={index}
               aria-checked={active}
-              aria-label={`换成示例：${entry.prompt}`}
+              aria-label={`换成示例：${entry.title}`}
               tabIndex={active ? 0 : -1}
               onClick={() => onSelect(index)}
               className={cn(

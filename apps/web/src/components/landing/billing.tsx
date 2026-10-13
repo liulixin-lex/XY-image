@@ -121,7 +121,7 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
                 src={sample.src}
                 srcSet={`${sample.src} 600w, ${sample.large} 1200w`}
                 sizes="(min-width: 1024px) 400px, 90vw"
-                alt={`${SAMPLE_ALT}：${sample.prompt}`}
+                alt={`${SAMPLE_ALT}：${sample.title}`}
                 loading="lazy"
                 decoding="async"
                 className="h-full w-full object-cover"
@@ -132,7 +132,7 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
               data-bill-card
               className="glass-strong absolute -bottom-12 left-4 w-[min(330px,calc(100vw-56px))] rotate-[1.5deg] rounded-[18px] p-5 sm:left-auto sm:-right-[24%]"
             >
-              <p className="line-clamp-2 text-[14px] leading-relaxed font-medium text-fg">{sample.prompt}</p>
+              <p className="line-clamp-2 text-[14px] leading-relaxed font-medium text-fg">{sample.title}</p>
               <dl className="mt-4 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2.5 text-[13px]">
                 <dt className="text-fg-muted">模型</dt>
                 <dd className="text-right text-fg">{SAMPLE_MODEL}</dd>
