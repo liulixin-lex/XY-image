@@ -18,8 +18,12 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Switch } from "../ui/switch";
 
 const BRAND_KEY = "xy:studio-brand";
+const LOGO_KEY = "xy:studio-brand-logo";
+/** Signed brand-kit URLs last an hour; re-read the kit before then. */
+export const BRAND_LOGO_FRESH_MS = 45 * 60 * 1000;
 
 export type StudioBrand = {
   id: string;
@@ -27,12 +31,30 @@ export type StudioBrand = {
   /** The paragraph appended to prompts; null when the kit has nothing usable. */
   block: string | null;
   colors: string[];
+  /** The kit's first logo, a signed URL (one hour); null without a logo. */
+  logoUrl: string | null;
+  /** When the kit was read, for the signed URL's age. */
+  loadedAt: number;
 };
 
 export function useStudioBrand() {
   const { session } = useAuth();
   const token = session?.access_token ?? null;
   const [brand, setBrand] = useState<StudioBrand | null>(null);
+  // 带上标志: the logo goes along as a reference image (remembered, off by default).
+  const [useLogo, setUseLogoState] = useState(false);
+  useEffect(() => {
+    try {
+      setUseLogoState(localStorage.getItem(LOGO_KEY) === "1");
+    } catch {}
+  }, []);
+  const setUseLogo = useCallback((on: boolean) => {
+    setUseLogoState(on);
+    try {
+      localStorage.setItem(LOGO_KEY, on ? "1" : "0");
+    } catch {}
+    console.info("[studio] brand logo", { on });
+  }, []);
 
   const load = useCallback(
     async (id: string) => {
@@ -47,6 +69,8 @@ export function useStudioBrand() {
             .filter((a) => a.asset_type === "color" && a.text_content)
             .slice(0, 5)
             .map((a) => a.text_content as string),
+          logoUrl: kit.assets.find((a) => a.asset_type === "logo" && a.file_url)?.file_url ?? null,
+          loadedAt: Date.now(),
         };
         setBrand(next);
         return next;
@@ -90,17 +114,21 @@ export function useStudioBrand() {
     [load],
   );
 
-  return { brand, choose, reload: load };
+  return { brand, choose, reload: load, useLogo, setUseLogo };
 }
 
 export function BrandPicker({
   brand,
   onChoose,
   onReload,
+  useLogo,
+  onUseLogo,
 }: {
   brand: StudioBrand | null;
   onChoose: (id: string | null) => void;
   onReload: (id: string) => void;
+  useLogo: boolean;
+  onUseLogo: (on: boolean) => void;
 }) {
   const { session } = useAuth();
   const [kits, setKits] = useState<BrandKitSummary[] | null>(null);
@@ -141,6 +169,7 @@ export function BrandPicker({
             <PaletteIcon className="size-3.5" strokeWidth={2} />
           )}
           <span className="truncate">{brand ? brand.name : "品牌"}</span>
+          {brand && useLogo && brand.logoUrl ? <span className="shrink-0 text-[11px] opacity-80">+标志</span> : null}
         </PopoverTrigger>
         {brand ? (
           <button
@@ -192,6 +221,17 @@ export function BrandPicker({
             })}
           </ul>
         )}
+        {brand?.logoUrl ? (
+          <label className="mt-1 flex cursor-pointer items-start gap-3 border-t border-line px-2.5 pt-2.5 pb-1.5">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-fg">带上标志</span>
+              <span className="block text-[11.5px] leading-snug text-fg-muted">
+                把「{brand.name}」的标志作为最后一张参考图；模型可能把它画进画面。
+              </span>
+            </span>
+            <Switch checked={useLogo} onCheckedChange={onUseLogo} aria-label="带上标志作为参考图" className="mt-0.5" />
+          </label>
+        ) : null}
         <div className="mt-1 flex items-center justify-between border-t border-line px-2.5 pt-2 pb-1 text-[12.5px]">
           {brand ? (
             <PopoverClose onClick={() => onChoose(null)} className="font-semibold text-fg-soft hover:text-fg">

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { type DueWork, PURGE_AFTER_MS, purgeDeletedWorks } from "./deleted-works-purge.js";
+import { type DueWork, PURGE_AFTER_MS, RECHECK_MS, purgeDeletedWorks } from "./deleted-works-purge.js";
 
 const WS = "62bcdca6-40f1-4100-ab63-14fca67032dd";
 const OTHER = "69aba91c-13e4-4b93-8134-4cfcd97a1d30";
@@ -10,6 +10,7 @@ function store(works: DueWork[]) {
   return {
     due: vi.fn(async () => works),
     finish: vi.fn(async () => true),
+    keep: vi.fn(async () => true),
   };
 }
 
@@ -26,7 +27,7 @@ describe("purgeDeletedWorks (第 58 条)", () => {
     const db = store([picture("j1")]);
     const remove = vi.fn(async () => ({ error: null }));
     const counts = await purgeDeletedWorks({ store: db, remove, now: () => NOW });
-    expect(db.due).toHaveBeenCalledWith(BEFORE, 200);
+    expect(db.due).toHaveBeenCalledWith(BEFORE, new Date(NOW - RECHECK_MS), 200);
     expect(remove).toHaveBeenCalledWith([`${WS}/generated/j1.png`, `${WS}/generated/j1.thumb.webp`]);
     expect(db.finish).toHaveBeenCalledWith("j1", BEFORE, [
       `${WS}/generated/j1.png`,
@@ -35,12 +36,14 @@ describe("purgeDeletedWorks (第 58 条)", () => {
     expect(counts).toEqual({ due: 1, removed: 1, kept: 0, files: 2, failed: 0 });
   });
 
-  it("keeps a picture a canvas or chat still uses, and closes the job anyway", async () => {
+  it("keeps a picture a canvas or chat still uses, to look again next week", async () => {
     const db = store([picture("j1", { inUse: true })]);
     const remove = vi.fn(async () => ({ error: null }));
     const counts = await purgeDeletedWorks({ store: db, remove, now: () => NOW });
     expect(remove).not.toHaveBeenCalled();
-    expect(db.finish).toHaveBeenCalledWith("j1", BEFORE, []);
+    expect(db.keep).toHaveBeenCalledWith("j1", BEFORE);
+    // Not purged: it comes back once the canvas no longer uses it.
+    expect(db.finish).not.toHaveBeenCalled();
     expect(counts).toMatchObject({ removed: 0, kept: 1 });
   });
 
