@@ -378,8 +378,13 @@ export function ModelsSection() {
               <span className="text-[clamp(19px,1.6vw,24px)] leading-tight font-bold tracking-[-0.01em] text-fg transition-transform duration-300 group-hover:translate-x-1">
                 {model.displayName}
               </span>
-              <span className="text-[13px] text-fg-muted">{model.maker}</span>
-              {model.note ? <span className="ml-auto text-[13.5px] font-medium text-fg-soft">{model.note}</span> : null}
+              <span className="shrink-0 text-[13px] text-fg-muted">{model.maker}</span>
+              {/* The name wraps on a phone; the maker and the note stay whole. */}
+              {model.note ? (
+                <span className="ml-auto shrink-0 text-[13.5px] font-medium whitespace-nowrap text-fg-soft">
+                  {model.note}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
