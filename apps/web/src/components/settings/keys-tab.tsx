@@ -162,7 +162,7 @@ export function KeysTab() {
     <div>
       <SettingsSection
         title="生图用哪些 Key"
-        description="开着的 Key 一起用：生图页和画布会列出它们所有的生图模型，按 Key 分组，每次生成可以选不同 Key 下的模型。"
+        description="打开的 Key 里的生图模型，都能在生图页和画布里选用。"
       >
         <ImageKeyList
           keys={imageKeys}
@@ -197,12 +197,12 @@ export function KeysTab() {
 
       <SettingsSection
         title="对话用哪个 Key"
-        description="设计助手的对话用一个 Key。可选的对话模型由它所在分组决定。"
+        description="设计助手对话用的 Key，能选哪些对话模型由它决定。"
       >
         <div className="grid max-w-xl gap-5 sm:grid-cols-2">
           <KeyPicker
             label="对话 Key"
-            hint="设计助手的对话用这个 Key"
+            hint=""
             value={prefs?.chat_key_id ?? null}
             options={chatOptions}
             loading={loading}
@@ -214,7 +214,7 @@ export function KeysTab() {
 
       <SettingsSection
         title="主站上的 Key"
-        description="这里是主站 Key 的只读副本。新建、停用、改额度或 IP 限制都在主站操作，回来点同步。"
+        description="新建、停用或改额度都在主站操作，回来点同步。"
       >
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => void sync()} disabled={syncing}>
@@ -358,8 +358,8 @@ function ImageKeyList({
               </div>
               <p className="mt-0.5 truncate text-[12.5px] text-fg-soft">
                 {[
-                  key.groupName ?? "未分组",
-                  key.imageModels.length ? `${key.imageModels.length} 个生图模型` : null,
+                  // The group name is left out (第 62 条): next to the key's own name it repeats it.
+                  key.imageModels.length ? `${key.imageModels.length} 个生图模型` : "没有生图模型",
                   on && lastOn ? "至少留一个开着" : null,
                 ]
                   .filter(Boolean)
@@ -414,7 +414,7 @@ function KeyPicker({
         className="h-10 w-full"
         popupClassName="w-[var(--anchor-width)] min-w-[260px]"
       />
-      <p className="mt-1.5 text-[12px] text-fg-muted">{saving ? "正在保存…" : hint}</p>
+      {saving || hint ? <p className="mt-1.5 text-[12px] text-fg-muted">{saving ? "正在保存…" : hint}</p> : null}
     </div>
   );
 }

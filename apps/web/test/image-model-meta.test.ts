@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  describeCapabilities,
   describeImageParams,
   modelCapabilities,
+  modelNote,
   resolutionUnavailable,
 } from "@/lib/image-model-meta";
 
@@ -104,14 +104,8 @@ describe("image model parameters", () => {
         aspectRatio: "1:1",
       }),
     ).toBe("1K · 1:1");
-    expect(
-      describeCapabilities({
-        resolutions: ["1K", "2K", "4K"],
-        qualities: ["auto", "low", "medium", "high"],
-      }),
-    ).toBe("1K–4K · 质量 4 档");
-    expect(describeCapabilities({ resolutions: ["1K"], qualities: [] })).toBe(
-      "仅 1K · 质量自动",
-    );
+    expect(modelNote("gpt-image-2.5-sunburst")).toBe("效果优先");
+    expect(modelNote("gpt-image-2")).toBeNull();
+    expect(modelNote("not-in-catalog")).toBeNull();
   });
 });

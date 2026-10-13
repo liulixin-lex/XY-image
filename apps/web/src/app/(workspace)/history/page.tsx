@@ -279,7 +279,7 @@ function History() {
   const countText = history.items.length
     ? history.done
       ? `共 ${history.items.length} 张`
-      : `已显示 ${history.items.length} 张`
+      : null
     : null;
 
   return (
@@ -291,7 +291,7 @@ function History() {
             {countText ? <span className="data-label text-fg-muted tabular">{countText}</span> : null}
           </div>
           <p className="mt-2 max-w-[44em] text-[14.5px] leading-relaxed text-fg-soft">
-            最近生成的每一张图，生图、画布和设计助手出的都在这里。点开看大图，或拿去再来一次。
+            生图、画布和设计助手出的图都在这里。
           </p>
         </header>
       </div>
