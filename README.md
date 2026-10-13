@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-13，v0.0.10）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：没人用的参考图自动清掉；图片可以整体搬到 R2 对象存储（工具已就绪，正式站暂不切）；管理员有「管理 · 存储与告警」页面和磁盘告警；前端去掉重复的保证句，状态标签不再折行。实验环境全量回归通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-13，v0.0.11）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：界面文字做减法；落地页加入滚动联动、横向卷轴、吸顶和 3D 交互；示例图全部换成本站用 GPT Image 2.5 Sunburst 4K 生成的图。实验环境全量回归通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
