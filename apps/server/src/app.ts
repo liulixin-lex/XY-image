@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createLinkedAuthenticator } from "./features/xy2api/linked-authenticator.js";
 import { createXy2apiServices } from "./features/xy2api/services.js";
 import { registerAccountRoutes } from "./http/account.js";
+import { registerAdminOpsRoutes } from "./http/admin-ops.js";
 import { registerXy2apiAuthRoutes } from "./http/auth-xy2api.js";
 import { registerChatProviderRoutes } from "./http/chat-providers.js";
 import { createReadinessProbe } from "./supabase/readiness.js";
@@ -354,6 +355,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   void registerXy2apiAuthRoutes(app, { ...xy2api, env, auth });
   void registerAccountRoutes(app, { ...xy2api, env, auth });
+  // 管理 › 存储与告警 (第 59 条), main-site admins only.
+  void registerAdminOpsRoutes(app, {
+    auth,
+    accounts: xy2api.accounts,
+    getAdminClient,
+    env,
+  });
   void registerChatProviderRoutes(app, { auth, providers: xy2api.providers });
   void registerModelRoutes(app, {
     auth,

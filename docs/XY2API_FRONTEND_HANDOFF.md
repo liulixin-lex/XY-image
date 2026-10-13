@@ -54,7 +54,7 @@ GET `/api/account`：
 
 ```json
 {
-  "user": { "xy2apiUserId": 7, "email": "creator@example.com", "username": "Creator" },
+  "user": { "xy2apiUserId": 7, "email": "creator@example.com", "username": "Creator", "isAdmin": false },
   "balance": { "amount": 12.5, "unit": "USD", "source": "wallet", "planName": "" },
   "preferences": {
     "user_id": "<Supabase user UUID>",
@@ -94,6 +94,14 @@ type KeyMetadata = {
 - **多个生图 Key（v0.0.7 起）**：能生图、可用的 Key 默认全部启用；`disabledImageKeyIds`（响应里 `disabled_image_key_ids`）列出用户关掉的。至少要留一个启用（否则 400 `invalid_input`）。`image_key_id` 是「默认」Key：顶栏余额读它，它的模型排在最前，不带 `key_id` 的请求（设计助手、老前端）走它；关掉默认 Key 时服务端换一个启用的。只给 `defaultImageModel` 时，服务端选第一个有这个模型的启用 Key。
 - 改了启用的 Key 或默认 Key 后重取 `/api/image-models`；切换对话 Key 后重取 `/api/models`。不允许选择其他用户的 Key 或不可用模型。
 - P1 `/api/account/keys/create` 尚未实现，不展示该按钮。
+
+### 管理员接口（第 59 条）
+
+`user.isAdmin` 是主站角色为 admin 的用户（登录时同步到 `xy2api_accounts.role`）。只有他们能调下面两个接口，其他已登录用户 403 `admin_only`，没登录 401。都是 `Cache-Control: no-store`。
+
+- `GET /api/admin/ops/alerts` → `{ open: OpsAlert[] }`：未恢复的告警，给顶部提示用。
+- `GET /api/admin/ops/storage` → `{ latest, series, alerts: { open, recent }, thresholds: { warnPercent, criticalPercent }, webhook }`。`latest` 是最近一次磁盘采样（`totalBytes`、`usedBytes`、`availBytes`、`percent`、`dbBytes`、`storageBytes`、`storageByKind`、`objectStorage: local | s3`），还没有采样时为 null；`series` 是最近 7 天每小时的峰值 `{ at, percent }`；`recent` 是最近 20 条已恢复的告警；`webhook` 只说有没有配置推送，不给地址。
+- `OpsAlert`：`id`、`kind`（目前只有 `disk`）、`level: warning | critical`、`message`（中文，直接显示）、`value`、`threshold`、`openedAt`、`lastSeenAt`、`resolvedAt`。契约在 `@loomic/shared` 的 `ops-contracts.ts`。
 
 ## 模型和生图
 

@@ -345,7 +345,7 @@ describe("ChatSidebar", () => {
     await reconnect(null);
     expect(
       await screen.findByText(
-        "连接断开期间这条回复没有完成，不会自动重发。需要的话可以再发一次。",
+        "连接断开期间这条回复没有完成，需要的话可以再发一次。",
         undefined,
         { timeout: 5_000 },
       ),

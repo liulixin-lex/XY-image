@@ -80,7 +80,7 @@ export function describeMediaOutcome(
     return {
       tone: "unknown",
       title: "结果待核对",
-      message: `${noun}可能已经生成。可以在「生成记录」里看一下，不会自动重发。`,
+      message: `${noun}可能已经生成，可以在「生成记录」里看一下。`,
     };
   }
   if (billing === "charged") {

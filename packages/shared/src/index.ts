@@ -9,6 +9,7 @@ export * from "./image-edit.js";
 export * from "./supabase/database.js";
 export * from "./brand-kit-contracts.js";
 export * from "./job-contracts.js";
+export * from "./ops-contracts.js";
 export * from "./skill-contracts.js";
 export * from "./ws-protocol.js";
 

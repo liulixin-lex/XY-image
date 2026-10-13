@@ -3,6 +3,7 @@
 import {
   ArrowUpRightIcon,
   BlocksIcon,
+  HardDriveIcon,
   KeyRoundIcon,
   LogOutIcon,
   ReceiptTextIcon,
@@ -118,6 +119,9 @@ export function AccountChip({ className }: { className?: string }) {
             onClick={() => go("/skills")}
             className="md:hidden"
           />
+          {data?.user.isAdmin ? (
+            <MenuButton icon={<HardDriveIcon />} label="管理 · 存储与告警" onClick={() => go("/admin")} />
+          ) : null}
           <MenuButton
             icon={<LogOutIcon />}
             label="退出登录"

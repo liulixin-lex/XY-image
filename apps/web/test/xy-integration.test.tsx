@@ -288,7 +288,9 @@ describe("image job views", () => {
         actions={{ ...noActions, onCancelBatch }}
       />,
     );
-    expect(view.getAllByText("已发出，不会自动重发")).toHaveLength(2);
+    // 第 59 条: running pictures show the timer and 生成中, no reassurance line.
+    expect(view.queryByText("已发出，不会自动重发")).toBeNull();
+    expect(view.getAllByText("生成中").length).toBeGreaterThanOrEqual(2);
     expect(view.getByText(/已完成 0\/4/)).toBeInTheDocument();
     view.getByRole("button", { name: /取消没发出的 2 张/ }).click();
     expect(onCancelBatch).toHaveBeenCalledWith(batchId);

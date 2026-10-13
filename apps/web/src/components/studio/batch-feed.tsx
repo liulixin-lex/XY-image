@@ -165,7 +165,7 @@ function BatchBlock({
           ) : null}
           <span
             className={cn(
-              "inline-flex h-7 items-center rounded-full px-3 text-[12.5px] font-semibold tabular",
+              "inline-flex h-7 shrink-0 items-center rounded-full px-3 text-[12.5px] font-semibold whitespace-nowrap tabular",
               active
                 ? "bg-acc-soft text-acc-text"
                 : toCheck
@@ -410,20 +410,16 @@ function Elapsed({ since }: { since: string | null }) {
 }
 
 /**
- * Under the timer of a running picture. After 90 s it says the page may be
- * left: the job runs in the worker (and, with async image tasks, survives
- * its restarts; FINDINGS G7), and the picture lands in the history anyway.
+ * Under the timer of a running picture, after 90 s: the page may be left; the
+ * job runs in the worker (and, with async image tasks, survives its
+ * restarts; FINDINGS G7), and the picture lands in the history anyway.
+ * Nothing before that (第 59 条: 「已发出，不会自动重发」 was noise).
  */
 function RunningNote({ since }: { since: string | null }) {
   const now = useNow(true);
   const started = since ? Date.parse(since) : Number.NaN;
-  return (
-    <>
-      {Number.isFinite(started) && now - started > 90_000
-        ? "大图常要 1～3 分钟，可以先离开，好了会出现在记录里"
-        : "已发出，不会自动重发"}
-    </>
-  );
+  if (!Number.isFinite(started) || now - started <= 90_000) return null;
+  return <span className="text-[12px] text-fg-soft">大图常要 1～3 分钟，可以先离开，好了会出现在记录里</span>;
 }
 
 /** Everything that is not a finished picture: running, waiting, saving, failed, canceled. */
@@ -448,7 +444,7 @@ function Placeholder({
       >
         <span className="numeral text-[clamp(38px,4.2vw,64px)] text-fg tabular"><Elapsed since={job.startedAt ?? job.createdAt} /></span>
         <span className="font-display text-[18px] text-fg">生成中</span>
-        <span className="text-[12px] text-fg-soft"><RunningNote since={job.startedAt ?? job.createdAt} /></span>
+        <RunningNote since={job.startedAt ?? job.createdAt} />
         <span aria-hidden className="mt-3 h-1 w-[min(70%,180px)] overflow-hidden rounded-full bg-tint/[0.1]">
           <span className="block h-full w-2/5 animate-progress rounded-full bg-acc" />
         </span>

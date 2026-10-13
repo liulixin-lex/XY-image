@@ -860,18 +860,16 @@ export const Composer = forwardRef<
           )}
           </Button>
         </div>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted" aria-live="polite">
+        {/* 第 59 条: only when there is something to say (why it is blocked,
+            the second click for a big request, what 多模型 does). */}
+        <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted empty:hidden" aria-live="polite">
           {blockedReason && trimmed ? (
             <span className="text-fg-soft">{blockedReason}</span>
           ) : armed ? (
             <span className="font-semibold text-acc-text">一次 {total} 张，再点一次确认发出。</span>
           ) : modelCount > 1 ? (
             `${modelCount} 个模型各出 ${count} 张，同一句描述，结果排在一起对比。`
-          ) : total > 1 ? (
-            "每张单独发一次请求，失败不会自动重发；还没发出的可以取消。"
-          ) : (
-            "每次请求只发一次，失败不会自动重发。"
-          )}
+          ) : null}
         </p>
       </div>
 

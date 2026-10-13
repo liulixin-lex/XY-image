@@ -85,7 +85,7 @@ class RunLostError extends Error {
   }
 }
 const RUN_LOST_TEXT =
-  "连接断开期间这条回复没有完成，不会自动重发。需要的话可以再发一次。";
+  "连接断开期间这条回复没有完成，需要的话可以再发一次。";
 
 export function ChatSidebar({
   accessToken,
@@ -717,7 +717,7 @@ export function ChatSidebar({
                 ...m.contentBlocks,
                 {
                   type: "text" as const,
-                  text: "没有收到回复，连接可能中断了。这条消息不会自动重发，确认网络后可以再发一次。",
+                  text: "没有收到回复，连接可能中断了。确认网络后可以再发一次。",
                 },
               ],
             };

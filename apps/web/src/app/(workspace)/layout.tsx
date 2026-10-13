@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
+import { AdminAlertBanner } from "@/components/admin/admin-alert-banner";
 import { AmbientField } from "@/components/ambient/ambient-provider";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LoadingScreen } from "@/components/loading-screen";
@@ -43,6 +44,7 @@ export default function WorkspaceLayout({ children }: { children: ReactNode }) {
       </a>
       <AppSidebar />
       <main id="main" className="relative z-10 pb-28 md:pb-16">
+        <AdminAlertBanner />
         {children}
       </main>
     </div>

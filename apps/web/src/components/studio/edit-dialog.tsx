@@ -477,7 +477,7 @@ function EditBody({
             </Button>
           </div>
           <p className="mt-3 min-h-[1.5em] text-[12.5px] leading-relaxed text-fg-muted" aria-live="polite">
-            {blockedReason ?? "每张单独发一次请求，不会自动重发。"}
+            {blockedReason}
           </p>
         </div>
       </aside>

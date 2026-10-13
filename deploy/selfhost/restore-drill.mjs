@@ -144,10 +144,14 @@ async function main() {
     const files = listing.out
       .split("\n")
       .filter((line) => /\/project-assets\/.+[^/]$/.test(line)).length;
-    summary.storage = { objects: Number(objects.out.trim()), files };
+    // On object storage (object-storage.mjs, 第 59 条) the pictures live in
+    // the bucket, not in storage.tar.gz: the archive holds at most the local
+    // copies not yet pruned, so the file count proves nothing here.
+    const bucket = compose.services?.storage?.environment?.STORAGE_BACKEND === "s3";
+    summary.storage = { backend: bucket ? "s3" : "local", objects: Number(objects.out.trim()), files };
     // Each object is one file (its version) in the file backend; extra files
     // are objects uploaded after the dump (hot backups archive Storage last).
-    summary.checks.storage = files >= Number(objects.out.trim());
+    summary.checks.storage = bucket || files >= Number(objects.out.trim());
   } finally {
     if (!values.keep) await run("docker", ["rm", "-f", "-v", name]);
     else summary.container = name;
