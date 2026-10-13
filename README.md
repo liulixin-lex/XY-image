@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-13，v0.0.9）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：作品可以删除（能撤销）、多选后打包下载或一起作参考；生成记录分页、多选和删除；新增 28 个生图模板，生图页可以带上品牌套件；官方技能改为「生图提示词规范」，技能市场新增 7 个精选技能；品牌套件能从标志取色。实验环境全量回归通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-13，v0.0.10）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：没人用的参考图自动清掉；图片可以整体搬到 R2 对象存储（工具已就绪，正式站暂不切）；管理员有「管理 · 存储与告警」页面和磁盘告警；前端去掉重复的保证句，状态标签不再折行。实验环境全量回归通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -44,11 +44,11 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 737 项
-pnpm --filter @loomic/web test    # 295 项
+pnpm --filter @loomic/server test # 748 项
+pnpm --filter @loomic/web test    # 296 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
-pnpm test:selfhost                # 32 项通过，2 项跳过（真实 nginx，在 CI 里跑）
+pnpm test:selfhost                # 37 项通过，2 项跳过（真实 nginx，在 CI 里跑）
 pnpm --filter @loomic/server dev  # 同时启动 API 和 Worker，需要 Supabase 和集成配置
 ```
 
