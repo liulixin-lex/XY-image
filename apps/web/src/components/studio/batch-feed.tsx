@@ -440,13 +440,14 @@ function Placeholder({
     return (
       <div
         role="status"
-        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[repeating-linear-gradient(135deg,var(--acc-soft)_0_14px,transparent_14px_28px)] px-4 text-center"
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-4 text-center"
       >
-        <span className="numeral text-[clamp(38px,4.2vw,64px)] text-fg tabular"><Elapsed since={job.startedAt ?? job.createdAt} /></span>
-        <span className="font-display text-[18px] text-fg">生成中</span>
-        <RunningNote since={job.startedAt ?? job.createdAt} />
-        <span aria-hidden className="mt-3 h-1 w-[min(70%,180px)] overflow-hidden rounded-full bg-tint/[0.1]">
-          <span className="block h-full w-2/5 animate-progress rounded-full bg-acc" />
+        {/* A dot grid with a coral scan passing down it (第 62 条, globals.css gen-scan). */}
+        <span aria-hidden className="gen-scan" />
+        <span className="numeral relative text-[clamp(38px,4.2vw,64px)] text-fg tabular"><Elapsed since={job.startedAt ?? job.createdAt} /></span>
+        <span className="relative font-display text-[18px] text-fg">生成中</span>
+        <span className="relative">
+          <RunningNote since={job.startedAt ?? job.createdAt} />
         </span>
       </div>
     );
