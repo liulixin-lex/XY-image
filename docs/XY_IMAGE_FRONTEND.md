@@ -21,7 +21,7 @@
 | `/projects` | 画布项目列表（顶栏「画布」） | `app/(workspace)/projects/page.tsx` |
 | `/canvas?id=` | 节点画布（React Flow）：提示词卡片、生成节点、图片、文字、形状、画框；右侧设计助手 | `app/canvas/page.tsx`、`components/node-canvas/*`、`lib/node-canvas/*` |
 | `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对）。第 58 条：生成记录按页显示（每页 20 / 50 / 100 条，记住选择），筛选和总数由服务端算（`offset` + `with_total`），成功的行带缩略图；本页多选（Shift 连选）后下载或删除，生成中的行不能选；删除有确认和撤销，选中里有待核对时提示 | `components/settings/*`、`components/ui/pager.tsx` |
-| `/brand-kit`、`/skills` | 上游功能，已汉化并接入统一的错误处理 | `components/brand-kit/*`、`app/(workspace)/skills/page.tsx` |
+| `/brand-kit`、`/skills` | 上游功能，已汉化并接入统一的错误处理。第 58 条：技能页多了「生图模板」页签（`?tab=templates&template=<id>` 直接打开一个模板，「去生图使用」带着提示词和参数去生图页）；技能详情显示「在画布里对设计助手这样说」的示例和「在生图页直接用的模板」（来自 `metadata.examples` / `metadata.templates`）；官方技能的 SKILL.md 由服务端从磁盘读出来显示。品牌套件的颜色区有「从标志取色」（`lib/palette.ts`，读第一个标志的主要颜色，点一下或全部添加） | `components/brand-kit/*`、`app/(workspace)/skills/page.tsx`、`components/skills/*`、`components/templates/*` |
 
 ## 状态与数据流
 
@@ -29,6 +29,8 @@
 - **账户**：`lib/account-context.tsx` 统一提供账户、余额、Key、图像模型和对话模型。生成结束后调用 `notifyGenerationSettled()` 刷新余额。`balance === null` 表示读不到，界面要显示「暂不可读」或「未选择 Key」，不能显示 `$0`。
 - **错误**：`lib/generation-errors.ts` 是错误码目录，`components/issues/issue-provider.tsx` 负责路由。余额不足、Key 不可用、结果待核对这类阻断性问题弹对话框，并只给一个能解决问题的动作（充值、去设置、去主站用量页）；临时性问题用 toast。调用方只需 `report(error)` 或 `reportCode(code, message)`，不要自己写这类文案。
 - **生图任务**：`lib/image-jobs.ts` 用 `toImageJobView` 把松散的 job 记录读成视图。计费状态有 `charged`、`not_charged`、`pending`、`unknown` 四种。`pending` 在任务进行中只是还没结算，任务结束后才算「待核对」（见 `needsReconcile(status, active)`）。界面只用 `billingFlag` 标两种：「待核对」和「未发出」，`charged` / `not_charged` 不显示标签（见下面第 7 条）。已扣费但 Storage 暂时写不进去的任务是 `queued` 加 `error_code = storage_retrying`：`isSavingJob` 为真，界面显示「保存中」，不能取消，不占并发名额（`busyCount`），本页提交的任务会弹一次提示；服务端补传成功后自动变成已完成（服务端 M6）。
+- **生图模板**（第 58 条）：`lib/templates.ts` 里 28 个模板、8 个用途（电商、海报、社媒封面、品牌、写实摄影、插画、信息图、改图）。每个模板是几项填空（文本、长文本、选项），`buildTemplatePrompt` 按「用途 → 场景 → 主体 → 细节 → 约束」写成一段中文提示词，要画出来的字放进英文引号、只出现一次，改图写明什么不变（依据 OpenAI GPT Image 提示词指南和 Google Gemini 生图文档）。模板还建议比例、画质、质量，标出「需要原图 / 建议加参考图 / 图里有字」。生图页提示词标题右边「模板」打开 `components/templates/template-gallery.tsx`（分类、搜索、表单和实时预览），「填入生图」只填提示词和参数，不发请求；需要原图而还没加参考图时提示。加模板：往 `TEMPLATES` 里追加，`test/templates.test.ts` 会用示例把每个都生成一遍。
+- **品牌**（第 58 条）：提示词标题右边「品牌」选一个品牌套件（`components/studio/brand-picker.tsx`，选择记在本机），之后每张图的提示词后面自动加一段 `【品牌规范·名称】`（`lib/brand-prompt.ts`：配色带色号、字体气质、品牌说明，最长 600 字，总长不超过 4000），列表里的标题仍是用户自己写的那句（请求带 `title`）。已经带着这段的提示词（再来一次）不会重复加。标志作为参考图还没做（品牌套件文件在私有桶，TODO 写在 `brand-prompt.ts`）。
 - **局部重绘 / 扩图**（M-G，2026-10-10）：从结果卡片的工具条或大图弹窗打开 `components/studio/edit-dialog.tsx`，只对已经出图的那张做，一次只改一张原图。局部重绘在 `mask-painter.tsx` 上涂：遮罩画布和原图同尺寸（长边最多 2048），画笔 / 擦除 / 撤销 / 重做 / 清空，`[` `]` 调笔刷，鼠标、触控笔和手指都能用；提交时把涂抹层导出成 PNG（不透明 = 要改），经 `/api/uploads` 上传，任务带 `edit: { mode: "inpaint", mask }`。扩图选新比例、放大倍数（不放大 / 1.25 / 1.5 / 2）和原图位置（九宫格），预览按 `@loomic/shared` 的 `outpaintFrame` 画出新画框，任务带 `edit: { mode: "outpaint", scale, anchor }`，补出来的画面由服务端按厂商做（`apps/server/src/generation/mask-edit.ts`：OpenAI 发真遮罩，Gemini 发高亮副本或灰框图）。只列 `/api/image-models` 里 `maskEdit: true` 的模型；当前 Key 一个都没有时不显示入口。涂得太少、画框没有多出画面、模型不支持、多于一张原图这几种情况在发出前就拦下（服务端同样再查一次，不扣费）。每张单独发一次，不自动重发。结果卡片的说明行和大图详情会标「局部重绘」「扩图」。
 - **模型偏好**：图像模型偏好存在 localStorage `xy:image-model-preference`，发送前用 `resolveImagePreference()` 过滤掉当前 Key 用不了的模型；过滤后为空就回到自动。对话模型存在 `xy:agent-model`，取值是 `/api/models` 返回的 id（主站 `openai:<model>`，自己的服务商 `custom:<providerId>:<model>`），为空表示用设置里的默认；列表里已经没有的 id（换了 Key、服务商停用或删除）会自动回到默认。
 

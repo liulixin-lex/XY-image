@@ -1,9 +1,11 @@
 interface SectionHeaderProps {
   title: string;
   count?: number;
+  /** Small controls at the right end (e.g. 从标志取色). */
+  action?: React.ReactNode;
 }
 
-export function SectionHeader({ title, count }: SectionHeaderProps) {
+export function SectionHeader({ title, count, action }: SectionHeaderProps) {
   return (
     <div className="mb-3.5 flex items-center gap-2">
       {/* Poster label (display face, coral slash), as in settings sections. */}
@@ -13,6 +15,7 @@ export function SectionHeader({ title, count }: SectionHeaderProps) {
           {count}
         </span>
       )}
+      {action ? <div className="ml-auto">{action}</div> : null}
     </div>
   );
 }

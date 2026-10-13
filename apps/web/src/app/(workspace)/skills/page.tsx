@@ -16,6 +16,7 @@ import { ImportPanel } from "@/components/skills/import-panel";
 import { MarketplacePanel } from "@/components/skills/marketplace-panel";
 import { SkillDetailDialog } from "@/components/skills/skill-detail-dialog";
 import { PageHeader } from "@/components/page-header";
+import { TemplateGallery } from "@/components/templates/template-gallery";
 import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -38,21 +39,24 @@ import {
   toggleSkill,
   uninstallSkill,
 } from "@/lib/server-api";
+import { savePendingDraft } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 // ---------------------------------------------------------------------------
 // Tab types
 // ---------------------------------------------------------------------------
 
-type SkillsTab = "installed" | "marketplace" | "import";
+type SkillsTab = "installed" | "marketplace" | "templates" | "import";
 
 const TAB_LABELS: Record<SkillsTab, string> = {
   installed: "已安装",
   marketplace: "市场",
+  templates: "生图模板",
   import: "导入",
 };
 
-const TABS: SkillsTab[] = ["installed", "marketplace", "import"];
+const TABS: SkillsTab[] = ["installed", "marketplace", "templates", "import"];
 
 // ---------------------------------------------------------------------------
 // Category filter options
@@ -77,6 +81,17 @@ export default function SkillsPage() {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SkillsTab>("installed");
+  const router = useRouter();
+  // 第 58 条: /skills?tab=templates&template=<id> opens a template directly.
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  // Bumped per 相关模板 click, so the same template opens again after 返回.
+  const [templateOpens, setTemplateOpens] = useState(0);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab && (TABS as string[]).includes(tab)) setActiveTab(tab as SkillsTab);
+    setTemplateId(params.get("template"));
+  }, []);
 
   // Data state
   const [skills, setSkills] = useState<SkillListItem[]>([]);
@@ -344,7 +359,7 @@ export default function SkillsPage() {
     <div>
       <PageHeader
         title="技能"
-        description="给助手装上可复用的做法和工具，对话时会按需调用。"
+        description="技能是设计助手的做法，对话时按需调用；生图模板填几个空就写好提示词，直接在生图页用。"
         className="pb-5"
       />
       <div className="mx-auto max-w-[1600px] pb-12 gutter-x">
@@ -501,6 +516,25 @@ export default function SkillsPage() {
         />
       )}
 
+      {/* === Templates Tab (第 58 条) === */}
+      {activeTab === "templates" && (
+        <TemplateGallery
+          key={`${templateId ?? "list"}-${templateOpens}`}
+          initialTemplateId={templateId}
+          useLabel="去生图使用"
+          onUse={({ template, prompt }) => {
+            savePendingDraft({
+              prompt,
+              resolution: template.resolution,
+              quality: template.quality,
+              ...(template.aspectRatio ? { aspectRatio: template.aspectRatio } : {}),
+            });
+            console.info("[skills] template → studio", { template: template.id });
+            router.push("/studio");
+          }}
+        />
+      )}
+
       {/* === Import Tab === */}
       {activeTab === "import" && (
         <ImportPanel
@@ -527,6 +561,13 @@ export default function SkillsPage() {
         onInstall={handleInstall}
         onUninstall={handleUninstall}
         onDelete={handleDelete}
+        onOpenTemplate={(id) => {
+          setDetailOpen(false);
+          setDetailSkill(null);
+          setTemplateId(id);
+          setTemplateOpens((n) => n + 1);
+          setActiveTab("templates");
+        }}
       />
       </div>
       </div>

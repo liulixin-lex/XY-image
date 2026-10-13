@@ -1,193 +1,103 @@
 ---
 name: json-image-prompt
-description: Use structured JSON prompts for AI image generation instead of free-form text. Produces more consistent, controllable, and high-quality results. Activate when the user asks to generate, create, or design images, illustrations, photos, posters, or any visual content via the generate_image tool.
+description: 生成或修改任何图片前使用（调用 generate_image 之前）：按「用途 → 场景 → 主体 → 细节 → 约束」写清楚的中文自然语言提示词；画面里要出现的字放引号；改图写明改什么、什么不变；按用途选比例、画质和质量；出图后按清单检查。
 license: Apache-2.0
+compatibility: 需要 generate_image 工具。适用于 GPT Image、Nano Banana（Gemini）和 Grok 生图模型。
 metadata:
-  author: loomic
-  version: "1.0"
+  author: GGUU AI
+  version: "2.0"
+  sources: "OpenAI GPT Image prompting guide (2026-04); Google Gemini image generation docs and Nano Banana Pro prompting tips"
 ---
 
-# JSON Image Prompt Skill
+# 生图提示词规范
 
-When generating images, always decompose the user's request into a structured JSON prompt before calling `generate_image`. JSON prompts eliminate ambiguity, improve consistency, and give the AI model clearer instructions.
+这个技能规定怎样把用户的需求写成 `generate_image` 的 `prompt` 和参数。目的只有一个：第一次就出能用的图，改的时候只改该改的地方。
 
-## Why JSON Over Free-Form Text
+> 旧版本要求先写 JSON 再压成英文标签串。现在的生图模型（GPT Image 2、Nano Banana Pro）读完整句子比读标签准，所以改成「结构化地想，自然语言地写」。
 
-| Free-form | JSON |
-|-----------|------|
-| "A beautiful sunset over mountains with dramatic lighting" | Each attribute is a separate, unambiguous key-value pair |
-| Model guesses what "beautiful" and "dramatic" mean | You define exactly: golden hour, rim lighting, warm tones |
-| Hard to iterate — rewrite everything | Change one field, keep the rest |
-| Inconsistent results across runs | Same structure = reproducible quality |
+## 一、先弄清四件事（缺什么问什么，只问一轮）
 
-## JSON Prompt Schema
+1. **用途**：用在哪里（电商主图、小红书封面、打印海报、PPT 配图……）。这决定比例、尺寸和精致程度。
+2. **主体**：画什么、几个、什么样子。用户给了图（商品、人物、草图），就以图为准。
+3. **风格**：写实照片、插画、3D、平面设计？有没有参考图或品牌套件？
+4. **字**：画面里要不要出现文字，逐字是什么。
 
-Always structure the prompt as a JSON object with these fields:
+用户只说了一句很短的话，并且明显是要你发挥，就不要追问，直接按下面的规范补全再出图，出图后说明你补了什么。
 
-```json
-{
-  "subject": {
-    "type": "描述主体是什么（人物/物体/场景）",
-    "details": "关键特征、姿态、表情、材质",
-    "framing": "构图方式（全身/半身/特写/鸟瞰）"
-  },
-  "environment": {
-    "setting": "场景描述",
-    "time": "时间/时段",
-    "weather": "天气/氛围条件"
-  },
-  "style": {
-    "genre": "视觉风格（photorealistic/illustration/anime/oil-painting/3d-render/watercolor/flat-design）",
-    "reference": "参考美学（如 Studio Ghibli / Swiss design / Brutalist / Art Deco）",
-    "color_palette": "色彩倾向（warm/cool/monochrome/muted/vibrant + 具体色号如有）"
-  },
-  "lighting": {
-    "type": "光源类型（natural/studio/neon/ambient/volumetric）",
-    "direction": "光线方向（front/back/side/top/rim）",
-    "quality": "光线质感（soft/harsh/diffused/dramatic/golden-hour）"
-  },
-  "camera": {
-    "angle": "拍摄角度（eye-level/low-angle/high-angle/dutch-angle/overhead）",
-    "lens": "镜头（wide-angle/telephoto/macro/fisheye/tilt-shift）",
-    "depth_of_field": "景深（shallow/deep/selective）"
-  },
-  "mood": "情绪基调（1-3个关键词）",
-  "negative": "需要避免的元素（可选）"
-}
-```
+## 二、提示词的写法
 
-## 使用流程
+按这个顺序写成几句通顺的中文，不要写成逗号分隔的标签串：
 
-### Step 1: 分析用户意图
+1. **用途和画面类型**：`电商白底主图，用作详情页首图。` / `小红书笔记封面，竖版。`
+2. **场景和背景**：在哪里、什么时间、背景干不干净。
+3. **主体**：是什么、什么样子、在画面的哪个位置、占多大。
+4. **细节**：材质、光线方向和质感、镜头和景深（写实）或画风、笔触、配色（插画和设计）。
+5. **约束**：必须出现的文字、必须保持不变的东西、不要出现的东西。
 
-用户说"帮我生成一张科技感的产品图"时，不要直接写一句话 prompt。先分解：
-- 主体：产品（什么产品？什么角度？）
-- 风格：科技感 → minimalist, clean, futuristic
-- 灯光：科技感通常是 studio, rim lighting
-- 情绪：professional, modern, premium
-
-### Step 2: 构建 JSON Prompt
-
-```json
-{
-  "subject": {
-    "type": "wireless earbuds",
-    "details": "matte black finish, floating in air, slight rotation showing both sides",
-    "framing": "centered product shot"
-  },
-  "environment": {
-    "setting": "pure dark gradient background",
-    "time": "N/A (studio)",
-    "weather": "N/A"
-  },
-  "style": {
-    "genre": "photorealistic product photography",
-    "reference": "Apple product page aesthetic",
-    "color_palette": "dark with selective blue and white accents"
-  },
-  "lighting": {
-    "type": "studio",
-    "direction": "rim lighting from behind, subtle fill from front",
-    "quality": "dramatic, high contrast"
-  },
-  "camera": {
-    "angle": "eye-level, slightly elevated",
-    "lens": "macro, 100mm equivalent",
-    "depth_of_field": "shallow, product in sharp focus"
-  },
-  "mood": "premium, futuristic, minimal",
-  "negative": "text, watermark, human hands, cluttered background"
-}
-```
-
-### Step 3: 转换为 Prompt 字符串
-
-将 JSON 扁平化为一段结构化的 prompt 文本传给 `generate_image`：
+示例（用户说「给我的冷萃咖啡做一张场景图」，并附了一张瓶子照片）：
 
 ```
-Product photography of wireless earbuds, matte black finish, floating in air with slight rotation showing both sides. Centered product shot. Pure dark gradient background. Photorealistic product photography, Apple product page aesthetic. Dark palette with selective blue and white accents. Studio rim lighting from behind with subtle fill from front, dramatic high contrast. Eye-level macro shot at 100mm, shallow depth of field with product in sharp focus. Premium, futuristic, minimal mood. --no text, watermark, human hands, cluttered background
+电商场景图，展示商品的使用场景。清晨厨房的木质台面上，参考图中的冷萃咖啡瓶放在画面中心偏前的位置，旁边有一盘可颂和几颗咖啡豆。清晨窗边的自然光从左侧照进来，浅景深，背景虚化。瓶子的外形、颜色和标签文字与参考图保持完全一致。写实摄影质感。画面里不要出现其他文字、水印和标志。
 ```
 
-**规则：JSON → prompt 转换时，按重要性排序：subject > style > lighting > camera > environment > mood > negative**
+要点：
 
-## 场景模板
+- **具体胜过形容词**：「午后从左侧窗户斜射进来的暖光」比「好看的光」有用；颜色能写色号就写（`朱红 #D42A29`）。
+- **写实照片**：写「写实照片质感」「真实的皮肤纹理和材质」「像真实拍到的照片」，写清光线和镜头感（35mm 纪实、85mm 人像、浅景深）。不要写「8K、杰作、最佳质量」这类词，对这些模型没用。
+- **平面和插画**：写清画风（扁平插画、水彩、3D 黏土）、配色和留白，要求「线条干净、没有多余装饰」。
+- **人物**：写清人数、年龄感、动作、视线和与物体的关系；不要指名道姓地画真实名人。
+- **不要用别家语法**：`--no`、`--ar`、`(词:1.3)` 这类 Midjourney、Stable Diffusion 的写法这里不起作用，要排除什么就用一句话写「不要出现……」。
 
-### 人像摄影
+## 三、画面里的文字
 
-```json
-{
-  "subject": {
-    "type": "portrait of [person description]",
-    "details": "[expression], [clothing], [pose]",
-    "framing": "bust shot / headshot / full body"
-  },
-  "style": {
-    "genre": "editorial photography",
-    "color_palette": "warm skin tones, muted background"
-  },
-  "lighting": {
-    "type": "natural",
-    "direction": "side, Rembrandt lighting pattern",
-    "quality": "soft, golden hour"
-  },
-  "camera": {
-    "lens": "85mm portrait lens",
-    "depth_of_field": "shallow, f/1.8"
-  },
-  "mood": "intimate, contemplative"
-}
-```
+- 要画出来的字放在英文双引号里，并写明位置、字号感、字体气质和颜色：`标题文字 "夏日市集"，醒目的粗体，白色，居中放在画面上方，只出现一次。`
+- 加一句「除标题外不要其他文字」，否则模型会自己编字。
+- 品牌名、生僻字、英文单词容易出错：字数越少越准。超过十来个字、或者日期、价格、地址、二维码说明这类必须一字不差的内容，先出一张留好空白的底图，再用 `manipulate_canvas` 的 add_text 放到画布上，用户之后还能改。
+- 文字多、版面复杂（信息图、菜单、海报）时，`quality` 用 high。
 
-### 概念插画
+## 四、参考图和改图（inputImages）
 
-```json
-{
-  "subject": {
-    "type": "[concept or scene]",
-    "details": "[key visual elements]",
-    "framing": "wide establishing shot"
-  },
-  "style": {
-    "genre": "digital illustration",
-    "reference": "[art style reference]",
-    "color_palette": "[specific palette or mood-based]"
-  },
-  "lighting": {
-    "type": "volumetric / atmospheric",
-    "quality": "cinematic"
-  },
-  "mood": "[2-3 emotion keywords]"
-}
-```
+- 用户附加了图片、或者选中了画布上的图，就把它们放进 `inputImages`，不要只凭文字重画。
+- 多张参考图时，在提示词里按顺序说清每张的作用：`第 1 张参考图是商品，第 2 张是想要的风格，把第 1 张的商品放进第 2 张那样的场景里。`
+- 改图的写法：**只写要改的地方，并把不变的东西列出来**。`把背景换成黄昏的海边；人物的脸、发型、衣服、姿势和位置保持完全不变，调整边缘光线让人物自然融入。`
+- 每轮只改一两处；连续修改时，每次都重复一遍「保持不变」的清单，防止越改越走样。
+- 比例跟原图保持一致（选最接近原图的 aspectRatio），除非用户要改比例。
+- 只改画面里的一小块（去掉路人、换一件衣服），告诉用户在「生图」页打开这张图用「局部重绘」涂出区域，比整张重画更稳；要把画面往外延伸，用「扩图」。
+- 同一个角色或产品要出现在很多张图里：先出一张设定图（正面、侧面、背面），以后每张都把它作为参考图，并写「不要重新设计这个角色」。
 
-### 品牌/营销视觉
+## 五、参数
 
-```json
-{
-  "subject": {
-    "type": "[product or brand element]",
-    "details": "[brand-specific details]",
-    "framing": "hero shot"
-  },
-  "style": {
-    "genre": "commercial photography / 3d-render",
-    "reference": "[brand aesthetic]",
-    "color_palette": "[brand colors]"
-  },
-  "lighting": {
-    "type": "studio, three-point",
-    "quality": "clean, professional"
-  },
-  "mood": "aspirational, on-brand"
-}
-```
+| 用途 | aspectRatio | resolution |
+| --- | --- | --- |
+| 电商主图、头像、图标、方形社媒图 | 1:1 | 2K |
+| 小红书、详情页、竖版海报 | 3:4 | 2K |
+| 手机全屏海报、短视频封面、故事 | 9:16 | 2K |
+| 视频封面、横幅、PPT 配图 | 16:9 | 2K |
+| 公众号头图、超宽横幅 | 21:9 | 2K |
+| 打印、大屏展示 | 按版面 | 4K（更慢） |
 
-## 重要原则
+- `quality`：一般用 auto；草稿和多方案对比用 low；小字多、信息图、人像特写、精细改图用 high。
+- 模型不支持的比例和尺寸会被换成最接近的；出图后告诉用户实际用的比例。
+- 用户要多个方案时再多出几张；默认一次一张，看了结果再继续。
 
-1. **每次生成图片前，先在内心构建 JSON 结构**，即使不输出给用户看
-2. **Subject 永远最重要** — 如果描述不清楚主体，其他参数再好也没用
-3. **少即是多** — 每个字段用精准的 2-5 个词，不要写散文
-4. **negative 字段很关键** — 明确排除不想要的元素（文字、水印、变形等）
-5. **迭代优化** — 如果第一次结果不理想，只调整 1-2 个字段重试，不要全部重写
-6. **色彩要具体** — "warm tones" 不如 "golden amber (#D4A574) with deep burgundy (#722F37) accents"
-7. **有品牌套件时** — 用 `get_brand_kit` 获取品牌色和字体，注入到 style.color_palette 和 subject.details
+## 六、按模型
+
+- **GPT Image 2**：版面和文字最稳，适合海报、信息图、带字的设计、精细改图。
+- **Nano Banana Pro（Gemini 3 Pro Image）**：常识和真实世界知识好，适合写实场景、多张参考图合成；喜欢完整的句子，不喜欢标签串。
+- **Grok**：出图快，适合风格化的草稿和多方向尝试。
+- 用户指定了模型就用用户的；没指定时按上面挑，并在回复里说一句为什么。
+
+## 七、品牌套件
+
+项目绑定了品牌套件时，出图前先调用 `get_brand_kit`：把品牌色（带色号）写进提示词的配色部分，字体气质写进文字要求，`design_guidance` 里的调性和禁忌写进约束。标志图片可以作为参考图放进 `inputImages`。
+
+## 八、出图后检查
+
+拿到结果后先自己看一遍（必要时用 `screenshot_canvas`），再回复用户：
+
+1. 主体对不对，参考图里的商品、人物、标志有没有变样？
+2. 文字有没有错字、多字、乱码？
+3. 比例、构图、留白是否符合用途？
+4. 有没有多余的文字、水印、奇怪的手指和肢体？
+
+有问题就如实说，并给出下一步：换个说法重出、改用局部重绘、换模型，或者把文字改成画布文字。不要把有明显问题的图说成完美。

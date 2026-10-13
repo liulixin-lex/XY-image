@@ -74,7 +74,7 @@ export async function registerJobRoutes(
           ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
           ...(payload.session_id ? { sessionId: payload.session_id } : {}),
           ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-          payload: { ...input, ...canvasPlacement(payload, 0) },
+          payload: { ...input, ...titleOf(payload), ...canvasPlacement(payload, 0) },
         });
       });
       return reply
@@ -147,6 +147,7 @@ export async function registerJobRoutes(
             ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
             payload: {
               ...input,
+              ...titleOf(payload),
               ...canvasPlacement(payload, index),
               ...imageBatchPayloadSchema.parse({
                 batch_id: batchId,
@@ -320,6 +321,14 @@ export async function registerJobRoutes(
 }
 
 const batchParamsSchema = z.object({ batchId: z.string().uuid() });
+
+/**
+ * The label lists show (第 58 条): the user's own words when the prompt sent
+ * carries more, e.g. a brand kit's rules. Absent: lists fall back to prompt.
+ */
+function titleOf(payload: { title?: string | undefined }): { title?: string } {
+  return payload.title ? { title: payload.title } : {};
+}
 
 /** Jobs of one batch created at once (database round trips in parallel). */
 const CREATE_CHUNK = 8;

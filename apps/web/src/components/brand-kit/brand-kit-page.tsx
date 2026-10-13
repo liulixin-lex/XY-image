@@ -385,7 +385,7 @@ function BrandKitFrame({ children }: { children: ReactNode }) {
     <div className="flex flex-col md:-mb-8 md:h-[calc(100dvh-132px)]">
       <PageHeader
         title="品牌套件"
-        description="标志、颜色、字体和品牌说明，助手出图时会参考。"
+        description="标志、颜色、字体和品牌说明。设计助手出图时会参考；在生图页点「品牌」，每张图都带上它的配色和调性。"
         className="w-full shrink-0 pb-5"
       />
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 gutter-x md:min-h-0 md:flex-1 md:flex-row">

@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -46,8 +49,12 @@ export async function registerSkillRoutes(
     auth: RequestAuthenticator;
     createUserClient: (accessToken: string) => UserSupabaseClient;
     viewerService: ViewerService;
+    /** Where the official (system) skills' folders are, as the agent reads them. */
+    skillsRoot?: string | undefined;
   },
 ) {
+  const skillsRoot = resolve(options.skillsRoot ?? "/opt/loomic/skills");
+
   // =========================================================================
   // Skills Registry (public catalog)
   // =========================================================================
@@ -114,6 +121,10 @@ export async function registerSkillRoutes(
         ...mapSkillDetailRow(data),
         files: (fileData ?? []).map(mapSkillFileRow),
       };
+      // Official skills keep their SKILL.md on disk (the agent reads it
+      // from /skills/); show that file instead of the empty column.
+      if (skill.source === "system" && !skill.skillContent)
+        skill.skillContent = await readSystemSkill(skillsRoot, skill.slug, request.log);
       return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       request.log.error({ err: error }, "skill detail error");
@@ -790,4 +801,23 @@ function isZodError(
     "issues" in error &&
     Array.isArray(error.issues)
   );
+}
+
+/**
+ * The SKILL.md of an official skill, from the folder the agent reads
+ * (LOOMIC_SKILLS_ROOT, /opt/loomic/skills in the image). Empty when the slug
+ * is odd or the file is missing; the dialog then shows nothing, as before.
+ */
+async function readSystemSkill(
+  root: string,
+  slug: string,
+  log: { warn: (obj: object, msg: string) => void },
+): Promise<string> {
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) return "";
+  try {
+    return await readFile(join(root, slug, "SKILL.md"), "utf8");
+  } catch (error) {
+    log.warn({ slug, code: (error as NodeJS.ErrnoException).code }, "system skill file unreadable");
+    return "";
+  }
 }

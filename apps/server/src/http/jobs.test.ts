@@ -390,6 +390,28 @@ describe("job history pages (第 56 条)", () => {
   });
 });
 
+describe("picture titles (第 58 条)", () => {
+  it("stores the user's own words as the title when the prompt carries more", async () => {
+    const { app, jobService } = await route();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: { prompt: "秋季新品海报\n\n【品牌规范·咖啡店】配色以朱红为主", title: "秋季新品海报", count: 2 },
+    });
+    expect(response.statusCode).toBe(201);
+    const payloads = jobService.createJob.mock.calls.map((call) => call[1].payload);
+    expect(payloads).toHaveLength(2);
+    for (const payload of payloads) {
+      expect(payload.title).toBe("秋季新品海报");
+      expect(payload.prompt).toContain("【品牌规范");
+    }
+    // Without a title nothing is stored, as before.
+    jobService.createJob.mockClear();
+    await app.inject({ method: "POST", url: "/api/jobs/image-generation/batch", payload: { prompt: "灯塔", count: 1 } });
+    expect(jobService.createJob.mock.calls[0]![1].payload).not.toHaveProperty("title");
+  });
+});
+
 describe("生成记录 pages and deleting pictures (第 58 条)", () => {
   const ids = [
     "00000000-0000-4000-8000-000000000001",
