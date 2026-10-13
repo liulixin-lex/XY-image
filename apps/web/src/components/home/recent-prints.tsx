@@ -14,8 +14,9 @@ import { ArrowRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useAuth } from "@/lib/auth-context";
 import { useAmbientImage } from "@/components/ambient/ambient-provider";
+import { useTilt } from "@/hooks/use-tilt";
+import { useAuth } from "@/lib/auth-context";
 import { SHOWCASE_ITEMS } from "@/components/landing/showcase";
 import { type ImageJobView, jobLabel, listImage, toImageJobView } from "@/lib/image-jobs";
 import { describeImageParams } from "@/lib/image-model-meta";
@@ -59,6 +60,8 @@ export function RecentPrints() {
   }, [session?.user.id]);
 
   const strip = useStripScroll(prints?.length ?? 0);
+  const tiltRoot = useRef<HTMLDivElement>(null);
+  useTilt(tiltRoot, { ready: Boolean(prints?.length) });
 
   // Sampled for colour only: the thumbnail is plenty and far cheaper.
   const latest = prints?.[0] ? listImage(prints[0]) : null;
@@ -104,6 +107,7 @@ export function RecentPrints() {
         </div>
       ) : (
         <div
+          ref={tiltRoot}
           className="group/strip relative -mx-2"
           data-more-left={strip.more.left || undefined}
           data-more-right={strip.more.right || undefined}
@@ -120,7 +124,8 @@ export function RecentPrints() {
               <Link
                 href="/history"
                 draggable={false}
-                className="group block w-[156px] rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc"
+                data-tilt
+                className="tilt group block w-[156px] rounded-[14px] outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc"
                 title={jobLabel(job)}
               >
                 <span
