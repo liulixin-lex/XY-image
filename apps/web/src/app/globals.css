@@ -973,3 +973,130 @@
   background-color: var(--color-muted);
   font-weight: 650;
 }
+
+/* ── Landing motion (第 62 条) ─────────────────────────────────────
+ * The first viewport plays from the first paint in CSS, not after
+ * hydration: a static-export page is painted before its scripts run, so a
+ * script-driven entrance would show the page, hide it and play it again.
+ * Scroll-linked motion (scrub, pin, horizontal rail, 3D) is GSAP in
+ * lib/motion.ts and starts from these resting states.
+ */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.32em);
+    filter: blur(10px);
+  }
+}
+@keyframes hero-rise-flat {
+  from {
+    opacity: 0;
+    transform: translateY(0.32em);
+  }
+}
+@utility hero-rise {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: hero-rise 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 110ms + 60ms);
+    :root[data-render="lite"] & {
+      animation-name: hero-rise-flat;
+    }
+  }
+}
+/* The poster swinging in from deeper in the room. */
+@keyframes stage-swing {
+  from {
+    opacity: 0;
+    transform: perspective(1800px) translate3d(8%, 3%, -180px) rotateY(-24deg) rotateX(6deg);
+  }
+}
+@utility stage-swing {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: stage-swing 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
+    transform-origin: 80% 100%;
+  }
+}
+
+/*
+ * Sample rail (从一张示例开始). Two modes, set by the script:
+ * - "rail" (default, phones, reduced motion): a native horizontal scroller
+ *   with snap points; drag with a mouse.
+ * - "pin" (wide screens): the section is pinned and vertical scrolling moves
+ *   the track; `overflow: clip` keeps focus from scrolling the viewport on
+ *   its own (the script scrolls the page to a focused card instead).
+ */
+.rail-viewport {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* Snapped cards keep the page gutter instead of touching the edge. */
+  scroll-padding-inline: 20px;
+  @media (min-width: 640px) {
+    scroll-padding-inline: 32px;
+  }
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  &[data-dragging="true"] {
+    scroll-snap-type: none;
+    cursor: grabbing;
+  }
+  &[data-mode="pin"] {
+    overflow: clip;
+    scroll-snap-type: none;
+    perspective: 1500px;
+    perspective-origin: 50% 45%;
+  }
+  &[data-mode="pin"] > .rail-track {
+    transform-style: preserve-3d;
+  }
+}
+.rail-card {
+  scroll-snap-align: start;
+  [data-mode="pin"] & {
+    transform-origin: 50% 50%;
+    backface-visibility: hidden;
+  }
+}
+
+/* Cards that stack while scrolling (三种开始方式): each sticks a little
+   lower than the one before; the script dims and shrinks the one below. */
+@utility stack-card {
+  @media (min-width: 1024px) {
+    position: sticky;
+    top: calc(104px + var(--stack-i, 0) * 22px);
+  }
+}
+
+/* Figures arriving (第 62 条, 管理): bars grow from their start, a chart
+   line draws itself (needs pathLength="1" on the line). Once, on mount. */
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+}
+@keyframes draw-line {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@utility grow-x {
+  transform-origin: left center;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: grow-x 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--stagger, 0) * 70ms + 120ms);
+  }
+}
+@utility draw-line {
+  @media (prefers-reduced-motion: no-preference) {
+    stroke-dasharray: 1;
+    animation: draw-line 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.2s both;
+  }
+}
+
+/* A card leaning toward the pointer (hooks/use-tilt.ts sets --rx / --ry). */
+@utility tilt {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  &[data-tilting] {
+    transition-duration: 0.12s;
+  }
+}

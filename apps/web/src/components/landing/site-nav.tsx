@@ -11,9 +11,11 @@ import { cn } from "@/lib/utils";
 import { BrandLockup } from "../brand/brand-mark";
 import { ThemeToggle } from "../theme-toggle";
 
+// 「示例」 not 「作品」: in the workspace 作品 means your own pictures (第 62 条).
 const LINKS = [
   { href: "#top", label: "首页" },
-  { href: "#gallery", label: "作品" },
+  { href: "#gallery", label: "示例" },
+  { href: "#features", label: "功能" },
   { href: "#models", label: "模型" },
   { href: "#billing", label: "计费说明" },
 ];

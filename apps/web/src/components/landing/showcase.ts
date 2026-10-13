@@ -70,3 +70,6 @@ export const SHOWCASE_ITEMS: ShowcaseItem[] = [
 export const SHOWCASE = SHOWCASE_ITEMS.map((entry) => entry.src);
 
 export const SAMPLE_ALT = "示例作品";
+
+/** The model every sample on the public pages was made with (第 62 条). */
+export const SAMPLE_MODEL = "GPT Image 2.5 Sunburst";

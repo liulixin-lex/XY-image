@@ -1,9 +1,11 @@
 "use client";
 
-import { forwardRef } from "react";
+import { ArrowDownIcon } from "lucide-react";
+import { forwardRef, useRef } from "react";
 
 import { type AmbientPreset, AmbientWash } from "@/components/ambient/ambient-provider";
 import type { AspectRatio, ImageResolution } from "@/lib/image-model-meta";
+import { DESKTOP_MOTION, POINTER_MOTION, gsap, useGSAP } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 import { PosterStage, type StageImage } from "./poster-stage";
@@ -14,11 +16,17 @@ import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
 /**
  * First viewport: the poster room. The headline and the working prompt box
  * hang on the wall at the left; the chosen sample stands on the floor at the
- * right as a slanted panel. Below the horizon, on the floor: what signing in
- * means (three plain facts) and the strip of samples that re-colour the room.
+ * right as a slanted panel. Below the horizon, on the floor: a way down to
+ * all the samples and the strip of samples that re-colour the room.
  *
  * Layout is two grid rows (wall, floor) so the horizon is a real boundary:
  * the panel stands on it at any desktop height. Below lg everything stacks.
+ *
+ * Motion (第 62 条): the headline and the poster arrive in CSS from the first
+ * paint (hero-rise / stage-swing in globals.css). On wide screens the poster
+ * leans toward the pointer, and scrolling away swings it back into the room
+ * while the headline drifts up faster than the page: one scrubbed timeline,
+ * transforms only. Reduced motion keeps everything still.
  */
 export const Hero = forwardRef<
   PromptBoxHandle,
@@ -37,6 +45,42 @@ export const Hero = forwardRef<
   { items, selected, onSelect, prompt, onPromptChange, ratio, onRatioChange, resolution, onResolutionChange },
   ref,
 ) {
+  const root = useRef<HTMLElement>(null);
+  const wall = useRef<HTMLDivElement>(null);
+  const stageScroll = useRef<HTMLDivElement>(null);
+  const stageTilt = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      // Scrolling out: the poster swings back into the room, the words lift away.
+      mm.add(DESKTOP_MOTION, () => {
+        const tl = gsap.timeline({
+          defaults: { ease: "none" },
+          scrollTrigger: { trigger: root.current, start: "top top", end: "bottom top", scrub: 0.6 },
+        });
+        tl.to(stageScroll.current, { rotationY: 16, rotationX: -5, scale: 0.84, yPercent: -6, transformPerspective: 1800 }, 0)
+          .to(wall.current, { y: -140, opacity: 0.35 }, 0);
+      });
+      // Pointer: the poster leans toward it, a few degrees at most.
+      mm.add(`${POINTER_MOTION} and (min-width: 1024px)`, () => {
+        const el = stageTilt.current;
+        if (!el) return;
+        gsap.set(el, { transformPerspective: 1600 });
+        const rotY = gsap.quickTo(el, "rotationY", { duration: 0.9, ease: "power3.out" });
+        const rotX = gsap.quickTo(el, "rotationX", { duration: 0.9, ease: "power3.out" });
+        const onMove = (event: PointerEvent) => {
+          rotY((event.clientX / window.innerWidth - 0.5) * 9);
+          rotX((event.clientY / window.innerHeight - 0.5) * -6);
+        };
+        window.addEventListener("pointermove", onMove, { passive: true });
+        return () => window.removeEventListener("pointermove", onMove);
+      });
+      return () => mm.revert();
+    },
+    { scope: root },
+  );
+
   const current = items[selected] ?? items[0]!;
   const toStage = (entry: ShowcaseItem): StageImage => ({
     src: entry.large,
@@ -58,7 +102,7 @@ export const Hero = forwardRef<
       <figure className="glass-float absolute top-[84%] left-[38%] z-[2] m-0 w-[min(46%,330px)] rotate-[1.5deg] rounded-[16px] px-4 py-3">
         <figcaption>
           <span className="data-label block text-fg-muted tabular">
-            {current.ratio} · 2K
+            {current.ratio} · 4K
           </span>
           <span className="mt-1 line-clamp-2 block text-[14px] leading-[1.55] font-semibold text-fg">
             {current.prompt}
@@ -70,37 +114,60 @@ export const Hero = forwardRef<
 
   return (
     <section
+      ref={root}
       id="top"
       aria-label="开始生成"
       className="relative isolate overflow-hidden lg:grid lg:min-h-[max(100dvh,800px)] lg:grid-rows-[minmax(0,1fr)_auto]"
     >
       {/* Wall */}
       <div className="relative z-[1] mx-auto grid w-full max-w-[1600px] grid-cols-1 px-5 pt-[96px] sm:px-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-x-6 lg:px-[clamp(24px,3.6vw,64px)] lg:pt-[clamp(88px,11dvh,112px)]">
-        <div className="relative z-[3] flex flex-col pb-10 lg:pb-[clamp(24px,4dvh,44px)]">
+        <div ref={wall} className="relative z-[3] flex flex-col pb-10 lg:pb-[clamp(24px,4dvh,44px)]">
           <h1 className="font-display leading-none font-normal text-fg">
-            <span className="block text-[clamp(88px,min(14vw,19.5dvh),212px)] tracking-[-0.01em]">一句话</span>
-            <span className="mt-[0.18em] block text-[clamp(44px,min(6.5vw,9.2dvh),96px)]">
+            <span className="hero-rise block text-[clamp(88px,min(14vw,19.5dvh),212px)] tracking-[-0.01em]">
+              一句话
+            </span>
+            <span
+              className="hero-rise mt-[0.18em] block text-[clamp(44px,min(6.5vw,9.2dvh),96px)]"
+              style={{ "--i": 1 } as React.CSSProperties}
+            >
               生成你<em className="text-acc not-italic">想要的图</em>
             </span>
           </h1>
-          <p className="mt-6 max-w-[34em] text-[16px] leading-[1.8] text-fg-soft sm:text-[17px] lg:mt-[clamp(16px,3dvh,28px)]">
-            主站账号直接登录。每张图都带请求 ID，在主站的用量记录里查得到。
+          <p
+            className="hero-rise mt-6 max-w-[34em] text-[16px] leading-[1.8] text-fg-soft sm:text-[17px] lg:mt-[clamp(16px,3dvh,28px)]"
+            style={{ "--i": 2 } as React.CSSProperties}
+          >
+            用主站账号登录，写一句话就能出图，最高 4K。
           </p>
-          <PromptBox
-            ref={ref}
-            value={prompt}
-            onChange={onPromptChange}
-            ratio={ratio}
-            onRatioChange={onRatioChange}
-            resolution={resolution}
-            onResolutionChange={onResolutionChange}
-            className="mt-7 w-full max-w-[640px] lg:mt-[clamp(18px,3.4dvh,36px)]"
-          />
+          <div
+            className="hero-rise mt-7 w-full max-w-[640px] lg:mt-[clamp(18px,3.4dvh,36px)]"
+            style={{ "--i": 3 } as React.CSSProperties}
+          >
+            <PromptBox
+              ref={ref}
+              value={prompt}
+              onChange={onPromptChange}
+              ratio={ratio}
+              onRatioChange={onRatioChange}
+              resolution={resolution}
+              onResolutionChange={onResolutionChange}
+              className="w-full"
+            />
+          </div>
         </div>
 
         {/* Desktop: the stage stands on the horizon (bottom of this row). */}
         <div className="relative hidden min-h-0 lg:block">
-          <div className="absolute right-[-6%] bottom-0 aspect-[740/640] h-[min(100%,680px)]">{stage}</div>
+          <div
+            ref={stageScroll}
+            className="absolute right-[-6%] bottom-0 aspect-[740/640] h-[min(100%,680px)] origin-[70%_100%]"
+          >
+            <div className="stage-swing h-full w-full">
+              <div ref={stageTilt} className="h-full w-full">
+                {stage}
+              </div>
+            </div>
+          </div>
         </div>
         {/* Mobile and tablet: the stage below the prompt box. */}
         <div className="relative mx-auto mb-16 aspect-[740/640] w-full max-w-[640px] lg:hidden">{stage}</div>
@@ -110,7 +177,7 @@ export const Hero = forwardRef<
       <div className="relative">
         <Floor />
         <div className="relative z-[1] mx-auto grid max-w-[1600px] grid-cols-1 gap-10 px-5 pt-8 pb-14 sm:px-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-x-6 lg:px-[clamp(24px,3.6vw,64px)] lg:pt-[clamp(28px,5dvh,52px)] lg:pb-[clamp(24px,4dvh,44px)]">
-          <Facts className="order-2 lg:order-1" />
+          <SamplesLink count={items.length} className="order-2 lg:order-1" />
           <Strip
             items={items}
             selected={selected}
@@ -159,31 +226,30 @@ function Floor() {
   );
 }
 
-const FACTS = [
-  { label: "个账号", note: "主站邮箱和密码登录" },
-  { label: "份余额", note: "和主站共用" },
-  { label: "次请求", note: "只发一次，不自动重发" },
-];
-
-/** What signing in means, said on the floor in poster numerals. */
-function Facts({ className }: { className?: string }) {
+/** The way down to every sample, said on the floor in a poster numeral. */
+function SamplesLink({ count, className }: { count: number; className?: string }) {
   return (
-    <ul className={cn("flex flex-wrap gap-x-10 gap-y-5 lg:self-end", className)}>
-      {FACTS.map((fact) => (
-        <li key={fact.label} className="flex items-end gap-2.5">
-          <span aria-hidden className="numeral text-[clamp(52px,6dvh,70px)] text-fg/88">
-            1
-          </span>
-          <span className="pb-0.5">
-            <span className="block text-[15px] leading-tight font-semibold text-fg">
-              <span className="sr-only">1 </span>
-              {fact.label}
-            </span>
-            <span className="mt-1 block text-[12.5px] text-fg-muted">{fact.note}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <a
+      href="#gallery"
+      className={cn(
+        "group flex w-fit items-end gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acc lg:self-end",
+        className,
+      )}
+    >
+      <span aria-hidden className="numeral text-[clamp(52px,6dvh,70px)] text-fg/88">
+        {count}
+      </span>
+      <span className="pb-0.5">
+        <span className="block text-[15px] leading-tight font-semibold text-fg">
+          <span className="sr-only">{count} </span>张示例
+        </span>
+        <ArrowDownIcon
+          aria-hidden
+          className="mt-1.5 size-4 text-fg-muted transition-[translate,color] group-hover:translate-y-0.5 group-hover:text-fg"
+          strokeWidth={2}
+        />
+      </span>
+    </a>
   );
 }
 
@@ -208,7 +274,6 @@ function Strip({
           <span className="text-[0.4em] text-fg-muted">/{items.length}</span>
         </p>
       </div>
-      <p className="mt-3 text-[13px] text-fg-muted">点一张，海报和整个房间都换成它的颜色</p>
     </div>
   );
 }

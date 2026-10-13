@@ -187,6 +187,7 @@ components:
 
 # Design System: GGUU AI IMAGE
 
+<!-- 2026-10-13 agent01（第 62 条）：落地页加入滚动编排（首屏 CSS 入场 + 大图滚出时 3D 后转、示例区吸顶横向 3D 卷轴、三种开始方式叠放卡片、模型行擦入、计费视差、结尾扇形展开），工作台只加反馈级动效（卡片指针倾斜、管理页计数和图表绘制）；示例图全部换成本站 GPT Image 2.5 Sunburst 4K 生成的图；模型列表只留区分用的短备注（「效果优先」），去掉分组名、通用描述和档位芯片。 -->
 <!-- 2026-10-12 agent01（第 57 条）：弹层（下拉、模型选择、菜单、浮层）统一用 glass-menu（面板色 95% + 28px 模糊），glass-strong 提到 92% / 94%；工作台统一页边距 gutter-x（顶栏、页头、各页、生图页对齐到同一条线，生图页宽度和顶栏一样 1600）；图片说明用 veil-bottom（自下而上的渐进模糊 + 暗纱），横排两端用 edge-blur，竖向滚动区两端用 fade-y / fade-b；弹窗背景 10px 磨砂。顶栏「画布」「作品」都是直接链接。 -->
 <!-- 2026-10-12 agent01（第 56 条打磨）：亮色珊瑚加深一档 #e5533d → #d4412a（同 8° 色相，白字从 3.7:1 到 4.6:1；品牌标保留原珊瑚）；弱字、珊瑚字、待核对橙、成功绿压到地面色上也 ≥4.5:1；玻璃加发丝边和顶光渐变，新增 glass-ink（压在图片上的深色磨砂）；顶栏改成渐进模糊；最近生成的图卡随滚动入场。 -->
 <!-- 2026-10-10 agent01 按 impeccable document 流程，从 F2（海报 · 柔和版）已上线的代码重写：apps/web/src/app/globals.css、components/ui/{button-variants,select,poster-tabs,dialog}.tsx、components/app-sidebar.tsx、components/landing/*、components/studio/*、components/brand/brand-mark.tsx。替换 10-08 的「夜色光场」版本。改 token 时同步本文件，再跑 `node scripts/build-design-sidecar.mjs` 重新生成 .impeccable/design.json；方向合同在 .impeccable/surfaces/src-app-page-tsx.md。 -->
@@ -305,6 +306,14 @@ GGUU AI IMAGE 是一间有光的房间，房间里挂着一张海报。粉调浅
 
 ### Scroll
 - **跟随滚动**：吸顶的只有顶栏、生图页的设置面板和最近生成的来源筛选（吸住后变成 glass-strong 小胶囊）。最近生成的图卡用滚动时间线（`scroll-rise`，`animation-timeline: view()`）从略低略淡升到原位，和滚动位置绑定；不支持的浏览器和减少动效时直接显示。长列表滚过 1.5 屏后出现「回到顶部」磨砂圆钮。
+- **落地页滚动编排（第 62 条，GSAP ScrollTrigger，`lib/motion.ts`）**。用户从录屏预览里选了 A 横向 3D 卷轴和 A 卡片叠放：
+  - 首屏：标题、副文、输入框和大图在首帧就由 CSS 播放入场（`hero-rise`、`stage-swing`），不等脚本，避免静态导出页「先显示、再隐藏、再播放」。宽屏上大图随指针轻微倾斜（≤ 9°），往下滚时大图向房间里转回去、缩小，标题以更快的速度上移（scrub，只动 transform / opacity）。
+  - 示例区：区块吸顶，往下滚 = 横向翻看（`containerAnimation` 同一思路，`ease: "none"`）。卡片在共享透视里像 coverflow：正中那张正对你，两侧转开下沉；正中那张给房间换色（停稳 220ms 后才换）。底部刻度尺和 01/18 计数显示位置，点刻度、箭头或用键盘聚焦都会把页面滚到对应位置。手机、平板和减少动效时是原生横向滑动（scroll-snap），刻度尺照样跟随；lite 档位只吸顶滑动，不做逐张 3D。
+  - 三种开始方式：三张卡片 `position: sticky` 依次吸住（每张低 22px），下一张盖上来时上一张缩到 0.93 并被一层墙色薄纱压暗（scrub，只动 transform / opacity）。手机上正常排列。
+  - 模型列表：左侧标题吸顶；行作为列表出现时用 clip-path 从左擦入一次（`ScrollTrigger.batch`，最多错开 60ms）。
+  - 计费说明：图片和背后色块以不同速度视差；记录卡从 38° 仰角翻平，请求 ID 逐字打出，只播一次。
+  - 结尾海报：三张示例像扇子一样，随滚动从叠在一起展开到各自角度（resting 状态是 CSS `rotate` / `translate`，没有脚本时也是展开的）。
+- **工作台（Operate）只做反馈级动效**：首页最近生成和最近的画布卡片随指针轻微倾斜（`useTilt` + `tilt`，≤ 6°，只在可悬停的精确指针上）；管理页大数字计数上升、占用条从左长出、走势线自己画出来（`useCountUp`、`grow-x`、`draw-line`），都只播一次，减少动效时直接显示终态。
 
 ## Shapes
 
