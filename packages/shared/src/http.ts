@@ -94,6 +94,7 @@ export const applicationErrorCodeSchema = z.enum([
   "job_create_failed",
   "job_query_failed",
   "job_cancel_failed",
+  "job_delete_failed",
   "skill_not_found",
   "skill_create_failed",
   "skill_update_failed",

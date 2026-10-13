@@ -325,6 +325,21 @@ export const JOB_PAGE_MAX = 100;
 export const IMAGE_JOB_SOURCES = ["studio", "canvas", "assistant"] as const;
 export type ImageJobSource = (typeof IMAGE_JOB_SOURCES)[number];
 
+/**
+ * 生成记录 filters (第 58 条), applied on the server so pages and totals
+ * match: 待核对 (billing pending/unknown on a finished job, unknown on an
+ * active one, as `needsReconcile` in the web app) and 失败.
+ */
+export const JOB_LIST_VIEWS = ["reconcile", "failed"] as const;
+export type JobListView = (typeof JOB_LIST_VIEWS)[number];
+
+export const jobListCountsSchema = z.object({
+  all: z.number().int().nonnegative(),
+  reconcile: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type JobListCounts = z.infer<typeof jobListCountsSchema>;
+
 export const jobListResponseSchema = z.object({
   jobs: z.array(backgroundJobSchema),
   /**
@@ -332,5 +347,38 @@ export const jobListResponseSchema = z.object({
    * Absent from servers before 第 56 条, which return the newest 50 only.
    */
   next_before: z.string().nullable().optional(),
+  /** Rows matching the filters (`with_total=1`, 第 58 条 numbered pages). */
+  total: z.number().int().nonnegative().optional(),
+  /** Per-filter totals for the 生成记录 tabs (`with_total=1`). */
+  counts: jobListCountsSchema.optional(),
 });
 export type JobListResponse = z.infer<typeof jobListResponseSchema>;
+
+/**
+ * Most pictures one delete or restore takes (第 58 条). A page of 作品 or
+ * 生成记录 is at most JOB_PAGE_MAX; select-all across a long 作品 scroll
+ * can reach a few hundred.
+ */
+export const JOB_DELETE_MAX = 500;
+
+export const jobIdsRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(JOB_DELETE_MAX),
+});
+export type JobIdsRequest = z.infer<typeof jobIdsRequestSchema>;
+
+/**
+ * POST /api/jobs/delete. `skipped`: still queued or running (cancel or wait
+ * first), already deleted, or not the user's. Deleted pictures leave every
+ * list at once; the row stays as the billing record.
+ */
+export const jobDeleteResponseSchema = z.object({
+  deleted: z.array(z.string().uuid()),
+  skipped: z.array(z.string().uuid()),
+});
+export type JobDeleteResponse = z.infer<typeof jobDeleteResponseSchema>;
+
+/** POST /api/jobs/restore: undo, until the purge has run (about 24 hours). */
+export const jobRestoreResponseSchema = z.object({
+  restored: z.array(z.string().uuid()),
+});
+export type JobRestoreResponse = z.infer<typeof jobRestoreResponseSchema>;

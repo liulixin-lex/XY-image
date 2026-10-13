@@ -17,10 +17,10 @@
 | `/register` | 只给出主站注册链接，本站不建账号 | `app/register/page.tsx` |
 | `/home` | 工作台首页：交给助手（新建画布并带上提示词）、起手式、余额和 Key 状态、最近生成、最近画布 | `app/(workspace)/home/page.tsx` |
 | `/studio` | 生图：左边是设置（`composer.tsx`：模型、提示词和「优化提示词」、参考图、比例、画质、质量、张数），中间是按请求分组的结果（`batch-feed.tsx`，一次多张的每张单独显示状态），右边是记录栏（`history-rail.tsx`），大图和详情在 `loupe-dialog.tsx`，局部重绘和扩图在 `edit-dialog.tsx` | `app/(workspace)/studio/page.tsx`、`hooks/use-studio-jobs.ts`、`components/studio/*` |
-| `/history` | 作品（第 57 条起顶栏「作品」直接进入，手机底栏也有）：所有出过的图（生图、画布节点、设计助手），按日期分组，统一方格，悬停时在渐进模糊上显示模型、来源、时间和操作；滚动加载（`next_before`）；吸顶工具栏跟随滚动，显示当前日期和来源筛选（`?source=`）；再来一次、以此为参考把参数带到生图页（`pending-prompt`），不发请求 | `app/(workspace)/history/page.tsx`、`hooks/use-job-history.ts` |
+| `/history` | 作品（第 57 条起顶栏「作品」直接进入，手机底栏也有）：所有出过的图（生图、画布节点、设计助手），按日期分组，统一方格，悬停时在渐进模糊上显示模型、来源、时间和操作；滚动加载（`next_before`）；吸顶工具栏跟随滚动，显示当前日期和来源筛选（`?source=`）；再来一次、以此为参考把参数带到生图页（`pending-prompt`），不发请求。第 58 条：单张删除（图卡悬停的垃圾桶，立即删、提示条上「撤销」）；「选择」或图卡左上角的勾进入多选，点选、Shift 连选、「选这一天」、全选（⌘A），Esc 退出；底部浮条：下载（多张打包成一个 ZIP，`lib/zip.ts`，最多 200 张）、作参考（最多 10 张带到生图页）、删除（先确认，再可撤销） | `app/(workspace)/history/page.tsx`、`hooks/use-job-history.ts`、`hooks/use-selection.ts`、`lib/works-actions.ts`、`components/works/*` |
 | `/projects` | 画布项目列表（顶栏「画布」） | `app/(workspace)/projects/page.tsx` |
 | `/canvas?id=` | 节点画布（React Flow）：提示词卡片、生成节点、图片、文字、形状、画框；右侧设计助手 | `app/canvas/page.tsx`、`components/node-canvas/*`、`lib/node-canvas/*` |
-| `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对） | `components/settings/*` |
+| `/settings?tab=account\|keys\|models\|records` | 账户与余额、Key 选择、默认模型和自己的对话模型服务商（`#chat-providers`）、生成记录（计费核对）。第 58 条：生成记录按页显示（每页 20 / 50 / 100 条，记住选择），筛选和总数由服务端算（`offset` + `with_total`），成功的行带缩略图；本页多选（Shift 连选）后下载或删除，生成中的行不能选；删除有确认和撤销，选中里有待核对时提示 | `components/settings/*`、`components/ui/pager.tsx` |
 | `/brand-kit`、`/skills` | 上游功能，已汉化并接入统一的错误处理 | `components/brand-kit/*`、`app/(workspace)/skills/page.tsx` |
 
 ## 状态与数据流

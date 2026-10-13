@@ -165,6 +165,17 @@ node deploy/selfhost/prepare.mjs \
 - 24 小时内要撤回误删，把 `archived_at` 改回 null 即可。
 - 开关是 `PROJECT_PURGE`：`on`（默认）、`dry-run`（只记日志）、`off`。日志前缀是 `[project-purge]`，没有到期项目时不输出。
 
+### 删除的作品 24 小时后清理图片（第 58 条）
+
+作品页和 设置 › 生成记录 里删除图片（`POST /api/jobs/delete`）只写 `background_jobs.deleted_at`：图片马上从所有列表里消失，「撤销」（`POST /api/jobs/restore`）能找回。这一行本身永远保留，它是计费记录（请求 ID、计费状态），「待核对」照样由自动核对结清。
+
+- Worker 每小时检查一次（启动后 4～8 分钟第一次），删除超过 24 小时的作品，每次最多 200 条。
+- 图片和缩略图（`<workspace>/generated/` 下，只删这个工作区的）通过 Storage API 删除，`asset_objects` 记录一起删。
+- 这个工作区里还有画布或对话消息用着这张图（按对象路径在 `canvases.content`、`chat_messages` 里查），图片就留着，画布和对话不会出现破图。
+- 处理过的写 `purged_at`，之后不能再撤销；删文件失败的不写，下一轮再试。
+- 开关是 `WORKS_PURGE`：`on`（默认）、`dry-run`（只记日志）、`off`。日志前缀是 `[works-purge]`，没有到期作品时不输出。
+- 迁移 `20261012000003` 加了 `deleted_at`、`purged_at` 两列和两个部分索引，可重复执行。
+
 ### 内存上限
 
 `prepare.mjs` 给几个服务加了 `mem_limit`，免得一个服务失控拖垮整台机器：

@@ -21,6 +21,10 @@ import {
   createProjectPurger,
   createPurgeStore,
 } from "./features/projects/project-purge.js";
+import {
+  createWorksPurgeStore,
+  createWorksPurger,
+} from "./features/jobs/deleted-works-purge.js";
 import { createDispatchGate } from "./features/jobs/dispatch-gate.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
@@ -118,6 +122,19 @@ async function main() {
         });
   purger?.start();
 
+  // Removes the pictures of 作品 deleted a day ago, unless a canvas or chat
+  // still uses them (deleted-works-purge.ts, 第 58 条).
+  const worksPurger =
+    env.worksPurge === "off"
+      ? undefined
+      : createWorksPurger({
+          store: createWorksPurgeStore(env.supabaseDbUrl),
+          remove: (paths) =>
+            getAdminClient().storage.from("project-assets").remove(paths),
+          dryRun: env.worksPurge === "dry-run",
+        });
+  worksPurger?.start();
+
   // Queues async image tasks whose poller (the API process) stopped
   // (task-resumer.ts). Worker jobs resume through their own message.
   const resumer = createTaskResumer(env.supabaseDbUrl);
@@ -198,6 +215,7 @@ async function main() {
     await resumer.stop();
     await sweeper?.stop();
     await purger?.stop();
+    await worksPurger?.stop();
     await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
     await deliveries.close();

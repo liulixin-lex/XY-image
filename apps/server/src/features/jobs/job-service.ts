@@ -3,6 +3,8 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
   ImageJobSource,
+  JobListCounts,
+  JobListView,
   Json,
 } from "@loomic/shared";
 import { checkStoreError, integrationClient } from "../xy2api/store.js";
@@ -26,7 +28,8 @@ export class JobServiceError extends Error {
     | "job_not_found"
     | "job_create_failed"
     | "job_query_failed"
-    | "job_cancel_failed";
+    | "job_cancel_failed"
+    | "job_delete_failed";
 
   constructor(
     code: JobServiceError["code"],
@@ -39,6 +42,34 @@ export class JobServiceError extends Error {
     this.statusCode = statusCode;
   }
 }
+
+export type JobListFilters = {
+  status?: BackgroundJobStatus;
+  jobType?: BackgroundJobType;
+  before?: string;
+  /** Rows to skip (numbered pages); combined with `before` when both given. */
+  offset?: number;
+  limit?: number;
+  /** Image jobs only: where the picture was made. */
+  source?: ImageJobSource;
+  /** 生成记录 filter: 待核对 or 失败. */
+  view?: JobListView;
+  /** Also count the matching rows and each 生成记录 filter. */
+  withTotal?: boolean;
+};
+
+/**
+ * PostgREST filter for 待核对, the same rule as the web app's
+ * needsReconcile: an active job only when billing is unknown (it may have
+ * reached the main site and lost its answer), a finished one when billing is
+ * pending or unknown.
+ */
+export const RECONCILE_FILTER =
+  "and(status.in.(queued,running),billing_status.eq.unknown)," +
+  "and(status.not.in.(queued,running),billing_status.in.(pending,unknown))";
+
+const FAILED_STATUSES = ["failed", "dead_letter"] as const;
+const ACTIVE_STATUSES = ["queued", "running"] as const;
 
 export type CreateJobInput = {
   workspaceId: string;
@@ -60,20 +91,29 @@ export type JobService = {
   getJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   /**
    * The user's jobs, newest first: `limit` of them (default 50) created
-   * before `before` (an ISO timestamp from the previous page). One extra row
-   * is read to tell whether an older page exists (`more`).
+   * before `before` (an ISO timestamp from the previous page), or from
+   * `offset` on (生成记录 numbered pages). One extra row is read to tell
+   * whether an older page exists (`more`). Deleted jobs are never listed.
+   * `withTotal` adds the matching total and the per-filter counts.
    */
   listJobs(
     user: AuthenticatedUser,
-    filters?: {
-      status?: BackgroundJobStatus;
-      jobType?: BackgroundJobType;
-      before?: string;
-      limit?: number;
-      /** Image jobs only: where the picture was made. */
-      source?: ImageJobSource;
-    },
-  ): Promise<BackgroundJob[] & { more?: boolean }>;
+    filters?: JobListFilters,
+  ): Promise<
+    BackgroundJob[] & { more?: boolean; total?: number; counts?: JobListCounts }
+  >;
+  /**
+   * Deletes finished pictures (第 58 条): stamps deleted_at, which hides them
+   * from every list. Queued and running jobs, other users' jobs and jobs
+   * already deleted are skipped. The row stays as the billing record; the
+   * deleted-works purge removes the picture itself a day later.
+   */
+  deleteJobs(
+    user: AuthenticatedUser,
+    ids: string[],
+  ): Promise<{ deleted: string[]; skipped: string[] }>;
+  /** Undoes deleteJobs for jobs the purge has not handled yet. */
+  restoreJobs(user: AuthenticatedUser, ids: string[]): Promise<string[]>;
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   /**
    * Cancels a job the worker has not picked up (queued, nothing sent to the
@@ -267,27 +307,37 @@ export function createJobService(options: {
     async listJobs(user, filters) {
       const client = options.createUserClient(user.accessToken);
       const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 100);
-      let query = client
-        .from("background_jobs")
-        .select(SELECT_COLS)
-        .eq("created_by", user.id)
+      const offset = Math.max(filters?.offset ?? 0, 0);
+      // Shared by the page and the counts so they always agree. Typed loosely:
+      // each caller adds its own select, and rows go through mapJobRow.
+      // biome-ignore lint/suspicious/noExplicitAny: PostgREST builder generics
+      const narrow = (query: any, view?: JobListView) => {
+        let q = query
+          .eq("created_by", user.id)
+          .is("deleted_at", null);
+        if (filters?.status) q = q.eq("status", filters.status);
+        if (filters?.jobType) q = q.eq("job_type", filters.jobType);
+        if (filters?.before) q = q.lt("created_at", filters.before);
+        if (filters?.source === "studio") q = q.is("canvas_id", null);
+        else if (filters?.source === "canvas")
+          q = q
+            .not("canvas_id", "is", null)
+            .not("payload->>canvas_source_id", "is", null);
+        else if (filters?.source === "assistant")
+          q = q
+            .not("canvas_id", "is", null)
+            .is("payload->>canvas_source_id", null);
+        if (view === "reconcile") q = q.or(RECONCILE_FILTER);
+        else if (view === "failed") q = q.in("status", FAILED_STATUSES);
+        return q;
+      };
+
+      const { data: jobs, error } = await narrow(
+        client.from("background_jobs").select(SELECT_COLS),
+        filters?.view,
+      )
         .order("created_at", { ascending: false })
-        .limit(limit + 1);
-
-      if (filters?.status) query = query.eq("status", filters.status);
-      if (filters?.jobType) query = query.eq("job_type", filters.jobType);
-      if (filters?.before) query = query.lt("created_at", filters.before);
-      if (filters?.source === "studio") query = query.is("canvas_id", null);
-      else if (filters?.source === "canvas")
-        query = query
-          .not("canvas_id", "is", null)
-          .not("payload->>canvas_source_id", "is", null);
-      else if (filters?.source === "assistant")
-        query = query
-          .not("canvas_id", "is", null)
-          .is("payload->>canvas_source_id", null);
-
-      const { data: jobs, error } = await query;
+        .range(offset, offset + limit);
       if (error) {
         throw new JobServiceError(
           "job_query_failed",
@@ -295,12 +345,105 @@ export function createJobService(options: {
           500,
         );
       }
-      const rows = jobs ?? [];
-      const page: BackgroundJob[] & { more?: boolean } = rows
-        .slice(0, limit)
-        .map((row) => mapJobRow(row as unknown as Record<string, unknown>));
+      const rows = (jobs ?? []) as Record<string, unknown>[];
+      const page: BackgroundJob[] & {
+        more?: boolean;
+        total?: number;
+        counts?: JobListCounts;
+      } = rows.slice(0, limit).map((row) => mapJobRow(row));
       page.more = rows.length > limit;
+
+      if (filters?.withTotal) {
+        const count = async (view?: JobListView) => {
+          const { count: n, error: countError } = await narrow(
+            client
+              .from("background_jobs")
+              .select("id", { count: "exact", head: true }),
+            view,
+          );
+          if (countError) {
+            throw new JobServiceError(
+              "job_query_failed",
+              "Failed to count jobs.",
+              500,
+            );
+          }
+          return n ?? 0;
+        };
+        const [all, reconcile, failed] = await Promise.all([
+          count(),
+          count("reconcile"),
+          count("failed"),
+        ]);
+        page.counts = { all, reconcile, failed };
+        page.total =
+          filters.view === "reconcile"
+            ? reconcile
+            : filters.view === "failed"
+              ? failed
+              : all;
+      }
       return page;
+    },
+
+    async deleteJobs(user, ids) {
+      const unique = [...new Set(ids)];
+      const { data, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", unique)
+        .eq("created_by", user.id)
+        .is("deleted_at", null)
+        // A job still in flight would come back as a picture nobody can see.
+        .not("status", "in", `(${ACTIVE_STATUSES.join(",")})`)
+        .select("id");
+      if (error) {
+        console.error(
+          `[job-service] delete failed for ${unique.length} jobs: ${error.message}`,
+        );
+        throw new JobServiceError(
+          "job_delete_failed",
+          "Failed to delete jobs.",
+          500,
+        );
+      }
+      const deleted = (data ?? []).map((row) => String(row.id));
+      const done = new Set(deleted);
+      const skipped = unique.filter((id) => !done.has(id));
+      console.log(
+        `[job-service] deleted ${deleted.length} of ${unique.length} pictures (skipped ${skipped.length})`,
+      );
+      return { deleted, skipped };
+    },
+
+    async restoreJobs(user, ids) {
+      const unique = [...new Set(ids)];
+      const { data, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .update({ deleted_at: null })
+        .in("id", unique)
+        .eq("created_by", user.id)
+        .not("deleted_at", "is", null)
+        // The purge may already have removed the picture.
+        .is("purged_at", null)
+        .select("id");
+      if (error) {
+        console.error(
+          `[job-service] restore failed for ${unique.length} jobs: ${error.message}`,
+        );
+        throw new JobServiceError(
+          "job_delete_failed",
+          "Failed to restore jobs.",
+          500,
+        );
+      }
+      const restored = (data ?? []).map((row) => String(row.id));
+      console.log(
+        `[job-service] restored ${restored.length} of ${unique.length} pictures`,
+      );
+      return restored;
     },
 
     async cancelJob(user, jobId) {

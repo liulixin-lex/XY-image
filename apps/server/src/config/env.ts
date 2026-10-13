@@ -110,6 +110,12 @@ export type ServerEnv = {
    * their uploads ("dry-run" only logs). features/projects/project-purge.ts
    */
   projectPurge?: "on" | "dry-run" | "off";
+  /**
+   * WORKS_PURGE: removes the pictures of 作品 deleted 24 h ago unless a
+   * canvas or chat still uses them ("dry-run" only logs).
+   * features/jobs/deleted-works-purge.ts, 第 58 条.
+   */
+  worksPurge?: "on" | "dry-run" | "off";
 };
 
 export function loadServerEnv(
@@ -280,6 +286,10 @@ export function loadServerEnv(
     projectPurge:
       source.PROJECT_PURGE === "off" || source.PROJECT_PURGE === "dry-run"
         ? source.PROJECT_PURGE
+        : "on",
+    worksPurge:
+      source.WORKS_PURGE === "off" || source.WORKS_PURGE === "dry-run"
+        ? source.WORKS_PURGE
         : "on",
     ...overrides,
   };

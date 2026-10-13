@@ -273,6 +273,7 @@ export type Database = {
           created_by: string
           credits_cost: number | null
           credits_transaction_id: string | null
+          deleted_at: string | null
           error_code: string | null
           error_message: string | null
           estimated_cost_usd: number | null
@@ -282,6 +283,7 @@ export type Database = {
           max_attempts: number
           payload: Json
           project_id: string | null
+          purged_at: string | null
           queue_name: string
           result: Json | null
           session_id: string | null
@@ -307,6 +309,7 @@ export type Database = {
           created_by: string
           credits_cost?: number | null
           credits_transaction_id?: string | null
+          deleted_at?: string | null
           error_code?: string | null
           error_message?: string | null
           estimated_cost_usd?: number | null
@@ -316,6 +319,7 @@ export type Database = {
           max_attempts?: number
           payload?: Json
           project_id?: string | null
+          purged_at?: string | null
           queue_name: string
           result?: Json | null
           session_id?: string | null
@@ -341,6 +345,7 @@ export type Database = {
           created_by?: string
           credits_cost?: number | null
           credits_transaction_id?: string | null
+          deleted_at?: string | null
           error_code?: string | null
           error_message?: string | null
           estimated_cost_usd?: number | null
@@ -350,6 +355,7 @@ export type Database = {
           max_attempts?: number
           payload?: Json
           project_id?: string | null
+          purged_at?: string | null
           queue_name?: string
           result?: Json | null
           session_id?: string | null
