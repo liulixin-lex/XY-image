@@ -1,9 +1,10 @@
 "use client";
 
 import type { BrandKitAsset } from "@loomic/shared";
-import { Plus, X } from "lucide-react";
+import { Pipette, Plus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
+import { paletteFromImage } from "../../lib/palette";
 import { cn } from "../../lib/utils";
 import { ColorPickerPopover } from "./color-picker-popover";
 import { InlineInput } from "./inline-input";
@@ -15,6 +16,8 @@ interface ColorSectionProps {
   onUpdateColor: (assetId: string, name: string, hex: string) => void;
   onDeleteColor: (assetId: string) => void;
   onUpdateLabel: (assetId: string, name: string) => void;
+  /** The kit's first logo: 从标志取色 reads its colours (第 58 条). */
+  logoUrl?: string | null;
 }
 
 export function ColorSection({
@@ -23,7 +26,38 @@ export function ColorSection({
   onUpdateColor,
   onDeleteColor,
   onUpdateLabel,
+  logoUrl,
 }: ColorSectionProps) {
+  // 从标志取色: suggestions from the logo, added one by one or all at once.
+  const [suggested, setSuggested] = useState<string[] | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readFailed, setReadFailed] = useState(false);
+  const have = new Set(colors.map((c) => (c.text_content ?? "").toUpperCase()));
+  const fresh = (suggested ?? []).filter((hex) => !have.has(hex));
+  const readLogo = useCallback(async () => {
+    if (!logoUrl) return;
+    setReading(true);
+    setReadFailed(false);
+    try {
+      const palette = await paletteFromImage(logoUrl);
+      setSuggested(palette);
+      console.info("[brand-kit] logo palette", { colors: palette.length });
+    } catch (error) {
+      console.warn("[brand-kit] logo palette failed", error);
+      setReadFailed(true);
+      setSuggested(null);
+    } finally {
+      setReading(false);
+    }
+  }, [logoUrl]);
+  const addSuggested = useCallback(
+    (hexes: string[]) => {
+      let n = colors.length;
+      for (const hex of hexes) onAddColor(`标志色 ${++n}`, hex);
+      setSuggested((prev) => prev?.filter((hex) => !hexes.includes(hex)) ?? null);
+    },
+    [colors.length, onAddColor],
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<BrandKitAsset | null>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -57,7 +91,55 @@ export function ColorSection({
 
   return (
     <section>
-      <SectionHeader title="颜色" count={colors.length} />
+      <SectionHeader
+        title="颜色"
+        count={colors.length}
+        action={
+          logoUrl ? (
+            <button
+              type="button"
+              onClick={() => void readLogo()}
+              disabled={reading}
+              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] px-2.5 text-[12.5px] font-semibold text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc disabled:opacity-50"
+              title="读出标志里的主要颜色，挑几个加进来"
+            >
+              <Pipette className="size-3.5" strokeWidth={2} />
+              {reading ? "正在读取" : "从标志取色"}
+            </button>
+          ) : null
+        }
+      />
+      {readFailed ? (
+        <p className="mb-3 text-[12.5px] text-fg-muted">这张标志读不出颜色，可以手动添加。</p>
+      ) : suggested ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[14px] bg-tint/[0.04] p-3">
+          <span className="mr-1 text-[12.5px] text-fg-soft">
+            {fresh.length ? "标志里的颜色，点一下加进来：" : "标志里的颜色都已经在套件里了。"}
+          </span>
+          {fresh.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              onClick={() => addSuggested([hex])}
+              title={`添加 ${hex}`}
+              aria-label={`添加颜色 ${hex}`}
+              className="flex items-center gap-1.5 rounded-[9px] bg-panel py-1 pr-2 pl-1 text-[12px] font-semibold text-fg shadow-[inset_0_0_0_1px_var(--line)] transition-colors hover:text-acc-text focus-visible:outline-2 focus-visible:outline-acc"
+            >
+              <span className="size-5 rounded-[6px] ring-1 ring-tint/10 ring-inset" style={{ backgroundColor: hex }} />
+              <span className="font-mono tabular">{hex}</span>
+            </button>
+          ))}
+          {fresh.length > 1 ? (
+            <button
+              type="button"
+              onClick={() => addSuggested(fresh)}
+              className="ml-auto rounded-[9px] px-2.5 py-1 text-[12.5px] font-semibold text-acc-text hover:bg-acc-soft focus-visible:outline-2 focus-visible:outline-acc"
+            >
+              全部添加
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-3">
         {colors.map((color) => (
           <div key={color.id} className="flex flex-col items-center gap-1.5">

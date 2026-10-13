@@ -165,6 +165,12 @@ export const createImageJobRequestSchema = z.object({
   session_id: z.string().uuid().optional(),
   thread_id: z.string().optional(),
   prompt: z.string().min(1).max(4000),
+  /**
+   * What lists show for the picture when `prompt` carries more than the user
+   * wrote (第 58 条: the studio appends the chosen brand kit's rules). Stored
+   * as `payload.title`, the same field the design assistant uses.
+   */
+  title: z.string().trim().min(1).max(200).optional(),
   model: z.string().optional(),
   /** The main-site key `model` is used through (see xy2apiKeyIdSchema). */
   key_id: xy2apiKeyIdSchema.optional(),

@@ -395,7 +395,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       viewerService,
     });
   }
-  void registerSkillRoutes(app, { auth, createUserClient, viewerService });
+  void registerSkillRoutes(app, {
+    auth,
+    createUserClient,
+    viewerService,
+    skillsRoot: env.skillsRoot,
+  });
   void registerMarketplaceRoutes(app, {
     auth,
     createUserClient,

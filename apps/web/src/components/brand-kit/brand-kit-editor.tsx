@@ -201,6 +201,7 @@ export function BrandKitEditor({
             onUpdateColor={handleUpdateColor}
             onDeleteColor={onDeleteAsset}
             onUpdateLabel={handleUpdateColorLabel}
+            logoUrl={logos.find((logo) => logo.file_url)?.file_url ?? null}
           />
 
           <FontSection

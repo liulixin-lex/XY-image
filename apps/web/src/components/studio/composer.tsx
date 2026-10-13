@@ -2,6 +2,7 @@
 
 import {
   ArrowRightIcon,
+  LayoutTemplateIcon,
   MinusIcon,
   PlusIcon,
   RotateCwIcon,
@@ -52,6 +53,7 @@ import {
   modelRequest,
   spansSeveralKeys,
 } from "@/lib/image-model-ref";
+import { withBrand } from "@/lib/brand-prompt";
 import type { PendingDraft } from "@/lib/pending-prompt";
 import { type ImageModelInfo, optimizePrompt } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
@@ -59,8 +61,11 @@ import { cn } from "@/lib/utils";
 import { LiveDot } from "../ambient/live-dot";
 import { useIssues } from "../issues/issue-provider";
 import { useToast } from "../toast";
+import { TemplateGallery, type TemplateUse } from "../templates/template-gallery";
 import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Picker, Segmented } from "../ui/select";
+import { BrandPicker, useStudioBrand } from "./brand-picker";
 import { RatioGrid } from "./ratio-grid";
 
 /** Last-used 画质 / 质量 / 比例 / 数量 (v1 stored `quality: standard | hd` = 1K / 2K). */
@@ -129,6 +134,9 @@ export const Composer = forwardRef<
   const { account, updatePreferences } = useAccount();
   const { report } = useIssues();
   const { error: toastError, toast } = useToast();
+  // 第 58 条: 模板 fill the prompt; a 品牌 kit goes along with every picture.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const studioBrand = useStudioBrand();
   const [prompt, setPrompt] = useState("");
   // The main model, as a (key, model) ref (lib/image-model-ref.ts).
   const [model, setModel] = useState<ModelRef | null>(null);
@@ -435,8 +443,11 @@ export const Composer = forwardRef<
       return;
     }
     setArmed(false);
+    // The brand kit's rules go to the model; lists keep the user's words.
+    const sent = withBrand(trimmed, studioBrand.brand?.block ?? null);
     const shared = {
-      prompt: trimmed,
+      prompt: sent,
+      ...(sent !== trimmed ? { title: trimmed.slice(0, 200) } : {}),
       resolution: sendResolution,
       quality: sendQuality,
       aspect_ratio: sendRatio,
@@ -461,6 +472,18 @@ export const Composer = forwardRef<
       toast(
         `排上了 ${result.queued} 张，另外 ${result.requested - result.queued} 张没有发出。`,
       );
+  };
+
+  const applyTemplate = ({ template, prompt: text }: TemplateUse) => {
+    setPrompt(text);
+    setBeforeRewrite(null);
+    setResolution(template.resolution);
+    setQuality(template.quality);
+    if (template.aspectRatio) setRatio(template.aspectRatio);
+    setTemplatesOpen(false);
+    if (template.reference?.need === "required" && attachments.length === 0)
+      toast(`「${template.name}」要用原图：在「参考图」里加上要改的图片再生成。`);
+    requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
   };
 
   const rewrite = async () => {
@@ -566,7 +589,28 @@ export const Composer = forwardRef<
           ) : null}
         </div>
 
-        <Field label="提示词" htmlFor="studio-prompt">
+        <Field
+          label="提示词"
+          htmlFor="studio-prompt"
+          action={
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setTemplatesOpen(true)}
+                title="从模板开始：填几个空，自动写好提示词"
+                className="inline-flex h-7 items-center gap-1.5 rounded-[8px] px-2 text-[12.5px] font-semibold text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+              >
+                <LayoutTemplateIcon className="size-3.5" strokeWidth={2} />
+                模板
+              </button>
+              <BrandPicker
+                brand={studioBrand.brand}
+                onChoose={(id) => void studioBrand.choose(id)}
+                onReload={(id) => void studioBrand.reload(id)}
+              />
+            </div>
+          }
+        >
           <div className="rounded-[14px] bg-panel/75 px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--line)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--acc),0_0_0_3px_var(--acc-soft)]">
             <textarea
               id="studio-prompt"
@@ -816,6 +860,16 @@ export const Composer = forwardRef<
           )}
         </p>
       </div>
+
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-[980px]">
+          <DialogHeader>
+            <DialogTitle>从模板开始</DialogTitle>
+            <DialogDescription>选一个用途，填几个空，提示词和比例、画质都替你写好。填进来后还能再改。</DialogDescription>
+          </DialogHeader>
+          <TemplateGallery onUse={applyTemplate} />
+        </DialogContent>
+      </Dialog>
     </section>
   );
 });
@@ -891,6 +945,7 @@ export function Field({
   note,
   noteTone = "muted",
   inline = false,
+  action,
   children,
 }: {
   label: string;
@@ -899,6 +954,8 @@ export function Field({
   noteTone?: "muted" | "alert";
   /** Label and control on one row (short controls such as the model picker). */
   inline?: boolean;
+  /** Small controls at the right end of the label row. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const Label = htmlFor ? "label" : "p";
@@ -922,6 +979,7 @@ export function Field({
             {note}
           </span>
         ) : null}
+        {action ? <div className="ml-auto self-center">{action}</div> : null}
       </div>
       {children}
     </div>

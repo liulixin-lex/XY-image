@@ -13,6 +13,7 @@ import {
 
 import type { SkillDetail, SkillFileEntry, SkillSource } from "@loomic/shared";
 
+import { findTemplate } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +81,13 @@ interface SkillDetailDialogProps {
   onInstall: (skillId: string) => Promise<void>;
   onUninstall: (skillId: string) => Promise<void>;
   onDelete?: (skillId: string) => Promise<void>;
+  /** 相关模板 (第 58 条): open a 生图模板 the skill lists in metadata.templates. */
+  onOpenTemplate?: (templateId: string) => void;
+}
+
+/** metadata.examples / metadata.templates as strings, whatever the row holds. */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.trim() !== "") : [];
 }
 
 export function SkillDetailDialog({
@@ -89,6 +97,7 @@ export function SkillDetailDialog({
   onInstall,
   onUninstall,
   onDelete,
+  onOpenTemplate,
 }: SkillDetailDialogProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -174,6 +183,48 @@ export function SkillDetailDialog({
             <p className="font-medium text-fg">{updatedDate}</p>
           </div>
         </div>
+
+        {/* 第 58 条: what to say, and the 生图模板 that do the same job in the studio. */}
+        {(() => {
+          const examples = stringList(skill.metadata?.examples);
+          const templates = stringList(skill.metadata?.templates)
+            .map((id) => findTemplate(id))
+            .filter((t): t is NonNullable<typeof t> => t !== null);
+          if (!examples.length && !templates.length) return null;
+          return (
+            <div className="space-y-3 rounded-[12px] bg-tint/[0.04] p-3.5">
+              {examples.length ? (
+                <div className="space-y-1.5">
+                  <span className="text-xs font-medium text-fg-muted">在画布里对设计助手这样说</span>
+                  <ul className="space-y-1">
+                    {examples.map((example) => (
+                      <li key={example} className="text-[13px] leading-relaxed text-fg">
+                        「{example}」
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {templates.length && onOpenTemplate ? (
+                <div className="space-y-1.5">
+                  <span className="text-xs font-medium text-fg-muted">在生图页直接用的模板</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {templates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => onOpenTemplate(template.id)}
+                        className="rounded-[8px] bg-panel px-2.5 py-1 text-[12.5px] font-semibold text-fg shadow-[inset_0_0_0_1px_var(--line)] transition-colors hover:text-acc-text focus-visible:outline-2 focus-visible:outline-acc"
+                      >
+                        {template.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        })()}
 
         {/* SKILL.md content */}
         <div className="space-y-1.5">
