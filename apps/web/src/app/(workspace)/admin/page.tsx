@@ -384,10 +384,13 @@ function Trend({
             <stop offset="100%" stopColor="var(--acc)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polygon points={`0,${height} ${points} ${width},${height}`} fill="url(#trend-fill)" className="animate-ambient-in" />
+        <polygon
+          points={`0,${height} ${points} ${width},${height}`}
+          fill="url(#trend-fill)"
+          className="draw-line"
+        />
         <polyline
           points={points}
-          pathLength={1}
           fill="none"
           className="draw-line stroke-acc"
           strokeWidth={2}
