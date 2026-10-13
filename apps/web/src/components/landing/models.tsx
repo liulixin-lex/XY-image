@@ -9,6 +9,7 @@ import { KNOWN_IMAGE_MODELS } from "@/lib/image-model-meta";
 import { DESKTOP_MOTION, MOTION_OK, ScrollTrigger, gsap, useGSAP } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
+import { RevealHeading } from "./reveal-heading";
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
 
 /**
@@ -77,9 +78,9 @@ export function FeaturesSection({ samples, signedIn }: { samples: ShowcaseItem[]
   return (
     <section ref={root} id="features" aria-labelledby="features-title" className="relative z-10 scroll-mt-20 py-24 lg:py-32">
       <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[clamp(24px,3.6vw,64px)]">
-        <h2 id="features-title" className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg">
+        <RevealHeading id="features-title" className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg">
           三种开始方式
-        </h2>
+        </RevealHeading>
 
         <div className="mt-12 flex flex-col gap-6 lg:gap-10 lg:pb-[8vh]">
           <StackCard
@@ -353,9 +354,9 @@ export function ModelsSection() {
       <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-10 px-5 sm:px-8 lg:grid-cols-12 lg:px-[clamp(24px,3.6vw,64px)]">
         <div className="lg:col-span-4">
           <div className="lg:sticky lg:top-28">
-            <h2 id="models-title" className="font-display text-[clamp(36px,3.6vw,56px)] leading-tight font-normal text-fg">
+            <RevealHeading id="models-title" className="font-display text-[clamp(36px,3.6vw,56px)] leading-tight font-normal text-fg">
               能用哪些模型
-            </h2>
+            </RevealHeading>
             <p className="mt-3 max-w-[24em] text-[15px] leading-relaxed text-fg-soft">
               以你的 Key 所在分组为准。
             </p>

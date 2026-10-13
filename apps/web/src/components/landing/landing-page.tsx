@@ -8,6 +8,7 @@ import { Closing } from "@/components/landing/closing";
 import { GallerySection } from "@/components/landing/gallery";
 import { Hero } from "@/components/landing/hero";
 import { FeaturesSection, ModelsSection } from "@/components/landing/models";
+import { ProductScreen } from "@/components/landing/product-screen";
 import type { PromptBoxHandle } from "@/components/landing/prompt-box";
 import { SHOWCASE_ITEMS, type ShowcaseItem } from "@/components/landing/showcase";
 import { SiteNav } from "@/components/landing/site-nav";
@@ -30,10 +31,6 @@ const FEATURE_SAMPLES = [
   ...["amber-eyes", "film-portrait"],
 ].map(sample);
 const BILLING_SAMPLE = sample("dawn-veil");
-/** The two samples fanned out behind the one on show at the end of the page. */
-function closingFan(selected: number): [ShowcaseItem, ShowcaseItem] {
-  return [sampleAt(selected + 3), sampleAt(selected + 7)];
-}
 
 /**
  * Public landing page: the soft-poster room. The selected sample stands on
@@ -116,17 +113,12 @@ export function LandingPage() {
           onResolutionChange={setResolution}
         />
         <GallerySection items={SHOWCASE_ITEMS} onPreview={setSelected} onUseSample={copySample} />
+        <ProductScreen />
         <FeaturesSection samples={FEATURE_SAMPLES} signedIn={Boolean(user)} />
         <ModelsSection />
         <BillingSection sample={BILLING_SAMPLE} />
       </main>
-      <Closing
-        registerUrl={registerUrl}
-        mainSiteUrl={fallback}
-        sample={current}
-        fan={closingFan(selected)}
-        onWrite={backToPrompt}
-      />
+      <Closing registerUrl={registerUrl} mainSiteUrl={fallback} onWrite={backToPrompt} />
     </div>
   );
 }

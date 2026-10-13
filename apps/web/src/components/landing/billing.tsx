@@ -5,6 +5,7 @@ import { useRef } from "react";
 
 import { DESKTOP_MOTION, MOTION_OK, gsap, useGSAP } from "@/lib/motion";
 
+import { RevealHeading } from "./reveal-heading";
 import { SAMPLE_ALT, SAMPLE_MODEL, type ShowcaseItem } from "./showcase";
 
 const FACTS = [
@@ -88,13 +89,13 @@ export function BillingSection({ sample }: { sample: ShowcaseItem }) {
     <section ref={root} id="billing" aria-labelledby="billing-title" className="relative z-10 scroll-mt-20 py-24 lg:py-32">
       <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-16 px-5 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:px-[clamp(24px,3.6vw,64px)]">
         <div className="lg:col-span-5">
-          <h2 id="billing-title" className="font-display text-[clamp(44px,5vw,80px)] leading-[1.04] font-normal text-fg">
+          <RevealHeading id="billing-title" className="font-display text-[clamp(44px,5vw,80px)] leading-[1.04] font-normal text-fg">
             和主站共用
             <br />
             <em className="text-acc not-italic">一个账号</em>
             <br />
             一份余额
-          </h2>
+          </RevealHeading>
           <dl className="mt-12 divide-y divide-line border-y border-line">
             {FACTS.map(({ icon: Icon, title, body }) => (
               <div key={title} className="grid grid-cols-[2.75rem_1fr] gap-x-4 py-6">

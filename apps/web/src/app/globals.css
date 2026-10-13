@@ -1100,3 +1100,89 @@
     transition-duration: 0.12s;
   }
 }
+
+/* ── 第 62 条: generating scan, button glint, image wall (picked from previews) ── */
+
+/* Generating: a dot grid with a coral scan passing down it (Aceternity
+   Image Generation Loader). The scan line moves by transform; the coral
+   dots are the same grid revealed by a moving mask, so they stay aligned. */
+@keyframes gen-scan-line {
+  from { transform: translateY(-20%); }
+  to { transform: translateY(520%); }
+}
+@keyframes gen-scan-mask {
+  from { mask-position: 0 -40%; -webkit-mask-position: 0 -40%; }
+  to { mask-position: 0 140%; -webkit-mask-position: 0 140%; }
+}
+.gen-scan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image: radial-gradient(rgb(var(--tint) / 0.16) 1.1px, transparent 1.6px);
+  background-size: 11px 11px;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(var(--acc) 1.3px, transparent 1.8px);
+    background-size: 11px 11px;
+    mask-image: linear-gradient(transparent 0%, #000 45%, #000 55%, transparent 100%);
+    mask-size: 100% 36%;
+    mask-repeat: no-repeat;
+    animation: gen-scan-mask 2.6s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+  &::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 18%;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--acc) 14%, transparent) 70%, var(--acc) 100%);
+    background-size: 100% 100%;
+    animation: gen-scan-line 2.6s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &::before, &::after { animation: none; }
+    &::after { display: none; }
+  }
+}
+
+/* A glint sweeping across the main button now and then (React Bits Shiny
+   Text / Star Border, adapted to a slanted button): one soft band moved by
+   transform, resting off-button most of the cycle. */
+@keyframes star-glint {
+  0%, 58% { transform: translateX(-90px) skewX(-18deg); }
+  100% { transform: translateX(230px) skewX(-18deg); }
+}
+/* Positioned against the button's label box (its skew makes it the
+   containing block), so the band is oversized to sweep the whole button. */
+.star-glint {
+  position: absolute;
+  top: -16px;
+  bottom: -16px;
+  left: -40px;
+  width: 64px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.5), transparent);
+  animation: star-glint 4.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  @media (prefers-reduced-motion: reduce) {
+    display: none;
+  }
+}
+
+/* A tilted wall of samples whose columns drift (Aceternity 3D Marquee).
+   A column holds its pictures four times; moving it by one copy (25%) loops
+   seamlessly and keeps its middle, the part on screen, always covered. */
+@keyframes wall-up {
+  from { transform: translateY(0); }
+  to { transform: translateY(-25%); }
+}
+@keyframes wall-down {
+  from { transform: translateY(-25%); }
+  to { transform: translateY(0); }
+}
+.wall-col-up { animation: wall-up 60s linear infinite; }
+.wall-col-down { animation: wall-down 60s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wall-col-up, .wall-col-down { animation: none; }
+}

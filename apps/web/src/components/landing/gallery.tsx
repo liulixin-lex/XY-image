@@ -4,9 +4,10 @@ import { ArrowLeftIcon, ArrowRightIcon, WandSparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDragScroll } from "@/hooks/use-drag-scroll";
-import { DESKTOP_MOTION, ScrollTrigger, gsap, isLiteRender, useGSAP } from "@/lib/motion";
+import { DESKTOP_MOTION, type ScrollTrigger, gsap, isLiteRender, useGSAP } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
+import { RevealHeading } from "./reveal-heading";
 import { SAMPLE_ALT, type ShowcaseItem } from "./showcase";
 
 /**
@@ -194,12 +195,9 @@ export function GallerySection({
     >
       <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-end justify-between gap-6 px-5 sm:px-8 lg:px-[clamp(24px,3.6vw,64px)]">
         <div>
-          <h2
-            id="gallery-title"
-            className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg"
-          >
+          <RevealHeading id="gallery-title" className="font-display text-[clamp(44px,5vw,80px)] leading-[1.02] font-normal text-fg">
             从一张<em className="text-acc not-italic">示例</em>开始
-          </h2>
+          </RevealHeading>
           <p className="mt-4 max-w-[34em] text-[16px] leading-relaxed text-fg-soft">
             点「做同款」，描述会填进输入框。
           </p>
@@ -265,7 +263,7 @@ export function GallerySection({
 /** One tick per sample; the current one is coral and taller. */
 function Ruler({ count, active, onPick }: { count: number; active: number; onPick: (index: number) => void }) {
   return (
-    <div role="group" aria-label="跳到某一张" className="flex h-8 items-end gap-[7px]">
+    <fieldset aria-label="跳到某一张" className="m-0 flex h-8 min-w-0 items-end gap-[7px] border-0 p-0">
       {Array.from({ length: count }, (_, index) => (
         <button
           // biome-ignore lint/suspicious/noArrayIndexKey: ticks are positions, not items
@@ -284,7 +282,7 @@ function Ruler({ count, active, onPick }: { count: number; active: number; onPic
           />
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
