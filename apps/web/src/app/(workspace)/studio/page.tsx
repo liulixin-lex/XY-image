@@ -80,9 +80,10 @@ export default function StudioPage() {
         aspectRatio: pendingDraft.aspectRatio ?? null,
       });
     if (pendingDraft.reference) composer.current.addReference(pendingDraft.reference);
+    for (const reference of pendingDraft.references ?? []) composer.current.addReference(reference);
     console.info("[studio] draft from history applied", {
       model: pendingDraft.model ?? null,
-      reference: Boolean(pendingDraft.reference),
+      references: (pendingDraft.reference ? 1 : 0) + (pendingDraft.references?.length ?? 0),
     });
   }, [pendingDraft, models.data]);
 

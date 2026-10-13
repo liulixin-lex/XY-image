@@ -18,15 +18,19 @@ import {
   imageBatchResponseSchema,
   imageBatchTargets,
   IMAGE_JOB_SOURCES,
-  type ImageJobSource,
+  JOB_LIST_VIEWS,
   JOB_PAGE_MAX,
+  jobDeleteResponseSchema,
+  jobIdsRequestSchema,
   jobListResponseSchema,
   jobResponseSchema,
+  jobRestoreResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
+  type JobListFilters,
   type JobService,
   JobServiceError,
 } from "../features/jobs/job-service.js";
@@ -242,18 +246,15 @@ export async function registerJobRoutes(
       if (!user) return sendUnauthenticated(reply);
 
       const query = jobListQuerySchema.parse(request.query ?? {});
-      const filters: {
-        status?: BackgroundJobStatus;
-        jobType?: BackgroundJobType;
-        before?: string;
-        limit?: number;
-        source?: ImageJobSource;
-      } = {};
+      const filters: JobListFilters = {};
       if (query.status) filters.status = query.status as BackgroundJobStatus;
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
       if (query.before) filters.before = query.before;
+      if (query.offset) filters.offset = query.offset;
       if (query.limit) filters.limit = query.limit;
       if (query.source) filters.source = query.source;
+      if (query.view) filters.view = query.view;
+      if (query.with_total) filters.withTotal = true;
       const jobs = await options.jobService.listJobs(user, filters);
       const last = jobs.at(-1);
 
@@ -262,10 +263,41 @@ export async function registerJobRoutes(
           jobs: jobs.map(forClient),
           // 历史 pages (第 56 条): older jobs exist before the last one here.
           next_before: jobs.more && last ? last.created_at : null,
+          ...(jobs.total === undefined ? {} : { total: jobs.total }),
+          ...(jobs.counts ? { counts: jobs.counts } : {}),
         }),
       );
     } catch (error) {
       return sendJobError(error, reply, "job_query_failed");
+    }
+  });
+
+  // POST /api/jobs/delete — delete finished pictures (第 58 条). A POST with
+  // a body rather than DELETE: some proxies drop DELETE bodies.
+  app.post("/api/jobs/delete", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+
+      const { ids } = jobIdsRequestSchema.parse(request.body ?? {});
+      const result = await options.jobService.deleteJobs(user, ids);
+      return reply.code(200).send(jobDeleteResponseSchema.parse(result));
+    } catch (error) {
+      return sendJobError(error, reply, "job_delete_failed");
+    }
+  });
+
+  // POST /api/jobs/restore — undo a delete before the purge ran.
+  app.post("/api/jobs/restore", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+
+      const { ids } = jobIdsRequestSchema.parse(request.body ?? {});
+      const restored = await options.jobService.restoreJobs(user, ids);
+      return reply.code(200).send(jobRestoreResponseSchema.parse({ restored }));
+    } catch (error) {
+      return sendJobError(error, reply, "job_delete_failed");
     }
   });
 
@@ -289,16 +321,23 @@ export async function registerJobRoutes(
 
 const batchParamsSchema = z.object({ batchId: z.string().uuid() });
 
-/** GET /api/jobs: filters and the page (before = created_at of the last job seen). */
 /** Jobs of one batch created at once (database round trips in parallel). */
 const CREATE_CHUNK = 8;
 
+/**
+ * GET /api/jobs: filters and the page. `before` = created_at of the last job
+ * seen (作品 scroll); `offset` for numbered pages (生成记录), with
+ * `with_total=1` for the total and the per-filter counts.
+ */
 const jobListQuerySchema = z.object({
   status: z.string().max(40).optional(),
   job_type: z.string().max(40).optional(),
   before: z.iso.datetime({ offset: true }).optional(),
+  offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
   limit: z.coerce.number().int().min(1).max(JOB_PAGE_MAX).optional(),
   source: z.enum(IMAGE_JOB_SOURCES).optional(),
+  view: z.enum(JOB_LIST_VIEWS).optional(),
+  with_total: z.enum(["1", "true"]).optional(),
 });
 
 /**
@@ -340,7 +379,8 @@ type JobErrorFallbackCode =
   | "job_not_found"
   | "job_create_failed"
   | "job_query_failed"
-  | "job_cancel_failed";
+  | "job_cancel_failed"
+  | "job_delete_failed";
 
 function sendJobError(
   error: unknown,

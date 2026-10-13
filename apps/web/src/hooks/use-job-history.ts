@@ -5,7 +5,8 @@
  * time (GET /api/jobs with next_before). Changing the source filter starts
  * over; a page that arrives after the filter changed is dropped.
  *
- * Read-only: nothing here sends a generation.
+ * Nothing here sends a generation. Deleting (第 58 条) goes through
+ * works-actions; `remove` and `restore` only update this list to match.
  */
 import type { ImageJobSource } from "@loomic/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,6 +30,8 @@ export function useJobHistory(source: ImageJobSource | null) {
   // Bumped on every reset: an older request's page is ignored.
   const generation = useRef(0);
   const inFlight = useRef(false);
+  // Deleted pictures, kept so 撤销 can put them back where they were.
+  const removed = useRef(new Map<string, ImageJobView>());
 
   const loadPage = useCallback(
     async (from: string | null, gen: number) => {
@@ -88,5 +91,37 @@ export function useJobHistory(source: ImageJobSource | null) {
     void loadPage(cursor, generation.current);
   }, [cursor, loadPage]);
 
-  return { items, loading, error, done, loadMore, retry, started: items.length > 0 || done || Boolean(error) };
+  const remove = useCallback((ids: string[]) => {
+    const gone = new Set(ids);
+    setItems((prev) => {
+      for (const job of prev) if (gone.has(job.id)) removed.current.set(job.id, job);
+      return prev.filter((job) => !gone.has(job.id));
+    });
+  }, []);
+
+  const restore = useCallback((ids: string[]) => {
+    const back = ids
+      .map((id) => removed.current.get(id))
+      .filter((job): job is ImageJobView => Boolean(job));
+    for (const id of ids) removed.current.delete(id);
+    if (!back.length) return;
+    setItems((prev) => {
+      const have = new Set(prev.map((job) => job.id));
+      return [...prev, ...back.filter((job) => !have.has(job.id))].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      );
+    });
+  }, []);
+
+  return {
+    items,
+    loading,
+    error,
+    done,
+    loadMore,
+    retry,
+    remove,
+    restore,
+    started: items.length > 0 || done || Boolean(error),
+  };
 }

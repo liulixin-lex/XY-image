@@ -56,6 +56,11 @@ async function route() {
     ]),
     listJobs: vi.fn(async () => [] as ReturnType<typeof job>[]),
     getJob: vi.fn(async () => job(0, {})),
+    deleteJobs: vi.fn(async (_user: unknown, ids: string[]) => ({
+      deleted: ids.slice(1),
+      skipped: ids.slice(0, 1),
+    })),
+    restoreJobs: vi.fn(async (_user: unknown, ids: string[]) => ids),
   };
   const billing = {
     withUserLock: (_id: string, fn: () => Promise<unknown>) => fn(),
@@ -382,6 +387,92 @@ describe("job history pages (第 56 条)", () => {
       const bad = await app.inject({ method: "GET", url: `/api/jobs?${query}` });
       expect(bad.statusCode, query).toBe(400);
     }
+  });
+});
+
+describe("生成记录 pages and deleting pictures (第 58 条)", () => {
+  const ids = [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+  ];
+
+  it("passes numbered pages and filters, and returns the totals", async () => {
+    const { app, jobService } = await route();
+    jobService.listJobs.mockResolvedValueOnce(
+      Object.assign([job(1, { prompt: "a" })], {
+        more: true,
+        total: 41,
+        counts: { all: 120, reconcile: 2, failed: 41 },
+      }),
+    );
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/jobs?job_type=image_generation&offset=40&limit=20&view=failed&with_total=1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(jobService.listJobs).toHaveBeenCalledWith(expect.anything(), {
+      jobType: "image_generation",
+      offset: 40,
+      limit: 20,
+      view: "failed",
+      withTotal: true,
+    });
+    expect(response.json()).toMatchObject({
+      total: 41,
+      counts: { all: 120, reconcile: 2, failed: 41 },
+    });
+    // Without with_total the response has no totals, as before.
+    jobService.listJobs.mockResolvedValueOnce([]);
+    const plain = await app.inject({ method: "GET", url: "/api/jobs" });
+    expect(plain.json()).not.toHaveProperty("total");
+    for (const query of ["offset=-1", "view=paid", "with_total=yes"]) {
+      const bad = await app.inject({ method: "GET", url: `/api/jobs?${query}` });
+      expect(bad.statusCode, query).toBe(400);
+    }
+  });
+
+  it("deletes the pictures it can and says which it skipped", async () => {
+    const { app, jobService } = await route();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/delete",
+      payload: { ids },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(jobService.deleteJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      ids,
+    );
+    expect(response.json()).toEqual({ deleted: ids.slice(1), skipped: ids.slice(0, 1) });
+  });
+
+  it("restores deleted pictures (撤销)", async () => {
+    const { app, jobService } = await route();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/restore",
+      payload: { ids: ids.slice(0, 2) },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(jobService.restoreJobs).toHaveBeenCalledWith(expect.anything(), ids.slice(0, 2));
+    expect(response.json()).toEqual({ restored: ids.slice(0, 2) });
+  });
+
+  it("refuses an empty, oversized or malformed id list", async () => {
+    const { app, jobService } = await route();
+    const many = Array.from(
+      { length: 501 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    );
+    for (const payload of [{}, { ids: [] }, { ids: ["not-a-uuid"] }, { ids: many }]) {
+      for (const url of ["/api/jobs/delete", "/api/jobs/restore"]) {
+        const response = await app.inject({ method: "POST", url, payload });
+        expect(response.statusCode, `${url} ${JSON.stringify(payload).slice(0, 40)}`).toBe(400);
+      }
+    }
+    expect(jobService.deleteJobs).not.toHaveBeenCalled();
+    expect(jobService.restoreJobs).not.toHaveBeenCalled();
   });
 });
 

@@ -11,11 +11,26 @@
  * blur, with 再来一次 / 以此为参考 / 下载. A sticky toolbar follows the scroll
  * with the day in view and the source filter (?source= in the URL).
  *
- * Read-only. 再来一次 and 以此为参考 fill the studio and go there; nothing
- * is sent from this page. Failed and 待核对 pictures stay in 设置 › 生成记录.
+ * 再来一次 and 以此为参考 fill the studio and go there; nothing is sent
+ * from this page. Failed and 待核对 pictures stay in 设置 › 生成记录.
+ *
+ * 第 58 条: pictures can be deleted (one from its tile, straight away with
+ * 撤销 on the toast) and selected for batch actions: 「选择」 in the toolbar,
+ * or the tick on a tile, then click, shift-click for a span, 选这一天, 全选.
+ * The bar at the bottom downloads them as one ZIP, hands up to
+ * REFERENCE_HANDOFF_MAX to the studio as references, or deletes them.
  */
 import { IMAGE_JOB_SOURCES, type ImageJobSource } from "@loomic/shared";
-import { ArrowUpIcon, ArrowUpRightIcon, DownloadIcon, ImagePlusIcon, RotateCcwIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  ArrowUpRightIcon,
+  CheckIcon,
+  DownloadIcon,
+  ImagePlusIcon,
+  ListChecksIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,16 +38,22 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useAmbientImage } from "@/components/ambient/ambient-provider";
 import { SHOWCASE_ITEMS, type ShowcaseItem } from "@/components/landing/showcase";
 import { LoupeDialog } from "@/components/studio/loupe-dialog";
+import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DeleteWorksDialog } from "@/components/works/delete-works-dialog";
+import { SelectionBar } from "@/components/works/selection-bar";
 import { useJobHistory } from "@/hooks/use-job-history";
+import { useSelection } from "@/hooks/use-selection";
 import { useImageModels } from "@/lib/account-context";
 import { downloadImage } from "@/lib/download";
 import { groupByDay } from "@/lib/history";
 import { type ImageJobView, downloadName, jobLabel, listImage } from "@/lib/image-jobs";
-import { findModelMeta, isAspectRatio } from "@/lib/image-model-meta";
+import { findModelMeta, isAspectRatio, modelCapabilities } from "@/lib/image-model-meta";
 import { findModel, modelLabel } from "@/lib/image-model-ref";
-import { savePendingDraft } from "@/lib/pending-prompt";
+import { REFERENCE_HANDOFF_MAX, savePendingDraft } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
+import { downloadJobs, useDeleteWorks } from "@/lib/works-actions";
+import { ZIP_MAX_ENTRIES } from "@/lib/zip";
 
 const SAMPLE = SHOWCASE_ITEMS[0] as ShowcaseItem;
 
@@ -129,6 +150,98 @@ function History() {
     if (job.url) void downloadImage(job.url, downloadName(job));
   }, []);
 
+  // --- 第 58 条: delete and multi-select ---
+  const { show, error: toastError } = useToast();
+  const order = useMemo(() => history.items.map((job) => job.id), [history.items]);
+  const selection = useSelection(order);
+  const [selecting, setSelecting] = useState(false);
+  const [zipping, setZipping] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canReference = useMemo(
+    () => Boolean(models.data?.some((m) => modelCapabilities(m).maxInputImages > 0)),
+    [models.data],
+  );
+  const { remove: removeItems, restore: restoreItems } = history;
+  const { retain, clear } = selection;
+  // Pictures that left the list (deleted, other filter) leave the selection.
+  useEffect(() => retain(order), [order, retain]);
+  const exitSelect = useCallback(() => {
+    setSelecting(false);
+    clear();
+  }, [clear]);
+  // A new filter is a new list: start over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the filter changes
+  useEffect(() => exitSelect(), [source]);
+
+  const deleteWorks = useDeleteWorks({
+    onRemoved: (ids) => {
+      removeItems(ids);
+      setLoupe((open) => (open && ids.includes(open.id) ? null : open));
+    },
+    onRestored: restoreItems,
+  });
+  const selectedJobs = useMemo(
+    () => history.items.filter((job) => selection.has(job.id)),
+    [history.items, selection],
+  );
+  const startSelect = useCallback(
+    (job?: ImageJobView) => {
+      setSelecting(true);
+      if (job) selection.toggle(job.id);
+      console.info("[history] select mode", { from: job ? "tile" : "toolbar" });
+    },
+    [selection],
+  );
+  const downloadSelected = useCallback(async () => {
+    const jobs = selectedJobs.slice(0, ZIP_MAX_ENTRIES);
+    if (selectedJobs.length > ZIP_MAX_ENTRIES)
+      show({ variant: "info", message: `一次最多打包 ${ZIP_MAX_ENTRIES} 张，先下载前 ${ZIP_MAX_ENTRIES} 张。` });
+    setZipping(jobs.length > 1 ? `打包中 0/${jobs.length}` : "下载中");
+    try {
+      const { saved, failed } = await downloadJobs(jobs, (done, total) => setZipping(`打包中 ${done}/${total}`));
+      if (failed) toastError(`${failed} 张没有下载下来${saved ? `，其余 ${saved} 张已打包` : ""}。`);
+    } finally {
+      setZipping(null);
+    }
+  }, [selectedJobs, show, toastError]);
+  const referenceSelected = useCallback(() => {
+    const refs = selectedJobs
+      .filter((job) => job.url && job.assetId)
+      .slice(0, REFERENCE_HANDOFF_MAX)
+      .map((job) => ({ url: job.url as string, assetId: job.assetId as string, name: jobLabel(job).slice(0, 20) || "之前的作品" }));
+    if (!refs.length) return;
+    savePendingDraft({ prompt: "", references: refs });
+    console.info("[history] 作参考 → studio", { count: refs.length });
+    router.push("/studio");
+  }, [selectedJobs, router]);
+  const confirmDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      const done = await deleteWorks(selectedJobs.map((job) => job.id));
+      if (done.length) exitSelect();
+    } finally {
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }, [deleteWorks, selectedJobs, exitSelect]);
+
+  // Esc leaves the selection; ⌘A / Ctrl+A selects every loaded picture.
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable=true], [role=dialog]")) return;
+      if (event.key === "Escape") exitSelect();
+      else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        selection.toggleGroup(order);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selecting, exitSelect, selection, order]);
+
   // Next page as the end comes into view (a button stays as a fallback).
   const sentinel = useRef<HTMLDivElement>(null);
   const { loadMore } = history;
@@ -183,7 +296,14 @@ function History() {
         </header>
       </div>
 
-      <Toolbar source={source} onSource={setSource} day={currentDay} />
+      <Toolbar
+        source={source}
+        onSource={setSource}
+        day={currentDay}
+        selecting={selecting}
+        canSelect={history.items.length > 0}
+        onSelect={() => (selecting ? exitSelect() : startSelect())}
+      />
 
       <div className="mx-auto max-w-[1600px] gutter-x">
         {history.error && history.items.length === 0 ? (
@@ -211,6 +331,15 @@ function History() {
                 </h2>
                 <span className="data-label shrink-0 text-fg-muted tabular">{group.jobs.length} 张</span>
                 <span aria-hidden className="h-px flex-1 bg-line" />
+                {selecting ? (
+                  <button
+                    type="button"
+                    onClick={() => selection.toggleGroup(group.jobs.map((job) => job.id))}
+                    className="shrink-0 rounded-[8px] px-2 py-1 text-[12.5px] font-semibold text-fg-soft transition-colors hover:bg-tint/[0.06] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
+                  >
+                    {group.jobs.every((job) => selection.has(job.id)) ? "取消这一天" : "选这一天"}
+                  </button>
+                ) : null}
               </div>
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(clamp(132px,15vw,200px),1fr))] gap-2.5 sm:gap-3">
                 {group.jobs.map((job) => (
@@ -218,10 +347,15 @@ function History() {
                     <HistoryTile
                       job={job}
                       modelName={modelName(job)}
+                      selecting={selecting}
+                      selected={selection.has(job.id)}
+                      onToggle={(range) => selection.toggle(job.id, { range })}
+                      onStartSelect={() => startSelect(job)}
                       onOpen={() => setLoupe(job)}
                       onReuse={() => reuse(job)}
                       onReference={() => reference(job)}
                       onDownload={() => download(job)}
+                      onDelete={() => void deleteWorks([job.id])}
                     />
                   </li>
                 ))}
@@ -251,7 +385,32 @@ function History() {
         ) : null}
       </div>
 
-      <BackToTop />
+      {selecting ? (
+        <SelectionBar
+          count={selection.size}
+          total={history.items.length}
+          allSelected={selection.size > 0 && selection.size === history.items.length}
+          busy={zipping}
+          onSelectAll={() => selection.toggleGroup(order)}
+          onDownload={() => void downloadSelected()}
+          onReference={canReference && selection.size <= REFERENCE_HANDOFF_MAX ? referenceSelected : undefined}
+          onDelete={() => {
+            if (selection.size === 1) void deleteWorks([...selection.ids]).then((done) => done.length && exitSelect());
+            else setConfirming(true);
+          }}
+          onClose={exitSelect}
+        />
+      ) : (
+        <BackToTop />
+      )}
+
+      <DeleteWorksDialog
+        count={selection.size}
+        open={confirming}
+        deleting={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setConfirming(false)}
+      />
 
       <LoupeDialog
         job={loupe}
@@ -280,10 +439,16 @@ function Toolbar({
   source,
   onSource,
   day,
+  selecting,
+  canSelect,
+  onSelect,
 }: {
   source: ImageJobSource | null;
   onSource: (value: ImageJobSource | null) => void;
   day: string | null;
+  selecting: boolean;
+  canSelect: boolean;
+  onSelect: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
@@ -315,6 +480,20 @@ function Toolbar({
         >
           {day}
         </p>
+        <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={!canSelect && !selecting}
+          aria-pressed={selecting}
+          className={cn(
+            "flex h-10 items-center gap-1.5 rounded-[13px] px-3 text-[13px] font-semibold transition-[background-color,color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:opacity-40 active:translate-y-px [&_svg]:size-4",
+            selecting ? "bg-acc text-acc-ink" : "bg-tint/[0.05] text-fg-soft hover:text-fg",
+          )}
+        >
+          {selecting ? <CheckIcon strokeWidth={2.25} /> : <ListChecksIcon strokeWidth={2} />}
+          {selecting ? "完成" : "选择"}
+        </button>
         <div role="radiogroup" aria-label="来源" className="flex shrink-0 items-center gap-1 rounded-[13px] bg-tint/[0.05] p-1">
           {SOURCES.map((item) => {
             const active = item.value === source;
@@ -338,6 +517,7 @@ function Toolbar({
             );
           })}
         </div>
+        </div>
       </div>
     </div>
   );
@@ -346,17 +526,28 @@ function Toolbar({
 function HistoryTile({
   job,
   modelName,
+  selecting,
+  selected,
+  onToggle,
+  onStartSelect,
   onOpen,
   onReuse,
   onReference,
   onDownload,
+  onDelete,
 }: {
   job: ImageJobView;
   modelName: string;
+  selecting: boolean;
+  selected: boolean;
+  /** `range`: shift-click, select the span from the last picture clicked. */
+  onToggle: (range: boolean) => void;
+  onStartSelect: () => void;
   onOpen: () => void;
   onReuse: () => void;
   onReference: () => void;
   onDownload: () => void;
+  onDelete: () => void;
 }) {
   const label = jobLabel(job) || "（无描述）";
   const time = new Date(job.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -365,11 +556,19 @@ function HistoryTile({
   const reveal =
     "invisible opacity-0 transition-[opacity,visibility] duration-200 group-focus-within/tile:visible group-focus-within/tile:opacity-100 pointer-fine:group-hover/tile:visible pointer-fine:group-hover/tile:opacity-100";
   return (
-    <figure className="group/tile relative m-0 aspect-square overflow-hidden rounded-[12px] bg-tint/[0.06] shadow-[0_1px_2px_var(--shadow)] transition-[box-shadow,translate] duration-300 ease-(--ease-out-expo) pointer-fine:hover:-translate-y-0.5 pointer-fine:hover:shadow-card-hover">
+    <figure
+      data-selected={selected || undefined}
+      className={cn(
+        "group/tile relative m-0 aspect-square overflow-hidden rounded-[12px] bg-tint/[0.06] shadow-[0_1px_2px_var(--shadow)] transition-[box-shadow,translate,scale] duration-300 ease-(--ease-out-expo)",
+        !selecting && "pointer-fine:hover:-translate-y-0.5 pointer-fine:hover:shadow-card-hover",
+        selected && "scale-[0.94] shadow-[0_0_0_2.5px_var(--acc),0_6px_18px_-8px_var(--shadow-2)]",
+      )}
+    >
       <button
         type="button"
-        onClick={onOpen}
-        aria-label={`看大图：${label}`}
+        onClick={(event) => (selecting ? onToggle(event.shiftKey) : onOpen())}
+        aria-label={selecting ? `${selected ? "取消选择" : "选择"}：${label}` : `看大图：${label}`}
+        aria-pressed={selecting ? selected : undefined}
         title={label}
         className="absolute inset-0 block focus-visible:outline-none"
       >
@@ -379,11 +578,35 @@ function HistoryTile({
           alt=""
           loading="lazy"
           decoding="async"
-          className="size-full object-cover transition-transform duration-500 ease-(--ease-out-expo) pointer-fine:group-hover/tile:scale-[1.035]"
+          className={cn(
+            "size-full object-cover transition-[scale,filter] duration-500 ease-(--ease-out-expo)",
+            !selecting && "pointer-fine:group-hover/tile:scale-[1.035]",
+            selecting && !selected && "brightness-[0.92]",
+          )}
         />
       </button>
+      {/* The tick: always there while selecting; on hover it starts a selection. */}
+      <button
+        type="button"
+        tabIndex={selecting ? -1 : 0}
+        aria-hidden={selecting || undefined}
+        onClick={(event) => (selecting ? onToggle(event.shiftKey) : onStartSelect())}
+        title={selecting ? undefined : "选择这张，开始多选"}
+        aria-label={selecting ? undefined : "选中这张"}
+        className={cn(
+          "absolute top-2 left-2 z-10 flex size-6 items-center justify-center rounded-full border-2 transition-[opacity,background-color,border-color,scale] duration-200 focus-visible:outline-2 focus-visible:outline-white active:scale-90 [&_svg]:size-3.5",
+          selected
+            ? "border-acc bg-acc text-acc-ink"
+            : "border-white/90 bg-black/25 text-transparent shadow-[0_1px_4px_rgba(0,0,0,0.35)] backdrop-blur-[2px]",
+          selecting
+            ? "opacity-100"
+            : "opacity-0 group-focus-within/tile:opacity-100 pointer-fine:group-hover/tile:opacity-100 pointer-coarse:hidden",
+        )}
+      >
+        <CheckIcon strokeWidth={3} />
+      </button>
       {/* Details over a progressive blur, on hover or keyboard focus. */}
-      <figcaption className={cn("pointer-events-none absolute inset-0", reveal)}>
+      <figcaption className={cn("pointer-events-none absolute inset-0", reveal, selecting && "hidden")}>
         <span aria-hidden className="veil-bottom">
           <i />
           <i />
@@ -400,7 +623,7 @@ function HistoryTile({
           </span>
         </span>
       </figcaption>
-      <div className={cn("absolute top-2 right-2 flex gap-1 pointer-coarse:hidden", reveal)}>
+      <div className={cn("absolute top-2 right-2 flex gap-1 pointer-coarse:hidden", reveal, selecting && "hidden")}>
         <button type="button" onClick={onReuse} title="再来一次：带上描述和设置去生图" aria-label="再来一次" className={action}>
           <RotateCcwIcon strokeWidth={2} />
         </button>
@@ -417,6 +640,9 @@ function HistoryTile({
             <ArrowUpRightIcon strokeWidth={2} />
           </Link>
         ) : null}
+        <button type="button" onClick={onDelete} title="删除（可以撤销）" aria-label="删除" className={cn(action, "hover:text-[#ffb4c0]")}>
+          <Trash2Icon strokeWidth={2} />
+        </button>
       </div>
     </figure>
   );

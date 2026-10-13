@@ -8,8 +8,11 @@ import type {
   OptimizePromptResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
+  JobDeleteResponse,
   JobListResponse,
+  JobListView,
   JobResponse,
+  JobRestoreResponse,
   MarketplaceDetail,
   MarketplaceSearchResponse,
   MessageCreateResponse,
@@ -693,14 +696,23 @@ export async function fetchJobs(
     limit?: number;
     /** Image jobs: studio, a canvas 生成 node, or the design assistant. */
     source?: ImageJobSource;
+    /** 生成记录 numbered pages: rows to skip. */
+    offset?: number;
+    /** 生成记录 filter: 待核对 or 失败 (on the server, so totals match). */
+    view?: JobListView;
+    /** Adds `total` and the per-filter `counts`. */
+    withTotal?: boolean;
   } = {},
 ): Promise<JobListResponse> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.jobType) params.set("job_type", filters.jobType);
   if (filters.before) params.set("before", filters.before);
+  if (filters.offset) params.set("offset", String(filters.offset));
   if (filters.limit) params.set("limit", String(filters.limit));
   if (filters.source) params.set("source", filters.source);
+  if (filters.view) params.set("view", filters.view);
+  if (filters.withTotal) params.set("with_total", "1");
   const query = params.toString();
   const response = await fetch(
     `${getServerBaseUrl()}/api/jobs${query ? `?${query}` : ""}`,
@@ -710,7 +722,37 @@ export async function fetchJobs(
   return (await response.json()) as JobListResponse;
 }
 
-/** Only queued jobs can be canceled; running ones already reached the main site. */
+/**
+ * Deletes finished pictures from 作品 and 生成记录 (第 58 条). Pictures still
+ * queued or running come back in `skipped`. Undo with restoreJobs.
+ */
+export async function deleteJobs(
+  accessToken: string,
+  ids: string[],
+): Promise<JobDeleteResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/jobs/delete`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ ids }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobDeleteResponse;
+}
+
+/** Brings deleted pictures back (撤销), until the purge ran a day later. */
+export async function restoreJobs(
+  accessToken: string,
+  ids: string[],
+): Promise<JobRestoreResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/jobs/restore`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ ids }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as JobRestoreResponse;
+}
+
 /**
  * Queue 1 to IMAGE_BATCH_MAX pictures from one description (studio). Each
  * picture is its own job and its own charge; they share `batch_id`. Sent
@@ -763,6 +805,7 @@ export async function optimizePrompt(
   return (await response.json()) as OptimizePromptResponse;
 }
 
+/** Only queued jobs can be canceled; running ones already reached the main site. */
 export async function cancelJob(
   accessToken: string,
   jobId: string,

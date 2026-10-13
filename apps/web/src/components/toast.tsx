@@ -19,11 +19,18 @@ import { cn } from "@/lib/utils";
 
 type ToastVariant = "success" | "error" | "info";
 
+/** One button on the slip, e.g. 撤销 after a delete. Dismisses the slip. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   title?: string | undefined;
   message: string;
   variant: ToastVariant;
+  action?: ToastAction | undefined;
   /** Playing its exit; removed when that ends. */
   leaving?: boolean;
 }
@@ -34,6 +41,8 @@ export interface ToastOptions {
   variant?: ToastVariant;
   /** Milliseconds. Errors default to 6 s so the text can be read. */
   duration?: number;
+  /** A button on the slip; the slip stays 6 s so it can be reached. */
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
@@ -55,6 +64,8 @@ const DURATION: Record<ToastVariant, number> = {
   error: 6000,
 };
 const MAX_VISIBLE = 3;
+/** A slip with a button (撤销) stays long enough to reach it. */
+const ACTION_DURATION = 6000;
 /** Exit length; matches `duration-200` on the leaving slip. */
 const EXIT_MS = 200;
 
@@ -78,17 +89,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const show = useCallback(
-    ({ title, message, variant = "info", duration }: ToastOptions) => {
+    ({ title, message, variant = "info", duration, action }: ToastOptions) => {
       const id = crypto.randomUUID();
       setToasts((prev) => {
         // Collapse exact duplicates (e.g. the same error from two listeners).
-        if (prev.some((t) => !t.leaving && t.message === message && t.title === title))
+        if (
+          !action &&
+          prev.some((t) => !t.leaving && t.message === message && t.title === title)
+        )
           return prev;
-        return [...prev, { id, title, message, variant }].slice(-MAX_VISIBLE);
+        return [...prev, { id, title, message, variant, action }].slice(-MAX_VISIBLE);
       });
       timers.current.set(
         id,
-        setTimeout(() => remove(id), duration ?? DURATION[variant]),
+        setTimeout(
+          () => remove(id),
+          duration ?? (action ? ACTION_DURATION : DURATION[variant]),
+        ),
       );
     },
     [remove],
@@ -145,19 +162,11 @@ const ICONS: Record<ToastVariant, ReactNode> = {
 // Enter and exit are CSS keyframes (tw-animate-css): transform and opacity
 // only, on the compositor.
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
-  return (
-    <button
-      type="button"
-      role={toast.variant === "error" ? "alert" : "status"}
-      onClick={onDismiss}
-      disabled={toast.leaving}
-      className={cn(
-        "glass-strong pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl px-4 py-3 text-left text-sm text-fg ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:animate-none",
-        toast.leaving
-          ? "animate-out fade-out-0 slide-out-to-top-1.5 fill-mode-forwards duration-200"
-          : "animate-in fade-in-0 slide-in-from-bottom-3 duration-200",
-      )}
-    >
+  const motion = toast.leaving
+    ? "animate-out fade-out-0 slide-out-to-top-1.5 fill-mode-forwards duration-200"
+    : "animate-in fade-in-0 slide-in-from-bottom-3 duration-200";
+  const body = (
+    <>
       <span className="mt-0.5">{ICONS[toast.variant]}</span>
       <span className="min-w-0">
         {toast.title ? (
@@ -167,6 +176,42 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           {toast.message}
         </span>
       </span>
-    </button>
+    </>
+  );
+  const shell =
+    "glass-strong pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl px-4 py-3 text-left text-sm text-fg ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:animate-none";
+  if (!toast.action)
+    return (
+      <button
+        type="button"
+        role={toast.variant === "error" ? "alert" : "status"}
+        onClick={onDismiss}
+        disabled={toast.leaving}
+        className={cn(shell, motion)}
+      >
+        {body}
+      </button>
+    );
+  // With a button the slip is not one big button: the message and its
+  // action are separate targets, and the slip closes after the action.
+  const { action } = toast;
+  return (
+    <div
+      role={toast.variant === "error" ? "alert" : "status"}
+      className={cn(shell, "items-center", motion)}
+    >
+      {body}
+      <button
+        type="button"
+        disabled={toast.leaving}
+        onClick={() => {
+          action.onClick();
+          onDismiss();
+        }}
+        className="ml-2 shrink-0 rounded-[8px] px-2.5 py-1 text-[13px] font-semibold text-acc transition-colors hover:bg-acc/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+      >
+        {action.label}
+      </button>
+    </div>
   );
 }

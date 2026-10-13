@@ -28,7 +28,12 @@ export type PendingDraft = {
   keyId?: number;
   /** A finished picture to attach as a reference. */
   reference?: { url: string; assetId: string; name: string };
+  /** Several pictures at once (作品 多选 → 作参考, 第 58 条). */
+  references?: Array<{ url: string; assetId: string; name: string }>;
 };
+
+/** Most pictures 作品 hands to the studio as references in one go. */
+export const REFERENCE_HANDOFF_MAX = 10;
 
 export function savePendingDraft(draft: PendingDraft) {
   try {
@@ -60,6 +65,7 @@ export function takePendingDraft(): PendingDraft | null {
       model?: unknown;
       keyId?: unknown;
       reference?: { url?: unknown; assetId?: unknown; name?: unknown } | null;
+      references?: unknown;
       /** Older builds: standard / hd = 1K / 2K. */
       quality?: unknown;
     };
@@ -74,8 +80,23 @@ export function takePendingDraft(): PendingDraft | null {
             name: typeof parsed.reference.name === "string" ? parsed.reference.name : "参考图",
           }
         : null;
+    const references = Array.isArray(parsed.references)
+      ? parsed.references
+          .filter(
+            (item): item is { url: string; assetId: string; name?: unknown } =>
+              Boolean(item) &&
+              typeof (item as { url?: unknown }).url === "string" &&
+              typeof (item as { assetId?: unknown }).assetId === "string",
+          )
+          .slice(0, REFERENCE_HANDOFF_MAX)
+          .map((item) => ({
+            url: item.url,
+            assetId: item.assetId,
+            name: typeof item.name === "string" ? item.name : "参考图",
+          }))
+      : [];
     // A picture handed over as a reference may come without a description.
-    if (!parsed.prompt && !reference) return null;
+    if (!parsed.prompt && !reference && references.length === 0) return null;
     const resolution = RESOLUTIONS.includes(parsed.resolution as ImageResolution)
       ? (parsed.resolution as ImageResolution)
       : parsed.quality === "hd"
@@ -94,6 +115,7 @@ export function takePendingDraft(): PendingDraft | null {
       ...(typeof parsed.model === "string" && parsed.model ? { model: parsed.model } : {}),
       ...(typeof parsed.keyId === "number" && Number.isInteger(parsed.keyId) ? { keyId: parsed.keyId } : {}),
       ...(reference ? { reference } : {}),
+      ...(references.length ? { references } : {}),
     };
   } catch {
     return null;

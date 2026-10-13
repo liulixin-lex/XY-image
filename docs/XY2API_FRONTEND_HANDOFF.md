@@ -117,7 +117,7 @@ GET `/api/image-models`：
 }
 ```
 
-v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models` 里每项带 `keyId`、`keyName`、`groupName`：列出所有启用的 Key 的模型，默认 Key 在前，同一个模型可能在两个 Key 下各出现一次，按 (keyId, id) 区分。生图请求带 `key_id` 指定走哪个 Key（被关掉的 Key 403 `key_unavailable`）；批量接口可以用 `targets: [{ model, key_id?, count }]`（v0.0.7 是最多 4 个模型、总数 ≤ 8；v0.0.8 起最多 50 个模型、总数 ≤ 500，只是防误输的结构上限）代替 `model` + `count`，同一句描述多个模型并行出图。任务行带 `xy2api_key_id`。`GET /api/jobs` 支持 `before`（上一页的 `next_before`）、`limit`（1–100，默认 50）、`source=studio|canvas|assistant`。
+v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models` 里每项带 `keyId`、`keyName`、`groupName`：列出所有启用的 Key 的模型，默认 Key 在前，同一个模型可能在两个 Key 下各出现一次，按 (keyId, id) 区分。生图请求带 `key_id` 指定走哪个 Key（被关掉的 Key 403 `key_unavailable`）；批量接口可以用 `targets: [{ model, key_id?, count }]`（v0.0.7 是最多 4 个模型、总数 ≤ 8；v0.0.8 起最多 50 个模型、总数 ≤ 500，只是防误输的结构上限）代替 `model` + `count`，同一句描述多个模型并行出图。任务行带 `xy2api_key_id`。`GET /api/jobs` 支持 `before`（上一页的 `next_before`）、`limit`（1–100，默认 50）、`source=studio|canvas|assistant`。v0.0.9 起（第 58 条）还支持 `offset`（跳过的行数，编号分页用）、`view=reconcile|failed`（待核对、失败，规则同前端 `needsReconcile`）和 `with_total=1`（响应多 `total` 和 `counts: { all, reconcile, failed }`）；删除的任务不再出现在列表里。`POST /api/jobs/delete` 请求 `{ ids }`（1–500 个 UUID），返回 `{ deleted, skipped }`，排队中和生成中的跳过；`POST /api/jobs/restore` 同样的请求，返回 `{ restored }`，24 小时清理之前都能撤销。删除只隐藏，计费记录还在。
 
 两个接口都需要令牌。生图模型只返回启用的主站 Key 的能力；对话模型另合并个人服务商，不恢复平台公用 Key。`creditCost=0`、`minTier=free` 是兼容字段，不能理解成免费调用。实际扣费发生在主站。模型 ID 可能是 `*-preview` 别名，必须原样回传；切换 Key 后旧选择不在列表则选第一项。列表为空时禁用生成。
 
