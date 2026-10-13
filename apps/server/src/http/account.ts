@@ -128,6 +128,8 @@ export function registerAccountRoutes(
           xy2apiUserId: account.xy2api_user_id,
           email: account.email,
           username: account.username,
+          // 第 59 条: the 管理 page and alert banner (main-site role, read at login).
+          isAdmin: account.role === "admin",
         },
         balance,
         preferences: await options.keys.preferences(user.id),

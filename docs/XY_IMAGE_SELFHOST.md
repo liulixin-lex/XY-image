@@ -190,6 +190,66 @@ node deploy/selfhost/prepare.mjs \
 
 数值是 10-11 生产实际用量的几倍（API 145 MiB、Worker 115 MiB、storage 175 MiB、imgproxy 20 MiB、studio 195 MiB）。Node 的堆上限低于容器上限，所以会先做垃圾回收，不会直接被杀。已有的部署目录要手动把这些值加进 `compose.json`，然后用 `up -d --no-deps --force-recreate <服务>` 重建对应容器。
 
+## 存储：参考图清扫、对象存储（R2）和磁盘告警（10-13 agent01，第 59 条）
+
+磁盘里涨得最快的是图片：生成的图、上传的参考图、画布图片。三件事一起防止磁盘无限增长：没人用的参考图自动删掉；图片可以整体搬到 R2（或别的 S3 兼容存储），不再占本机磁盘；磁盘快满时管理员能及时看到。
+
+### 没人用的参考图自动清掉
+
+生图和对话里上传的参考图、蒙版、附件，用完后往往没人再引用。Worker 每 6 小时检查一次（启动后 5～10 分钟第一次），每次最多删 500 个。
+
+- 只看上传的文件：`project-assets` 里 `<工作区>/<时间戳>-<文件名>`（生图页上传）和 `<工作区>/<项目>/<时间戳>-<文件名>`（画布对话上传），而且上传超过 3 天。生成的图（`generated/`）、画布图片（`canvas-files/`）、缩略图、品牌套件文件都不在范围内，它们各有自己的清理规则。
+- 同一个工作区里还有人用着就留着：生图任务（包括已删除、还没清理的作品，撤销后仍要能「以此为参考」）、画布内容、对话消息（正文、内容块、工具记录）里出现这个路径，都算在用。
+- 通过 Storage API 删除，`asset_objects` 里对应的记录一起删；删失败的下一轮再试。
+- 开关是 `REFERENCE_SWEEP`：`on`（默认）、`dry-run`（只记日志，列出会删哪些）、`off`。日志前缀 `[reference-sweep]`。
+
+### 图片搬到 R2（对象存储）
+
+Storage API 自己支持 S3 后端，图片地址不变，只是字节存到桶里。`deploy/selfhost/object-storage.mjs` 负责切换和搬文件，两种后端的对象键一样（`<租户>/<桶>/<对象名>/<版本>`），所以一一对应地复制即可。
+
+先在 Cloudflare 建一个 R2 桶和一个只能读写这个桶的 API 令牌，把这些写进一个只有自己能读的文件（`chmod 600`），不要放进仓库：
+
+```sh
+S3_ENDPOINT=https://<账户 ID>.r2.cloudflarestorage.com
+S3_BUCKET=<桶名>
+S3_REGION=auto
+S3_ACCESS_KEY_ID=<令牌的 Access Key ID>
+S3_SECRET_ACCESS_KEY=<令牌的 Secret Access Key>
+```
+
+已有的部署按这个顺序来，网站全程照常服务：
+
+```sh
+D="$XY_DEPLOY_DIR"; C=/root/xy-r2.env
+node deploy/selfhost/object-storage.mjs status --dir "$D"                        # 现在有多少对象、多大
+node deploy/selfhost/object-storage.mjs copy   --dir "$D" --credentials "$C" --dry-run
+node deploy/selfhost/object-storage.mjs copy   --dir "$D" --credentials "$C"    # 批量复制，可重复执行，已有的跳过
+node deploy/selfhost/object-storage.mjs verify --dir "$D" --credentials "$C"    # 每个对象都在桶里、大小一致
+node deploy/selfhost/object-storage.mjs switch --dir "$D" --credentials "$C" --to s3
+# 观察几天，确认图片都正常
+node deploy/selfhost/object-storage.mjs prune-local --dir "$D"                   # 先看会删多少
+node deploy/selfhost/object-storage.mjs prune-local --dir "$D" --yes             # 删掉本机副本，腾出磁盘
+```
+
+- `switch --to s3` 会先补复制、再核对，桶里缺对象就拒绝切换；然后把密钥写进部署目录的 `.env`（`XY_S3_*`，600），`compose.json` 里只放 `${XY_S3_*}` 引用，`server.env` 写 `LOOMIC_OBJECT_STORAGE=s3`，旧的 `compose.json` 备份在 `<部署目录>/object-storage/`；只重建 storage 容器（几秒钟上传会失败，Worker 会把生成好的图留着、恢复后再存），最后把重启那几秒里写到本机的对象补到桶里，再核对一遍。之后的命令不用再给 `--credentials`。
+- `LOOMIC_OBJECT_STORAGE` 只影响 管理 页的说明文字，下次部署重启 xy-api、xy-worker 时生效，不用为它单独重启。
+- 切到桶以后关掉了图片变换（`ENABLE_IMAGE_TRANSFORMATION=false`）：imgproxy 只会读本机文件，网站也从来不用变换后的图。
+- `prune-local` 只删「桶里有、大小一样」的本机文件；没有数据库记录的文件不碰。
+- 回退：`switch --to local` 先把桶里的对象（包括切换后新传的）复制回本机，再切回文件后端。桶里的副本留着。
+- 新部署可以一开始就用桶：`prepare.mjs … --object-storage s3 --s3-credentials /root/xy-r2.env`。
+- 部署有额外的 compose 文件时（实验环境的 `lab.override.json`），设 `XY_COMPOSE_OVERRIDE=<绝对路径>`，不然重建 storage 会丢掉里面的设置。
+- 工具不打印密钥：复制程序在 storage 容器里运行（用 Storage API 自带的 AWS SDK、pg、fs-xattr），密钥从标准输入传进去，不在命令行参数和环境变量里。
+- 备份：切到桶以后，`backup.mjs` 的 `storage.tar.gz` 只剩还没删的本机副本，图片本身在 R2 里；`restore-drill.mjs` 遇到桶后端时不再比较文件数。
+
+### 磁盘用量告警
+
+Worker 每 10 分钟记一次磁盘用量（启动后 30～60 秒第一次）：`statfs` 看 `DISK_MONITOR_PATH`（默认 `/`，容器的根目录和宿主机 Docker 数据在同一块盘上时就是那块盘），加上数据库大小和各类图片的占用（生成的图、上传的参考图、画布图片、品牌套件、其他），存在 `ops_disk_samples`，保留 30 天（迁移 `20261013000004`）。
+
+- 超过 `DISK_ALERT_WARN_PERCENT`（默认 80）记一条「提醒」，超过 `DISK_ALERT_CRITICAL_PERCENT`（默认 90）升为「严重」；降到阈值以下 2 个百分点才算恢复，免得在线上来回跳。告警存在 `ops_alerts`，同一时间只有一条未恢复的磁盘告警。
+- 主站角色是管理员（`xy2api_accounts.role = admin`，登录时同步）的用户能看到：顶部一条提示（每 5 分钟查一次，可以先关掉，升级到严重时会再出现），和 头像菜单 › 管理 · 存储与告警（`/admin`）：用量、占用构成、最近 7 天走势、告警记录。接口是 `GET /api/admin/ops/storage` 和 `GET /api/admin/ops/alerts`，非管理员 403。
+- 设了 `OPS_ALERT_WEBHOOK_URL`，告警出现、升级、恢复时各 POST 一次 JSON（`source`、`at`、`kind`、`level`、`message`、`percent`），5 秒超时，失败下一轮重试。地址不会出现在任何接口里。
+- `DISK_MONITOR=off` 关掉记录和告警。日志前缀 `[disk-monitor]`。
+
 ## 主站私有回源（10-12 agent01，FINDINGS G7）
 
 主站 gguuai.com 在 Cloudflare 后面，源站地址不能公开。Cloudflare 等源站回应最多 125 秒（非 Enterprise 计划不能调），4K 高质量经常超过这个时间。超时后连接被切断，主站照样出图、照样扣费，生图站却拿不到图。
@@ -316,7 +376,7 @@ node deploy/selfhost/restore-drill.mjs --backup /srv/xy-image/hot-backups/hot-<�
 
 这些备份和数据在同一台机器上，能应付改坏的迁移、误删和卷损坏，挡不住整台机器丢失。异地目的地确定之前，这就是唯一的备份（见 [运维自动化](XY_IMAGE_OPERATIONS_AUTOMATION.md)）。
 
-后续若引入持续备份/PITR、S3对象存储或多API实例，应单独设计并验收；当前交付是单机持久卷与维护窗口备份，不承诺零停机或高可用。
+后续若引入持续备份/PITR或多API实例，应单独设计并验收；当前交付是单机持久卷与维护窗口备份，不承诺零停机或高可用。图片改存 R2 的做法见上文「图片搬到 R2」（10-13）。
 
 ## 检查证据与已知限制
 

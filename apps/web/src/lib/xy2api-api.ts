@@ -73,7 +73,7 @@ export type AccountLinks = {
 };
 
 export type AccountResponse = {
-  user: { xy2apiUserId: number; email: string; username: string | null };
+  user: { xy2apiUserId: number; email: string; username: string | null; /** Main-site admin (第 59 条: 管理 page, alert banner); absent from older servers. */ isAdmin?: boolean };
   /** null = no usable image key or balance unavailable. Never show as $0. */
   balance: AccountBalance | null;
   preferences: AccountPreferences;

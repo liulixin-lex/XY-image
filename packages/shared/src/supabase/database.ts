@@ -888,6 +888,81 @@ export type Database = {
           },
         ]
       }
+      ops_alerts: {
+        Row: {
+          id: string
+          kind: string
+          last_seen_at: string
+          level: string
+          message: string
+          notified_level: string | null
+          opened_at: string
+          resolved_at: string | null
+          threshold: number | null
+          value: number | null
+        }
+        Insert: {
+          id?: string
+          kind: string
+          last_seen_at?: string
+          level: string
+          message: string
+          notified_level?: string | null
+          opened_at?: string
+          resolved_at?: string | null
+          threshold?: number | null
+          value?: number | null
+        }
+        Update: {
+          id?: string
+          kind?: string
+          last_seen_at?: string
+          level?: string
+          message?: string
+          notified_level?: string | null
+          opened_at?: string
+          resolved_at?: string | null
+          threshold?: number | null
+          value?: number | null
+        }
+        Relationships: []
+      }
+      ops_disk_samples: {
+        Row: {
+          db_bytes: number | null
+          fs_avail_bytes: number
+          fs_total_bytes: number
+          fs_used_bytes: number
+          id: number
+          object_storage: string
+          sampled_at: string
+          storage_by_kind: Json
+          storage_bytes: number | null
+        }
+        Insert: {
+          db_bytes?: number | null
+          fs_avail_bytes: number
+          fs_total_bytes: number
+          fs_used_bytes: number
+          id?: never
+          object_storage?: string
+          sampled_at?: string
+          storage_by_kind?: Json
+          storage_bytes?: number | null
+        }
+        Update: {
+          db_bytes?: number | null
+          fs_avail_bytes?: number
+          fs_total_bytes?: number
+          fs_used_bytes?: number
+          id?: never
+          object_storage?: string
+          sampled_at?: string
+          storage_by_kind?: Json
+          storage_bytes?: number | null
+        }
+        Relationships: []
+      }
       payment_events: {
         Row: {
           created_at: string

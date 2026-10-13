@@ -11,6 +11,7 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs, parseEnv } from "node:util";
+import { parseS3Settings, settingsEnv, storageEnvironment } from "./object-storage.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.resolve(here, "../..");
 /**
@@ -203,6 +204,14 @@ export async function prepare(options) {
   const realIp = realIpBlock(options.cdn);
   const ports = hostPorts(options);
   const xy2api = xy2apiOrigin(options.xy2apiUrl);
+  // Object storage (第 59 条): files on this disk (default) or an
+  // S3-compatible bucket such as R2 from the start. Existing deployments
+  // move with object-storage.mjs instead.
+  const objectStorage = options.objectStorage ?? "local";
+  if (!["local", "s3"].includes(objectStorage))
+    throw new Error("object-storage must be local or s3");
+  if ((objectStorage === "s3") !== Boolean(options.s3))
+    throw new Error("--object-storage s3 needs --s3-credentials <file>, and only then");
   if (
     !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(
       options.ssoDomain,
@@ -297,6 +306,7 @@ export async function prepare(options) {
       POSTGRES_PORT: "5432",
       STUDIO_DEFAULT_ORGANIZATION: "GGUU",
       STUDIO_DEFAULT_PROJECT: "XY-IMAGE",
+      ...(options.s3 ? settingsEnv(options.s3) : {}),
     };
     const appEnv = {
       NODE_ENV: "production",
@@ -331,6 +341,8 @@ export async function prepare(options) {
       // project-assets image (FINDINGS S2). Separate origins cannot share
       // the cookie, so their images stay public.
       LOOMIC_MEDIA_ACCESS: mode === "single" ? "cookie" : "open",
+      // Shown on 管理 › 存储与告警; the disk monitor reads it.
+      LOOMIC_OBJECT_STORAGE: objectStorage,
     };
     base.name = project;
     for (const service of Object.values(base.services)) {
@@ -359,6 +371,11 @@ export async function prepare(options) {
       "false";
     base.services.auth.environment.GOTRUE_DISABLE_SIGNUP = "true";
     base.services.rest.environment.PGRST_DB_SCHEMAS = "public";
+    if (objectStorage === "s3")
+      base.services.storage.environment = storageEnvironment(
+        base.services.storage.environment,
+        "s3",
+      );
     // Memory ceilings (FINDINGS O3): the host is shared, so a runaway
     // process is stopped by its own limit instead of pushing everything
     // into swap. Several times what each used in production on 2026-10-11
@@ -498,6 +515,12 @@ export async function prepare(options) {
           cdn: options.cdn ?? null,
           ports,
           xy2api,
+          objectStorage: {
+            backend: objectStorage,
+            bucket: options.s3?.bucket ?? null,
+            endpointHost: options.s3 ? new URL(options.s3.endpoint).host : null,
+            switchedAt: null,
+          },
         },
         null,
         2,
@@ -564,8 +587,17 @@ if (
         "api-port": { type: "string" },
         "gateway-port": { type: "string" },
         "xy2api-url": { type: "string" },
+        "object-storage": { type: "string" },
+        "s3-credentials": { type: "string" },
       },
     });
+    let s3;
+    if (values["s3-credentials"]) {
+      const file = values["s3-credentials"];
+      if ((await stat(file)).mode & 0o077)
+        throw new Error("The S3 credentials file must be chmod 600");
+      s3 = parseS3Settings(await readFile(file, "utf8"));
+    }
     // Origins are checked by publicOrigins: --origin, or all three.
     for (const k of ["dir", "sso-domain"])
       if (!values[k]) throw new Error(`Missing --${k}`);
@@ -584,6 +616,8 @@ if (
           apiPort: values["api-port"],
           gatewayPort: values["gateway-port"],
           xy2apiUrl: values["xy2api-url"],
+          objectStorage: values["object-storage"],
+          s3,
         }),
       ),
     );

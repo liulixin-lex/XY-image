@@ -72,7 +72,8 @@ describe("describeMediaOutcome", () => {
     expect(outcome?.tone).toBe("unknown");
     expect(outcome?.title).toBe("结果待核对");
     expect(outcome?.message).toContain("图片可能已经生成");
-    expect(outcome?.message).toContain("不会自动重发");
+    expect(outcome?.message).toContain("生成记录");
+    expect(outcome?.message).not.toContain("不会自动重发");
   });
 
   it("says a charged job without a picture was generated", () => {

@@ -25,6 +25,16 @@ import {
   createWorksPurgeStore,
   createWorksPurger,
 } from "./features/jobs/deleted-works-purge.js";
+import {
+  createReferenceSweepStore,
+  createReferenceSweeper,
+} from "./features/storage/reference-sweeper.js";
+import {
+  createDiskMonitor,
+  createDiskMonitorStore,
+  readDisk,
+  webhookNotifier,
+} from "./features/ops/disk-monitor.js";
 import { createDispatchGate } from "./features/jobs/dispatch-gate.js";
 import type { ExecutorContext } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
@@ -135,6 +145,34 @@ async function main() {
         });
   worksPurger?.start();
 
+  // Removes uploaded references, masks and chat attachments nothing uses
+  // after 3 days (reference-sweeper.ts, 第 59 条).
+  const referenceSweeper =
+    env.referenceSweep === "off"
+      ? undefined
+      : createReferenceSweeper({
+          store: createReferenceSweepStore(env.supabaseDbUrl),
+          remove: (paths) =>
+            getAdminClient().storage.from("project-assets").remove(paths),
+          dryRun: env.referenceSweep === "dry-run",
+        });
+  referenceSweeper?.start();
+
+  // 磁盘用量告警 (disk-monitor.ts, 第 59 条): a sample every 10 minutes, one
+  // open alert at a time, an optional webhook.
+  const diskMonitor =
+    env.diskMonitor === "off"
+      ? undefined
+      : createDiskMonitor({
+          store: createDiskMonitorStore(env.supabaseDbUrl),
+          read: () => readDisk(env.diskMonitorPath ?? "/"),
+          warnPercent: env.diskAlertWarnPercent ?? 80,
+          criticalPercent: env.diskAlertCriticalPercent ?? 90,
+          objectStorage: env.objectStorage ?? "local",
+          ...(env.opsAlertWebhookUrl ? { notify: webhookNotifier(env.opsAlertWebhookUrl) } : {}),
+        });
+  diskMonitor?.start();
+
   // Queues async image tasks whose poller (the API process) stopped
   // (task-resumer.ts). Worker jobs resume through their own message.
   const resumer = createTaskResumer(env.supabaseDbUrl);
@@ -216,6 +254,8 @@ async function main() {
     await sweeper?.stop();
     await purger?.stop();
     await worksPurger?.stop();
+    await referenceSweeper?.stop();
+    await diskMonitor?.stop();
     await reconcileServices?.providers.network.close();
     await pgmq.shutdown();
     await deliveries.close();

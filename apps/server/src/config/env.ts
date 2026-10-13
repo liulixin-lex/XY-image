@@ -116,6 +116,25 @@ export type ServerEnv = {
    * features/jobs/deleted-works-purge.ts, 第 58 条.
    */
   worksPurge?: "on" | "dry-run" | "off";
+  /**
+   * REFERENCE_SWEEP: removes uploaded references, masks and chat attachments
+   * nothing uses after 3 days ("dry-run" only logs).
+   * features/storage/reference-sweeper.ts, 第 59 条.
+   */
+  referenceSweep?: "on" | "dry-run" | "off";
+  /**
+   * 磁盘用量告警 (第 59 条, features/ops/disk-monitor.ts): DISK_MONITOR
+   * on|off, DISK_MONITOR_PATH (statfs, "/"), DISK_ALERT_WARN_PERCENT (80),
+   * DISK_ALERT_CRITICAL_PERCENT (90), OPS_ALERT_WEBHOOK_URL (JSON POST on
+   * open / escalate / resolve; unset = page and banner only).
+   */
+  diskMonitor?: "on" | "off";
+  diskMonitorPath?: string;
+  diskAlertWarnPercent?: number;
+  diskAlertCriticalPercent?: number;
+  opsAlertWebhookUrl?: string | undefined;
+  /** LOOMIC_OBJECT_STORAGE: local (files on this disk) or s3 (R2 / S3). Shown on the 管理 page. */
+  objectStorage?: "local" | "s3";
 };
 
 export function loadServerEnv(
@@ -291,6 +310,22 @@ export function loadServerEnv(
       source.WORKS_PURGE === "off" || source.WORKS_PURGE === "dry-run"
         ? source.WORKS_PURGE
         : "on",
+    referenceSweep:
+      source.REFERENCE_SWEEP === "off" || source.REFERENCE_SWEEP === "dry-run"
+        ? source.REFERENCE_SWEEP
+        : "on",
+    diskMonitor: source.DISK_MONITOR === "off" ? "off" : "on",
+    diskMonitorPath: source.DISK_MONITOR_PATH || "/",
+    diskAlertWarnPercent: percentSetting(source.DISK_ALERT_WARN_PERCENT, 80),
+    diskAlertCriticalPercent: percentSetting(source.DISK_ALERT_CRITICAL_PERCENT, 90),
+    opsAlertWebhookUrl: source.OPS_ALERT_WEBHOOK_URL || undefined,
+    objectStorage: source.LOOMIC_OBJECT_STORAGE === "s3" ? "s3" : "local",
     ...overrides,
   };
+}
+
+/** A percentage setting between 1 and 99, else the default. */
+function percentSetting(raw: string | undefined, fallback: number) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 1 && value <= 99 ? value : fallback;
 }
