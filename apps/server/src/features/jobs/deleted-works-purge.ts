@@ -11,21 +11,21 @@ import type { RemoveObjects } from "../canvas/canvas-files-sweeper.js";
 //     the asset_objects row goes with them;
 //   - unless a canvas or a chat message of that workspace still uses the
 //     picture: a canvas image or an assistant reply must not turn into a
-//     broken image because the picture left the 作品 list. Those files stay.
-// Either way purged_at is stamped, so a job is never looked at again and the
-// delete can no longer be undone. The job row itself stays: it is the
-// billing record (request id, billing_status) and the reconciler still
-// settles a 待核对 one.
+//     broken image because the picture left the 作品 list. Those files stay,
+//     the job gets purge_checked_at, and it is checked again RECHECK_MS
+//     later, until nothing uses it any more.
+// Once the files are gone purged_at is stamped: the job is never looked at
+// again and the delete can no longer be undone. The job row itself stays: it
+// is the billing record (request id, billing_status) and the reconciler
+// still settles a 待核对 one.
 //
 // A job whose files could not be removed keeps purged_at null and is retried
 // on the next run.
-//
-// TODO(第 58 条): a picture kept because a canvas used it is never checked
-// again, even after that canvas drops it. Re-check kept pictures when the
-// canvas files sweeper learns about generated/ (it skips that folder today).
 
 const BUCKET = "project-assets";
 export const PURGE_AFTER_MS = 24 * 60 * 60 * 1000;
+/** A picture kept because something still used it is looked at again after this. */
+export const RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_JOBS_PER_RUN = 200;
 
@@ -39,7 +39,11 @@ export type DueWork = {
 };
 
 export type WorksPurgeStore = {
-  due(before: Date, limit: number): Promise<DueWork[]>;
+  /**
+   * Deleted before `before`, not purged, and not kept since `recheckBefore`
+   * (kept pictures come back once a week).
+   */
+  due(before: Date, recheckBefore: Date, limit: number): Promise<DueWork[]>;
   /**
    * Stamps purged_at (and drops the asset row when the files went) if the
    * job is still deleted; false when the user restored it meanwhile.
@@ -49,6 +53,8 @@ export type WorksPurgeStore = {
     before: Date,
     removed: string[],
   ): Promise<boolean>;
+  /** Stamps purge_checked_at on a picture kept because something uses it. */
+  keep(jobId: string, before: Date): Promise<boolean>;
   close(): Promise<void>;
 };
 
@@ -78,7 +84,7 @@ export function createWorksPurgeStore(databaseUrl: string): WorksPurgeStore {
     return pool;
   };
   return {
-    async due(before, limit) {
+    async due(before, recheckBefore, limit) {
       // The reference check is a text search of the workspace's canvases
       // (oss://project-assets/<path> markers) and chat messages (image URLs
       // in replies and tool results). Run on a handful of jobs an hour, so
@@ -105,9 +111,10 @@ export function createWorksPurgeStore(databaseUrl: string): WorksPurgeStore {
            FROM public.background_jobs j
           WHERE j.deleted_at IS NOT NULL AND j.purged_at IS NULL
             AND j.deleted_at < $1
+            AND (j.purge_checked_at IS NULL OR j.purge_checked_at < $2)
           ORDER BY j.deleted_at
-          LIMIT $2`,
-        [before, limit],
+          LIMIT $3`,
+        [before, recheckBefore, limit],
       );
       return rows.map((row) => ({
         jobId: String(row.id),
@@ -142,6 +149,15 @@ export function createWorksPurgeStore(databaseUrl: string): WorksPurgeStore {
         client.release();
       }
     },
+    async keep(jobId, before) {
+      const { rowCount } = await db().query(
+        `UPDATE public.background_jobs SET purge_checked_at = now()
+          WHERE id = $1 AND deleted_at IS NOT NULL AND deleted_at < $2
+            AND purged_at IS NULL`,
+        [jobId, before],
+      );
+      return (rowCount ?? 0) > 0;
+    },
     async close() {
       await pool?.end();
       pool = undefined;
@@ -150,13 +166,14 @@ export function createWorksPurgeStore(databaseUrl: string): WorksPurgeStore {
 }
 
 export async function purgeDeletedWorks(deps: {
-  store: Pick<WorksPurgeStore, "due" | "finish">;
+  store: Pick<WorksPurgeStore, "due" | "finish" | "keep">;
   remove: RemoveObjects;
   dryRun?: boolean;
   now?: () => number;
 }): Promise<WorksPurgeCounts> {
-  const before = new Date((deps.now?.() ?? Date.now()) - PURGE_AFTER_MS);
-  const works = await deps.store.due(before, MAX_JOBS_PER_RUN);
+  const now = deps.now?.() ?? Date.now();
+  const before = new Date(now - PURGE_AFTER_MS);
+  const works = await deps.store.due(before, new Date(now - RECHECK_MS), MAX_JOBS_PER_RUN);
   const counts: WorksPurgeCounts = {
     due: works.length,
     removed: 0,
@@ -175,8 +192,13 @@ export async function purgeDeletedWorks(deps: {
       );
       continue;
     }
-    if (work.inUse || paths.length === 0) {
-      if (await deps.store.finish(work.jobId, before, [])) counts.kept += 1;
+    if (work.inUse) {
+      if (await deps.store.keep(work.jobId, before)) counts.kept += 1;
+      continue;
+    }
+    if (paths.length === 0) {
+      // Nothing stored under generated/ (an old or failed result): done.
+      await deps.store.finish(work.jobId, before, []);
       continue;
     }
     const { error } = await deps.remove(paths).catch((cause: unknown) => ({

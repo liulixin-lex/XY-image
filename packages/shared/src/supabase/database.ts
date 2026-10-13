@@ -283,6 +283,7 @@ export type Database = {
           max_attempts: number
           payload: Json
           project_id: string | null
+          purge_checked_at: string | null
           purged_at: string | null
           queue_name: string
           result: Json | null
@@ -319,6 +320,7 @@ export type Database = {
           max_attempts?: number
           payload?: Json
           project_id?: string | null
+          purge_checked_at?: string | null
           purged_at?: string | null
           queue_name: string
           result?: Json | null
@@ -355,6 +357,7 @@ export type Database = {
           max_attempts?: number
           payload?: Json
           project_id?: string | null
+          purge_checked_at?: string | null
           purged_at?: string | null
           queue_name?: string
           result?: Json | null

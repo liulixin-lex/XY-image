@@ -65,7 +65,7 @@ import { TemplateGallery, type TemplateUse } from "../templates/template-gallery
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Picker, Segmented } from "../ui/select";
-import { BrandPicker, useStudioBrand } from "./brand-picker";
+import { BRAND_LOGO_FRESH_MS, BrandPicker, useStudioBrand } from "./brand-picker";
 import { RatioGrid } from "./ratio-grid";
 
 /** Last-used 画质 / 质量 / 比例 / 数量 (v1 stored `quality: standard | hd` = 1K / 2K). */
@@ -444,14 +444,26 @@ export const Composer = forwardRef<
     }
     setArmed(false);
     // The brand kit's rules go to the model; lists keep the user's words.
-    const sent = withBrand(trimmed, studioBrand.brand?.block ?? null);
+    // 带上标志: the logo is the last reference, when the model has room.
+    let brand = studioBrand.brand;
+    if (brand && studioBrand.useLogo && brand.logoUrl && Date.now() - brand.loadedAt > BRAND_LOGO_FRESH_MS)
+      brand = (await studioBrand.reload(brand.id)) ?? null;
+    const logo =
+      brand && studioBrand.useLogo && brand.logoUrl && readyAttachments.length < refLimit ? brand.logoUrl : null;
+    if (brand && studioBrand.useLogo && brand.logoUrl && !logo)
+      console.info("[studio] brand logo left out", { refLimit, refs: readyAttachments.length });
+    const sent = withBrand(trimmed, brand?.block ?? null, {
+      logoIndex: logo ? readyAttachments.length + 1 : null,
+      ...(brand ? { name: brand.name } : {}),
+    });
+    const images = [...readyAttachments.map((a) => a.url), ...(logo ? [logo] : [])];
     const shared = {
       prompt: sent,
       ...(sent !== trimmed ? { title: trimmed.slice(0, 200) } : {}),
       resolution: sendResolution,
       quality: sendQuality,
       aspect_ratio: sendRatio,
-      ...(readyAttachments.length ? { input_images: readyAttachments.map((a) => a.url) } : {}),
+      ...(images.length ? { input_images: images } : {}),
     };
     const result = await onSubmit(
       extras.length === 0
@@ -607,6 +619,8 @@ export const Composer = forwardRef<
                 brand={studioBrand.brand}
                 onChoose={(id) => void studioBrand.choose(id)}
                 onReload={(id) => void studioBrand.reload(id)}
+                useLogo={studioBrand.useLogo}
+                onUseLogo={studioBrand.setUseLogo}
               />
             </div>
           }

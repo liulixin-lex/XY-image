@@ -46,4 +46,17 @@ describe("brand kit in the studio (第 58 条)", () => {
     expect(withBrand(near, block).length).toBeLessThanOrEqual(4000);
     expect(withBrand("字".repeat(3990), block)).toBe("字".repeat(3990));
   });
+
+  it("says which reference is the logo when it goes along", () => {
+    const block = brandBlock(kit);
+    const sent = withBrand("秋季新品海报", block, { logoIndex: 3 });
+    expect(sent).toContain("第 3 张参考图是品牌标志");
+    expect(sent.endsWith("形状、颜色和文字不变。")).toBe(true);
+    expect(withBrand("秋季新品海报", block, { logoIndex: null })).not.toContain("参考图");
+    // A kit with only a logo: the note still goes along, under the kit's name.
+    expect(withBrand("杯子", null, { logoIndex: 1, name: "演练品牌" })).toBe(
+      `杯子\n\n${BRAND_MARK}·演练品牌】第 1 张参考图是品牌标志：画面需要出现标志时照它画，形状、颜色和文字不变。`,
+    );
+    expect(withBrand("杯子", null, { name: "演练品牌" })).toBe("杯子");
+  });
 });

@@ -171,8 +171,8 @@ node deploy/selfhost/prepare.mjs \
 
 - Worker 每小时检查一次（启动后 4～8 分钟第一次），删除超过 24 小时的作品，每次最多 200 条。
 - 图片和缩略图（`<workspace>/generated/` 下，只删这个工作区的）通过 Storage API 删除，`asset_objects` 记录一起删。
-- 这个工作区里还有画布或对话消息用着这张图（按对象路径在 `canvases.content`、`chat_messages` 里查），图片就留着，画布和对话不会出现破图。
-- 处理过的写 `purged_at`，之后不能再撤销；删文件失败的不写，下一轮再试。
+- 这个工作区里还有画布或对话消息用着这张图（按对象路径在 `canvases.content`、`chat_messages` 里查），图片就留着，画布和对话不会出现破图；这种图写 `purge_checked_at`，一周后再查一次，直到没人用了再删（迁移 `20261013000003`）。留着的期间仍可以撤销删除。
+- 文件删掉后写 `purged_at`，之后不能再撤销；删文件失败的不写，下一轮再试。
 - 开关是 `WORKS_PURGE`：`on`（默认）、`dry-run`（只记日志）、`off`。日志前缀是 `[works-purge]`，没有到期作品时不输出。
 - 迁移 `20261012000003` 加了 `deleted_at`、`purged_at` 两列和两个部分索引，可重复执行。
 

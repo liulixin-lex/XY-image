@@ -6,9 +6,10 @@
  * The paragraph starts with BRAND_MARK so a prompt that already carries one
  * (再来一次 on a branded picture) is not branded twice.
  *
- * TODO(第 58 条): the kit's logo could go along as a reference image; its
- * files live in the private brand-kit-assets bucket (signed URLs), which the
- * image runner does not fetch from yet.
+ * The kit's first logo can go along as the last reference image (a switch
+ * in the 品牌 menu); `logoIndex` then tells the model which one it is. Its
+ * URL is a one-hour signed brand-kit-assets URL, which the reference fetcher
+ * accepts like any storage object URL.
  */
 import type { BrandKitDetail } from "@loomic/shared";
 
@@ -52,9 +53,23 @@ export function brandBlock(kit: Pick<BrandKitDetail, "name" | "guidance_text" | 
  * Unchanged when there is no paragraph or the prompt already has one; the
  * paragraph is cut so the whole stays within the 4000-character limit.
  */
-export function withBrand(prompt: string, block: string | null): string {
-  if (!block || prompt.includes(BRAND_MARK)) return prompt;
+export function withBrand(
+  prompt: string,
+  block: string | null,
+  options: { logoIndex?: number | null; name?: string } = {},
+): string {
+  if (prompt.includes(BRAND_MARK)) return prompt;
+  const logo = options.logoIndex
+    ? `第 ${options.logoIndex} 张参考图是品牌标志：画面需要出现标志时照它画，形状、颜色和文字不变。`
+    : "";
+  // A kit with only a logo has no paragraph of its own; the logo still needs saying.
+  const full = block
+    ? `${block}${logo}`
+    : logo
+      ? `${BRAND_MARK}·${options.name?.trim() || "品牌"}】${logo}`
+      : "";
+  if (!full) return prompt;
   const room = PROMPT_MAX - prompt.length - 2;
   if (room < 40) return prompt;
-  return `${prompt}\n\n${block.length > room ? `${block.slice(0, room - 1)}…` : block}`;
+  return `${prompt}\n\n${full.length > room ? `${full.slice(0, room - 1)}…` : full}`;
 }
