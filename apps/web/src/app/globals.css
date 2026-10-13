@@ -1070,13 +1070,16 @@
 }
 
 /* Figures arriving (第 62 条, 管理): bars grow from their start, a chart
-   line draws itself (needs pathLength="1" on the line). Once, on mount. */
+   line is revealed left to right. Once, on mount. The line is uncovered
+   with clip-path, not drawn with a dash: the chart's stroke is
+   non-scaling, and Chrome then measures dashes on screen while pathLength
+   is in chart units, which left a gap in the line. */
 @keyframes grow-x {
   from { transform: scaleX(0); }
 }
 @keyframes draw-line {
-  from { stroke-dashoffset: 1; }
-  to { stroke-dashoffset: 0; }
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }
 @utility grow-x {
   transform-origin: left center;
@@ -1087,8 +1090,8 @@
 }
 @utility draw-line {
   @media (prefers-reduced-motion: no-preference) {
-    stroke-dasharray: 1;
-    animation: draw-line 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.2s both;
+    /* backwards only: once revealed, nothing clips the stroke. */
+    animation: draw-line 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.2s backwards;
   }
 }
 
