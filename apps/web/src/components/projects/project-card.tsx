@@ -32,7 +32,10 @@ export function ProjectCard({
           highlighted && "outline-2 outline-offset-4 outline-alert",
         )}
       >
-        <div className="relative aspect-[16/10] overflow-hidden rounded-[16px] bg-panel shadow-[0_14px_30px_-20px_var(--shadow-2)] transition-[box-shadow,translate] duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_26px_44px_-22px_var(--shadow-2)]">
+        <div
+          data-tilt
+          className="tilt relative aspect-[16/10] overflow-hidden rounded-[16px] bg-panel shadow-[0_14px_30px_-20px_var(--shadow-2)] transition-[box-shadow,transform] duration-300 group-hover:shadow-[0_26px_44px_-22px_var(--shadow-2)]"
+        >
           {thumb ? (
             <img
               src={thumb}

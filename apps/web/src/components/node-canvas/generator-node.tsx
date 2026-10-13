@@ -43,9 +43,7 @@ import {
 } from "../../lib/image-model-meta";
 import {
   imageModelOptions,
-  keyLabel,
   modelRef,
-  spansSeveralKeys,
 } from "../../lib/image-model-ref";
 import { jobIdOf } from "../../lib/node-canvas/element";
 import {
@@ -170,7 +168,6 @@ export const GeneratorNode = memo(function GeneratorNode({
   const { model, send, refLimit, prompt, blockedReason, params } = plan;
   const caps = modelCapabilities(model);
   const canGenerate = Boolean(params) && !sending;
-  const severalKeys = spansSeveralKeys(models);
 
   const generate = useCallback(() => {
     if (!canGenerate || !params) return;
@@ -267,14 +264,6 @@ export const GeneratorNode = memo(function GeneratorNode({
         }
       >
         <div className="flex flex-col px-3.5">
-          {model && severalKeys ? (
-            <p
-              className="-mt-1 truncate pb-1 text-right text-[11.5px] text-fg-muted"
-              title={`经由 ${keyLabel(model)}`}
-            >
-              经由 {keyLabel(model)}
-            </p>
-          ) : null}
           <Row label="比例">
             <Picker
               value={send.aspectRatio}

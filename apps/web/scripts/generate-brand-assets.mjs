@@ -42,15 +42,15 @@ const CORAL = "#e5533d";
 const CORAL_GLOW = "rgba(229, 83, 61, 0.42)";
 const SHADOW = "84, 52, 60";
 
-// The share card shows showcase-8 (Unsplash License, see
-// src/components/landing/showcase.ts) in its own light: amb / amb2 as
+// The share card shows the first sample, film-portrait (generated on this site,
+// see src/components/landing/showcase.ts), in its own light: amb / amb2 as
 // computed by scripts/prepare-showcase.mjs.
-const OG_SAMPLE = path.join(publicDir, "images/showcase/lg/showcase-8.webp");
-const OG_SAMPLE_AMB = [227, 116, 100];
-const OG_SAMPLE_AMB_2 = [207, 38, 112];
+const OG_SAMPLE = path.join(publicDir, "images/showcase/lg/film-portrait.webp");
+const OG_SAMPLE_AMB = [189, 100, 82];
+const OG_SAMPLE_AMB_2 = [184, 61, 110];
 const OG_SAMPLE_FOCUS = "north";
 // Same words as the landing hero (components/landing/hero.tsx).
-const OG_SUBTITLE = "主站账号直接登录。每张图都带请求 ID，在主站的用量记录里查得到。";
+const OG_SUBTITLE = "用主站账号登录，写一句话就能出图，最高 4K。";
 
 /** The coral tile on the poster slant (brand-mark.tsx). */
 function markSvg({ size = 32, title = "GGUU AI IMAGE" } = {}) {

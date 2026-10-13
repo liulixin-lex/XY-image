@@ -42,6 +42,13 @@ export type ImageModelMeta = Omit<ImageModelCapabilities, "maxRatio"> & {
   displayName: string;
   maker: string;
   description: string;
+  /**
+   * What sets this model apart from its siblings, in two to four characters
+   * (「效果优先」). Shown next to the name in lists and pickers; most models
+   * have none, because a line saying 「生成与多图编辑」 on every row says
+   * nothing (第 62 条).
+   */
+  note?: string;
 };
 
 const ALL_RATIOS: string[] = [...IMAGE_ASPECT_RATIOS];
@@ -75,6 +82,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     displayName: "GPT Image 2.5 Sunburst",
     maker: "OpenAI",
     description: "GPT Image 2.5，效果优先",
+    note: "效果优先",
     resolutions: ALL_RESOLUTIONS,
     qualities: ALL_QUALITIES,
     aspectRatios: ALL_RATIOS,
@@ -87,6 +95,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     displayName: "GPT Image 2.5 Flare",
     maker: "OpenAI",
     description: "GPT Image 2.5，速度优先",
+    note: "速度优先",
     resolutions: ALL_RESOLUTIONS,
     qualities: ALL_QUALITIES,
     aspectRatios: ALL_RATIOS,
@@ -134,6 +143,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     displayName: "Grok Imagine 高质量",
     maker: "xAI",
     description: "画质优先，出图稍慢",
+    note: "画质优先",
     resolutions: ["1K", "2K"],
     qualities: ["auto", "low", "medium"],
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
@@ -228,19 +238,13 @@ export function resolutionUnavailable(
   return smallest ? `${aspectRatio} 最小 ${smallest}` : null;
 }
 
-/** "1K–4K · 质量 4 档" — a model's range, for pickers and settings. */
-export function describeCapabilities(
-  caps: Pick<ImageModelCapabilities, "resolutions" | "qualities">,
-): string {
-  const first = caps.resolutions[0] ?? "1K";
-  const last = caps.resolutions.at(-1) ?? first;
-  const sizes =
-    caps.resolutions.length <= 1
-      ? `仅 ${first}`
-      : caps.resolutions.length === 2
-        ? caps.resolutions.join(" / ")
-        : `${first}–${last}`;
-  return `${sizes} · ${caps.qualities.length > 1 ? `质量 ${caps.qualities.length} 档` : "质量自动"}`;
+/**
+ * The short note shown after a model's name (「效果优先」), or null. Only
+ * models in the known catalog have one; the server's description is a full
+ * sentence for the API and is not repeated in the interface (第 62 条).
+ */
+export function modelNote(id: string | null | undefined): string | null {
+  return findModelMeta(id)?.note ?? null;
 }
 
 export const RESOLUTIONS = IMAGE_RESOLUTIONS;

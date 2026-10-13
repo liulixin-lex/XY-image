@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useImageModels } from "../lib/account-context";
 import { describeIssue } from "../lib/generation-errors";
-import { describeCapabilities, modelCapabilities } from "../lib/image-model-meta";
+import { modelNote } from "../lib/image-model-meta";
 import { cn } from "../lib/utils";
 import { Segmented } from "./ui/select";
 
@@ -150,17 +150,12 @@ export function ImageModelPreferencePopover({
                 >
                   {selected ? <CheckIcon className="size-3" strokeWidth={2.5} /> : null}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-fg">
-                    {m.displayName}
-                  </span>
-                  <span className="block truncate text-[11.5px] text-fg-muted">
-                    {m.description}
-                  </span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
+                  {m.displayName}
                 </span>
-                <span className="data-label shrink-0 text-fg-muted">
-                  {describeCapabilities(modelCapabilities(m))}
-                </span>
+                {modelNote(m.id) ? (
+                  <span className="shrink-0 text-[11.5px] text-fg-muted">{modelNote(m.id)}</span>
+                ) : null}
               </button>
             );
           })

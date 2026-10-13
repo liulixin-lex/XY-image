@@ -10,7 +10,7 @@
  */
 import type { ReactNode } from "react";
 
-import { describeCapabilities, modelCapabilities } from "./image-model-meta";
+import { modelNote } from "./image-model-meta";
 import type { ImageModelInfo } from "./server-api";
 
 export type ModelRef = string;
@@ -72,9 +72,10 @@ export function spansSeveralKeys(models: readonly ImageModelInfo[]): boolean {
 }
 
 /** 「Key 名 · 分组」 for the key a model comes through. */
-export function keyLabel(model: Pick<ImageModelInfo, "keyName" | "groupName" | "keyId">): string {
-  const name = model.keyName?.trim() || (model.keyId ? `Key ${model.keyId}` : "当前 Key");
-  return model.groupName ? `${name} · ${model.groupName}` : name;
+export function keyLabel(model: Pick<ImageModelInfo, "keyName" | "keyId">): string {
+  // The key's own name only: its main-site group usually repeats it
+  // (「gpt4k · gpt-4k」), so lists showed both for nothing (第 62 条).
+  return model.keyName?.trim() || (model.keyId ? `Key ${model.keyId}` : "当前 Key");
 }
 
 /**
@@ -102,8 +103,9 @@ export type ModelOption = {
 
 /**
  * Picker options for image models, grouped by key when several keys are on.
- * `describe` replaces the default line (description · capabilities);
- * `unavailable` returns why a model can't be picked here (shown, disabled).
+ * The second line is the model's short note (「效果优先」) when it has one,
+ * `describe` replaces it; `unavailable` returns why a model can't be picked
+ * here (shown, disabled).
  */
 export function imageModelOptions(
   models: readonly ImageModelInfo[],
@@ -115,12 +117,12 @@ export function imageModelOptions(
   const grouped = spansSeveralKeys(models);
   return models.map((m) => {
     const reason = options.unavailable?.(m) ?? null;
+    const description = reason ?? options.describe?.(m) ?? modelNote(m.id);
     return {
       value: modelRef(m),
       text: modelLabel(m, models),
       label: m.displayName,
-      description:
-        reason ?? options.describe?.(m) ?? `${m.description} · ${describeCapabilities(modelCapabilities(m))}`,
+      ...(description ? { description } : {}),
       ...(reason ? { disabled: true } : {}),
       ...(grouped ? { group: { key: String(m.keyId ?? ""), label: keyLabel(m) } } : {}),
     };

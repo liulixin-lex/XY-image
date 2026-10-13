@@ -51,7 +51,6 @@ import {
   modelLabel,
   modelRef,
   modelRequest,
-  spansSeveralKeys,
 } from "@/lib/image-model-ref";
 import { withBrand } from "@/lib/brand-prompt";
 import type { PendingDraft } from "@/lib/pending-prompt";
@@ -286,7 +285,6 @@ export const Composer = forwardRef<
     () => (current ? [current, ...extras] : []),
     [current, extras],
   );
-  const severalKeys = spansSeveralKeys(models);
   // Still reading the list or the saved default: the picker says so instead
   // of 「没有可用模型」 for the first few hundred ms of every visit.
   const modelPending = models.length === 0 ? modelsLoading : !accountSettled;
@@ -525,21 +523,13 @@ export const Composer = forwardRef<
     textareaRef.current?.focus({ preventScroll: true });
   };
 
-  const describeModel = useCallback(
-    (m: ImageModelInfo) => `${m.description} · 最高 ${modelCapabilities(m).resolutions.at(-1) ?? "1K"}`,
-    [],
-  );
-  const modelOptions = useMemo(
-    () => imageModelOptions(models, { describe: describeModel }),
-    [models, describeModel],
-  );
+  const modelOptions = useMemo(() => imageModelOptions(models), [models]);
   // Models that can join: not picked yet, and able to take the references.
   const extraOptions = useMemo(
     () =>
       imageModelOptions(
         models.filter((m) => m !== current && !extras.includes(m)),
         {
-          describe: describeModel,
           unavailable: (m) => {
             const limit = modelCapabilities(m).maxInputImages;
             if (refCount > limit) return limit === 0 ? "不支持参考图" : `最多 ${limit} 张参考图`;
@@ -547,7 +537,7 @@ export const Composer = forwardRef<
           },
         },
       ),
-    [models, current, extras, describeModel, refCount],
+    [models, current, extras, refCount],
   );
   const canAddModel =
     Boolean(current) && extraOptions.length > 0 && selectedModels.length < IMAGE_MODELS_PER_REQUEST_MAX;
@@ -585,9 +575,6 @@ export const Composer = forwardRef<
               popupClassName="w-[320px]"
             />
           </Field>
-          {current && severalKeys ? (
-            <p className="mt-1.5 pl-[52px] text-[12px] text-fg-muted">经由 {keyLabel(current)}</p>
-          ) : null}
           {extras.length > 0 || canAddModel ? (
             <SideBySide
               extras={extras}

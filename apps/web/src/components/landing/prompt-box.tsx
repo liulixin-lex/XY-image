@@ -125,7 +125,9 @@ export const PromptBox = forwardRef<
         <span className="hidden min-w-0 flex-1 truncate pl-1 text-[12.5px] text-fg-muted md:block">
           {user ? "会带着这段描述打开生图页" : "先用主站账号登录，写好的内容会保留"}
         </span>
-        <Button type="submit" variant="accent" size="poster" slant className="ml-auto">
+        <Button type="submit" variant="accent" size="poster" slant className="relative ml-auto overflow-hidden">
+          {/* A glint now and then marks the way in (第 62 条, globals.css star-glint). */}
+          <span aria-hidden className="star-glint" />
           开始生成
           <ArrowRightIcon strokeWidth={2.4} />
         </Button>

@@ -21,7 +21,7 @@ import {
   preferredChatModelId,
 } from "@/lib/chat-models";
 import { describeIssue } from "@/lib/generation-errors";
-import { describeCapabilities, modelCapabilities } from "@/lib/image-model-meta";
+import { modelNote } from "@/lib/image-model-meta";
 import {
   findModel,
   imageModelOptions,
@@ -116,19 +116,18 @@ export function ModelsTab() {
             popupClassName="w-[340px]"
           />
           <ul className="mt-6 max-w-xl divide-y divide-line border-y border-line">
-            {imageModels.map((m) => (
-              <li key={modelRef(m)} className="flex items-center gap-4 py-2.5 text-[13px]">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-fg">{m.displayName}</span>
-                  <span className="block truncate text-[12px] text-fg-muted">
-                    {severalKeys ? `${keyLabel(m)} · ${m.description}` : m.description}
-                  </span>
-                </span>
-                <span className="data-label shrink-0 text-fg-soft">
-                  {describeCapabilities(modelCapabilities(m))}
-                </span>
-              </li>
-            ))}
+            {imageModels.map((m) => {
+              const note = modelNote(m.id);
+              return (
+                <li key={modelRef(m)} className="flex items-baseline gap-3 py-2.5 text-[13px]">
+                  <span className="min-w-0 truncate font-medium text-fg">{m.displayName}</span>
+                  {note ? <span className="shrink-0 text-[12px] text-fg-muted">{note}</span> : null}
+                  {severalKeys ? (
+                    <span className="ml-auto shrink-0 truncate pl-3 text-[12px] text-fg-muted">{keyLabel(m)}</span>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </ModelPickerBlock>
       </SettingsSection>

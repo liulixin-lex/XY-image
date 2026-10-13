@@ -359,7 +359,7 @@ export default function SkillsPage() {
     <div>
       <PageHeader
         title="技能"
-        description="技能是设计助手的做法，对话时按需调用；生图模板填几个空就写好提示词，直接在生图页用。"
+        description="教设计助手怎么做事的说明书，对话时按需调用。"
         className="pb-5"
       />
       <div className="mx-auto max-w-[1600px] pb-12 gutter-x">

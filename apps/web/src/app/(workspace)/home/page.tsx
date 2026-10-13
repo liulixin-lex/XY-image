@@ -19,6 +19,7 @@ import { useToast } from "@/components/toast";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { type ReadyAttachment, useImageAttachments } from "@/hooks/use-image-attachments";
+import { useTilt } from "@/hooks/use-tilt";
 import { useAuth } from "@/lib/auth-context";
 import { ApiAuthError, fetchProjects } from "@/lib/server-api";
 import { STARTER_PROMPTS } from "@/lib/starter-prompts";
@@ -34,6 +35,8 @@ export default function HomePage() {
 
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [projectsFailed, setProjectsFailed] = useState(false);
+  const tiltRoot = useRef<HTMLDivElement>(null);
+  useTilt(tiltRoot, { max: 4, ready: projects !== null });
 
   const handleDeleted = useCallback((id: string) => {
     setProjects((prev) => prev?.filter((p) => p.id !== id) ?? prev);
@@ -169,7 +172,7 @@ export default function HomePage() {
         {projectsFailed ? (
           <p className="mb-5 text-[13px] text-fg-soft">项目列表暂时读不到，刷新页面重试。</p>
         ) : null}
-        <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
+        <div ref={tiltRoot} className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
           <NewProjectCard onClick={() => void createNewProject()} disabled={creating} />
           {projects === null
             ? Array.from({ length: 3 }, (_, i) => (

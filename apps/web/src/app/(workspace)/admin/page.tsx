@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { useCountUp } from "@/hooks/use-count-up";
 import { useAccount } from "@/lib/account-context";
 import { fetchAdminStorage } from "@/lib/admin-api";
 import { useAuth } from "@/lib/auth-context";
@@ -95,7 +96,7 @@ export default function AdminPage() {
     <div className="pb-16">
       <PageHeader
         title="管理"
-        description="存储与告警：磁盘还剩多少、被什么占着，告警什么时候发生。"
+        description="磁盘、存储占用和告警。"
       />
       <div className="mx-auto max-w-[1600px] gutter-x">
         {account.loading && !account.data ? null : !isAdmin ? (
@@ -179,7 +180,7 @@ function Storage({
                     : "text-fg",
               )}
             >
-              {latest.percent.toFixed(1)}
+              <CountUp value={latest.percent} />
             </span>
             <span className="text-[15px] text-fg-soft">% 已用</span>
           </p>
@@ -197,11 +198,8 @@ function Storage({
             />
           </dl>
           <p className="mt-4 text-[12.5px] text-fg-muted">
-            {ago(latest.sampledAt)}采样 · 超过 {thresholds.warnPercent}%
-            提醒，超过 {thresholds.criticalPercent}% 为严重 ·{" "}
-            {data.webhook
-              ? "告警会推送到已配置的 webhook"
-              : "没有配置告警推送，告警只在这里和顶部提示"}
+            {ago(latest.sampledAt)}采样 · {thresholds.warnPercent}% 提醒 · {thresholds.criticalPercent}% 严重 ·{" "}
+            {data.webhook ? "会推送到 webhook" : "未配置推送"}
           </p>
         </section>
 
@@ -215,8 +213,8 @@ function Storage({
           <Breakdown sample={latest} />
           <p className="mt-4 text-[12.5px] leading-relaxed text-fg-muted">
             {latest.objectStorage === "s3"
-              ? "图片文件存在 R2 对象存储，不占这台机器的磁盘；上面的图片大小是对象存储里的用量。"
-              : "图片文件存在这台机器的磁盘上。改用 R2 对象存储后，它们不再占本机磁盘（见自建手册「对象存储」）。"}
+              ? "图片在 R2 对象存储，不占本机磁盘。"
+              : "图片在本机磁盘；改用 R2 对象存储后不再占用（见自建手册「对象存储」）。"}
           </p>
         </section>
       </div>
@@ -256,6 +254,11 @@ function Storage({
   );
 }
 
+/** The big percentage, counting up once when the page opens. */
+function CountUp({ value }: { value: number }) {
+  return <>{useCountUp(value).toFixed(1)}</>;
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -282,10 +285,7 @@ function Gauge({
       aria-label="磁盘已用"
     >
       <div
-        className={cn(
-          "h-full rounded-full transition-[width] duration-700",
-          tone,
-        )}
+        className={cn("grow-x h-full rounded-full", tone)}
         style={{ width: `${Math.min(100, percent)}%` }}
       />
       {[warn, critical].map((line) => (
@@ -310,7 +310,7 @@ function Breakdown({ sample }: { sample: DiskSample }) {
   const max = Math.max(1, ...rows.map((row) => row.value));
   return (
     <ul className="mt-4 flex flex-col gap-3">
-      {rows.map((row) => (
+      {rows.map((row, index) => (
         <li
           key={row.label}
           className="grid grid-cols-[7.5em_1fr_auto] items-center gap-3 text-[13px]"
@@ -318,8 +318,8 @@ function Breakdown({ sample }: { sample: DiskSample }) {
           <span className="text-fg-soft">{row.label}</span>
           <span className="h-2 overflow-hidden rounded-full bg-tint/[0.06]">
             <span
-              className="block h-full rounded-full bg-acc/70"
-              style={{ width: `${(row.value / max) * 100}%` }}
+              className="grow-x block h-full rounded-full bg-acc/70"
+              style={{ width: `${(row.value / max) * 100}%`, "--stagger": index } as React.CSSProperties}
             />
           </span>
           <span className="font-semibold text-fg tabular">
@@ -378,10 +378,18 @@ function Trend({
             vectorEffect="non-scaling-stroke"
           />
         ))}
+        <defs>
+          <linearGradient id="trend-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--acc)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--acc)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={`0,${height} ${points} ${width},${height}`} fill="url(#trend-fill)" className="animate-ambient-in" />
         <polyline
           points={points}
+          pathLength={1}
           fill="none"
-          className="stroke-acc"
+          className="draw-line stroke-acc"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
