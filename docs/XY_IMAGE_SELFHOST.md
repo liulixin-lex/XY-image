@@ -231,11 +231,12 @@ node deploy/selfhost/object-storage.mjs prune-local --dir "$D"                  
 node deploy/selfhost/object-storage.mjs prune-local --dir "$D" --yes             # 删掉本机副本，腾出磁盘
 ```
 
-- `switch --to s3` 会先补复制、再核对，桶里缺对象就拒绝切换；然后把密钥写进部署目录的 `.env`（`XY_S3_*`，600），`compose.json` 里只放 `${XY_S3_*}` 引用，`server.env` 写 `LOOMIC_OBJECT_STORAGE=s3`，旧的 `compose.json` 备份在 `<部署目录>/object-storage/`；只重建 storage 容器（几秒钟上传会失败，Worker 会把生成好的图留着、恢复后再存），最后把重启那几秒里写到本机的对象补到桶里，再核对一遍。之后的命令不用再给 `--credentials`。
+- `switch --to s3` 会先补复制、再核对，桶里缺对象就拒绝切换；然后把密钥写进部署目录的 `.env`（`XY_S3_*`，600），`compose.json` 里只放 `${XY_S3_*}` 引用，`server.env` 写 `LOOMIC_OBJECT_STORAGE=s3`，旧的 `compose.json` 备份在 `<部署目录>/object-storage/`；只重建 storage 容器（实验环境实测读图和上传有一两秒返回 503，Worker 会把生成好的图留着、恢复后再存；尽量挑没人在生图的时候切），最后把重启那几秒里写到本机的对象补到桶里，再核对一遍。之后的命令不用再给 `--credentials`。
 - `LOOMIC_OBJECT_STORAGE` 只影响 管理 页的说明文字，下次部署重启 xy-api、xy-worker 时生效，不用为它单独重启。
 - 切到桶以后关掉了图片变换（`ENABLE_IMAGE_TRANSFORMATION=false`）：imgproxy 只会读本机文件，网站也从来不用变换后的图。
 - `prune-local` 只删「桶里有、大小一样」的本机文件；没有数据库记录的文件不碰。
 - 回退：`switch --to local` 先把桶里的对象（包括切换后新传的）复制回本机，再切回文件后端。桶里的副本留着。
+- 实验环境验证（10-13，S3Mock 代替 R2）：复制 1383 个对象（61 MiB）→ 核对 1383/1383 → 切到桶 → `prune-local --yes` 删光本机副本后图片照常 200 → 在桶后端上跑全量回归 29 项通过 → `switch --to local` 复制回 1459 个对象、核对 1459/1459，图片照常。
 - 新部署可以一开始就用桶：`prepare.mjs … --object-storage s3 --s3-credentials /root/xy-r2.env`。
 - 部署有额外的 compose 文件时（实验环境的 `lab.override.json`），设 `XY_COMPOSE_OVERRIDE=<绝对路径>`，不然重建 storage 会丢掉里面的设置。
 - 工具不打印密钥：复制程序在 storage 容器里运行（用 Storage API 自带的 AWS SDK、pg、fs-xattr），密钥从标准输入传进去，不在命令行参数和环境变量里。
