@@ -21,6 +21,14 @@ export type ChatProviderErrorCode = keyof typeof messages;
 
 export class ChatProviderError extends Error {
   modelsEndpointMissing = false;
+  /** The provider's HTTP status, when it answered (mapProviderStatus). */
+  upstreamStatus?: number;
+  /**
+   * What a 4xx said it could not take, as a fixed word: never the
+   * provider's own text, which may echo the user's key (agent/
+   * model-options.ts reads it to drop the option and call again).
+   */
+  refusedOption?: "web_search" | "effort";
   constructor(
     readonly code: ChatProviderErrorCode,
     readonly statusCode = 400,
@@ -53,6 +61,12 @@ export function mapProviderStatus(status: number, body = "", models = false) {
             : "provider_unavailable";
   const error = new ChatProviderError(code);
   error.modelsEndpointMissing = models && status === 404;
+  error.upstreamStatus = status;
+  if (status >= 400 && status < 500) {
+    if (/web[_ ]?search|hosted tool|tool type|unsupported tool|search tool/i.test(body))
+      error.refusedOption = "web_search";
+    else if (/reasoning|effort|thinking/i.test(body)) error.refusedOption = "effort";
+  }
   return error;
 }
 export function mapProviderConnectionError(error: unknown): ChatProviderError {

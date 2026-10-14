@@ -52,6 +52,8 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   screenshot_canvas: { label: "\u622a\u53d6\u753b\u5e03", icon: "eye", showCard: true },
   get_brand_kit: { label: "读取品牌套件", icon: "palette", showCard: true },
   project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
+  // 第 67 条: the model's built-in web search (run at the main site).
+  web_search: { label: "联网搜索", icon: "search", showCard: true },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
   // deepagents' built-in file tools: the assistant reading skill notes or
   // keeping scratch files. Raw file text means nothing to the user, so only
@@ -194,6 +196,16 @@ export function describeToolResult(
       const errors = Array.isArray(output.errors) ? output.errors.length : 0;
       if (!applied && errors) return `${errors} 处改动没有成功`;
       return errors ? `改了 ${applied} 处，${errors} 处没有成功` : `改了 ${applied} 处`;
+    }
+    case "web_search": {
+      const sources = Array.isArray(output.sources) ? output.sources.length : 0;
+      const what =
+        output.action === "open_page"
+          ? "打开了一个网页"
+          : output.action === "find_in_page"
+            ? `在网页里查找${typeof output.pattern === "string" ? `「${output.pattern}」` : ""}`
+            : `搜索${typeof output.query === "string" ? `「${output.query}」` : "了网页"}`;
+      return sources ? `${what}，看了 ${sources} 个来源` : what;
     }
     case "project_search": {
       const matches = count(output.matchCount);

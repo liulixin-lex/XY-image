@@ -8,8 +8,21 @@ export function createCustomChatModel(options: {
   model: string;
   baseUrl: string;
   transport: typeof fetch;
+  /**
+   * 第 67 条 思考强度: sent as reasoning_effort (low/medium/high on the chat
+   * panel for personal providers). "auto"/"off" send nothing. A provider
+   * that refuses it is called again without (agent/model-options.ts).
+   * No prompt_cache_key here: some providers refuse unknown fields.
+   */
+  effort?: string;
+  promptCacheKey?: string;
 }) {
+  const effort =
+    options.effort && options.effort !== "auto" && options.effort !== "off"
+      ? options.effort
+      : undefined;
   return new ChatOpenAICompletions({
+    ...(effort ? { modelKwargs: { reasoning_effort: effort } } : {}),
     model: options.model,
     apiKey: "loomic-transport-credential",
     configuration: {

@@ -7,6 +7,7 @@ import type { MessageMention } from "@loomic/shared";
 import { ATTACHMENT_ACCEPT, type ImageAttachmentState } from "../hooks/use-image-attachments";
 import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { AgentChatOptions } from "./agent-chat-options";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
@@ -285,6 +286,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               </>
             )}
             <AgentModelSelector compact />
+            <AgentChatOptions />
             <div className="relative">
               <button
                 ref={modelBtnRef}

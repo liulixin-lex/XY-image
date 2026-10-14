@@ -45,6 +45,8 @@ vi.mock("../src/components/issues/issue-provider", () => ({
   useIssues: () => ({ report: vi.fn(), reportCode: reportCodeMock }),
 }));
 
+const chatModelsState = vi.hoisted(() => ({ data: [] as unknown[] }));
+
 vi.mock("../src/lib/account-context", () => ({
   useAccount: () => ({
     account: { data: null, loading: false, error: null },
@@ -54,7 +56,7 @@ vi.mock("../src/lib/account-context", () => ({
     imageModels: { data: [], loading: false, error: null },
   }),
   useImageModels: () => ({ data: [], loading: false, error: null, refresh: vi.fn() }),
-  useChatModels: () => ({ data: [], loading: false, error: null, xy2apiError: null, refresh: vi.fn() }),
+  useChatModels: () => ({ data: chatModelsState.data, loading: false, error: null, xy2apiError: null, refresh: vi.fn() }),
 }));
 
 function createMockWs(): WebSocketHandle {
@@ -152,6 +154,68 @@ describe("ChatSidebar", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("sends 思考强度 and 联网搜索 with a run, as the model takes them (第 67 条)", async () => {
+    chatModelsState.data = [
+      { id: "openai:gpt-6.1-sol", name: "gpt-6.1-sol", provider: "openai", source: "xy2api", billing: "xy2api" },
+      { id: "openai:gemini-3.8-flash", name: "gemini-3.8-flash", provider: "openai", source: "xy2api", billing: "xy2api" },
+    ];
+    localStorage.setItem("xy:agent-model", "openai:gpt-6.1-sol");
+    localStorage.setItem("xy:agent-effort", "max");
+    try {
+      render(
+        <ToastProvider>
+          <ChatSidebar accessToken="token_abc" canvasId="canvas-1" open onToggle={() => {}} ws={mockWs} />
+        </ToastProvider>,
+      );
+      expect(await screen.findByRole("combobox", { name: "思考强度：最高" })).toBeTruthy();
+      const globe = screen.getByRole("button", { name: "联网搜索" });
+      expect(globe.getAttribute("aria-pressed")).toBe("true");
+      await userEvent.click(globe);
+      expect(globe.getAttribute("aria-pressed")).toBe("false");
+      expect(localStorage.getItem("xy:agent-web-search")).toBe("off");
+
+      const input = await screen.findByPlaceholderText(/说说你想做什么/);
+      await userEvent.type(input, "做一张海报{Enter}");
+      await waitFor(() =>
+        expect(mockWs.startRun).toHaveBeenCalledWith(
+          expect.objectContaining({
+            model: "openai:gpt-6.1-sol",
+            effort: "max",
+            webSearch: false,
+          }),
+          expect.any(Function),
+        ),
+      );
+    } finally {
+      localStorage.removeItem("xy:agent-model");
+      localStorage.removeItem("xy:agent-effort");
+      localStorage.removeItem("xy:agent-web-search");
+      chatModelsState.data = [];
+    }
+  });
+
+  it("shows the level a model runs at and no globe where search is not built in", async () => {
+    chatModelsState.data = [
+      { id: "openai:gemini-3.8-flash", name: "gemini-3.8-flash", provider: "openai", source: "xy2api", billing: "xy2api" },
+    ];
+    localStorage.setItem("xy:agent-model", "openai:gemini-3.8-flash");
+    localStorage.setItem("xy:agent-effort", "max");
+    try {
+      render(
+        <ToastProvider>
+          <ChatSidebar accessToken="token_abc" canvasId="canvas-1" open onToggle={() => {}} ws={mockWs} />
+        </ToastProvider>,
+      );
+      // Gemini stops at 高: 最高 runs as 高.
+      expect(await screen.findByRole("combobox", { name: "思考强度：高" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "联网搜索" })).toBeNull();
+    } finally {
+      localStorage.removeItem("xy:agent-model");
+      localStorage.removeItem("xy:agent-effort");
+      chatModelsState.data = [];
+    }
   });
 
   function renderWithEvents(ackLater = false) {

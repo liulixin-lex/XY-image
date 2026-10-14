@@ -21,6 +21,13 @@
 //   [[mock:imagedelay=20000]]  in a chat message: the generate_image call the
 //                        scripted model makes sleeps that long; the chat reply
 //                        itself is not delayed (stopping a run mid-generation)
+//   [[mock:websearch]]   in a chat message on /v1/responses with the hosted
+//                        web_search tool offered: the reply starts with a
+//                        finished web_search_call item (第 67 条 联网搜索)
+//   Chat requests record what they asked for (第 67 条): `chatOptions` in
+//   /__mock/requests has reasoning / reasoning_effort, whether a
+//   prompt_cache_key came (never its value), stream_options and the hosted
+//   tool types offered.
 //   [[mock:badtool]]     in a chat message: the scripted model first calls
 //                        generate_image with an argument the tool's schema
 //                        rejects (placementX: "left"), reads the error the
@@ -354,7 +361,21 @@ function usageFor(text) {
   };
 }
 
+function chatOptionsOf(body) {
+  const hosted = (Array.isArray(body.tools) ? body.tools : [])
+    .filter((t) => t && typeof t.type === "string" && t.type !== "function" && !t.name)
+    .map((t) => t.type);
+  return {
+    ...(body.reasoning !== undefined ? { reasoning: body.reasoning } : {}),
+    ...(body.reasoning_effort !== undefined ? { reasoning_effort: body.reasoning_effort } : {}),
+    cacheKey: typeof body.prompt_cache_key === "string" && body.prompt_cache_key !== "",
+    ...(body.stream_options !== undefined ? { stream_options: body.stream_options } : {}),
+    ...(hosted.length ? { hostedTools: hosted } : {}),
+  };
+}
+
 async function handleChatCompletions(req, res, body, ctx) {
+  ctx.chatOptions = chatOptionsOf(body);
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const last = messages.at(-1) ?? {};
   const lastUser = [...messages].reverse().find((m) => m?.role === "user");
@@ -486,6 +507,7 @@ function responsesInputText(input) {
 }
 
 async function handleResponses(req, res, body, ctx) {
+  ctx.chatOptions = chatOptionsOf(body);
   const { lastRole, lastText, toolOutputs } = responsesInputText(body.input);
   const d = directives(lastText);
   ctx.directives = d;
@@ -559,6 +581,25 @@ async function handleResponses(req, res, body, ctx) {
   emit("response.created", {
     response: { ...response, status: "in_progress", output: [], usage: null },
   });
+  // [[mock:websearch]] with the hosted tool offered and the model about to
+  // answer in text: one finished search first (the shape OpenAI streams).
+  const searched =
+    d.websearch &&
+    item.type === "message" &&
+    (ctx.chatOptions.hostedTools ?? []).includes("web_search");
+  if (searched) {
+    const search = {
+      id: `ws_${randomUUID().slice(0, 8)}`,
+      type: "web_search_call",
+      status: "completed",
+      action: { type: "search", query: "mock 联网搜索", sources: [{ type: "url", url: "https://example.com/mock-source" }] },
+    };
+    emit("response.output_item.added", { output_index: 0, item: { ...search, status: "in_progress" } });
+    emit("response.web_search_call.completed", { output_index: 0, item_id: search.id });
+    emit("response.output_item.done", { output_index: 0, item: search });
+    response.output = [search, item];
+    ctx.webSearch = true;
+  }
   if (item.type === "function_call") {
     emit("response.output_item.added", {
       output_index: 0,

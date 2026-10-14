@@ -279,6 +279,9 @@ async function authenticateAndBind(
                 : {}),
               ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
               ...(p.model !== undefined ? { model: p.model } : {}),
+              // 第 67 条: 思考强度 / 联网搜索 (agent/model-options.ts).
+              ...(p.effort !== undefined ? { effort: p.effort } : {}),
+              ...(p.webSearch !== undefined ? { webSearch: p.webSearch } : {}),
             },
             agentRuns,
             connectionManager,

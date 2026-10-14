@@ -429,6 +429,11 @@ export class DeliveryPendingError extends BillingGuardError {
 }
 
 export class GatewayError extends BillingGuardError {
+  /**
+   * Raised inside a chat stream after text or tool arguments had already
+   * reached the page (agent/tool-call-stream.ts); never resent.
+   */
+  afterOutput?: boolean;
   constructor(readonly failure: GatewayFailure) {
     super(
       failure.code,

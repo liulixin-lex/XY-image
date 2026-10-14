@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
+import { chatEffortSchema } from "./chat-options.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.string().datetime({ offset: true });
@@ -83,6 +84,10 @@ export const runCreateRequestSchema = z.object({
   mentions: z.array(messageMentionSchema).optional(),
   accessToken: z.string().optional(),
   model: z.string().optional(),
+  /** 第 67 条: 思考强度; missing or "auto" sends none (chat-options.ts). */
+  effort: chatEffortSchema.optional(),
+  /** 第 67 条: built-in web search; ignored for models without it. */
+  webSearch: z.boolean().optional(),
 });
 
 export const runCreateResponseSchema = z.object({
