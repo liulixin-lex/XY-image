@@ -14,3 +14,4 @@ export * from "./skill-contracts.js";
 export * from "./ws-protocol.js";
 
 export * from "./chat-models.js";
+export * from "./chat-options.js";

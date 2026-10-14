@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
+  ChatEffort,
   ContentBlock,
   ImageArtifact,
   ImageGenerationPreference,
@@ -41,6 +42,7 @@ import {
   type MessageMentionPickerItem,
 } from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
+import { readChatOptions } from "../hooks/use-chat-options";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
 import { LiveDot } from "./ambient/live-dot";
@@ -86,6 +88,12 @@ class RunLostError extends Error {
 }
 const RUN_LOST_TEXT =
   "连接断开期间这条回复没有完成，需要的话可以再发一次。";
+
+/** 思考强度 / 联网搜索 for a run, read when it is sent (use-chat-options.ts). */
+function chatRunOptions(): { effort?: ChatEffort; webSearch: boolean } {
+  const { effort, webSearch } = readChatOptions();
+  return { ...(effort !== "auto" ? { effort } : {}), webSearch };
+}
 
 export function ChatSidebar({
   accessToken,
@@ -635,6 +643,8 @@ export function ChatSidebar({
               ...(agentModelRef.current
                 ? { model: agentModelRef.current }
                 : {}),
+              // 第 67 条: sent as asked; the server keeps what the model takes.
+              ...chatRunOptions(),
             },
             (ack) => {
               clearTimeout(timeout);

@@ -99,6 +99,36 @@ export async function* adaptDeepAgentStream(
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
 
+        // 第 67 条: a search the model ran with the hosted web_search tool
+        // (Responses API output item, finished). Shown as a 联网搜索 tool
+        // block; the search itself ran at the main site, nothing ran here.
+        for (const search of webSearchCalls(chunk)) {
+          if (seenStartedToolCalls.has(search.id)) continue;
+          seenStartedToolCalls.add(search.id);
+          seenCompletedToolCalls.add(search.id);
+          produced = true;
+          console.info(
+            `[agent-tool] run ${options.runId} web_search ${search.action} ${search.status}`,
+          );
+          yield {
+            runId: options.runId,
+            timestamp: now(),
+            toolCallId: search.id,
+            toolName: "web_search",
+            input: search.input,
+            type: "tool.started",
+          };
+          yield {
+            output: search.output,
+            outputSummary: search.summary,
+            runId: options.runId,
+            timestamp: now(),
+            toolCallId: search.id,
+            toolName: "web_search",
+            type: "tool.completed",
+          };
+        }
+
         // Skip chunks that are tool calls (no text to emit)
         if (
           AIMessageChunkClass.isInstance(chunk) ||
@@ -116,22 +146,16 @@ export async function* adaptDeepAgentStream(
         // Handle array content (e.g. Gemini thinking + text blocks)
         if (Array.isArray(content)) {
           for (const part of content) {
-            if (
-              part &&
-              typeof part === "object" &&
-              "type" in part &&
-              part.type === "thinking" &&
-              "thinking" in part &&
-              typeof part.thinking === "string" &&
-              part.thinking
-            ) {
-              yield {
-                type: "thinking.delta" as const,
-                runId: options.runId,
-                messageId,
-                delta: part.thinking,
-                timestamp: now(),
-              };
+            const thinking = thinkingText(part);
+            if (thinking !== undefined) {
+              if (thinking)
+                yield {
+                  type: "thinking.delta" as const,
+                  runId: options.runId,
+                  messageId,
+                  delta: thinking,
+                  timestamp: now(),
+                };
             } else {
               const text =
                 typeof part === "string"
@@ -400,14 +424,113 @@ function describeModelTurn(msg: AIMessage | AIMessageChunk): string {
   const finish =
     meta.finish_reason ?? meta.stop_reason ?? meta.status ?? meta.finishReason ?? "?";
   // Read loosely: the message union narrows usage_metadata to never here.
-  const usage = (msg as unknown as { usage_metadata?: { output_tokens?: number } })
-    .usage_metadata;
+  const usage = (
+    msg as unknown as {
+      usage_metadata?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        input_token_details?: { cache_read?: number };
+        output_token_details?: { reasoning?: number };
+      };
+    }
+  ).usage_metadata;
   const content = msg.content;
   const types = Array.isArray(content)
     ? [...new Set(content.map((part) => (typeof part === "string" ? "string" : String((part as { type?: unknown }).type ?? "?"))))].join("+")
     : typeof content;
   const text = extractChunkText(msg)?.length ?? 0;
-  return `finish=${String(finish)} tool_calls=${msg.tool_calls?.length ?? 0} invalid_tool_calls=${msg.invalid_tool_calls?.length ?? 0} text=${text} out_tokens=${usage?.output_tokens ?? "?"} content=${types || "empty"}`;
+  // 第 67 条: in / cached (prompt cache hits) / reasoning tokens, to see
+  // whether the stable prefix is being cached.
+  const cached = usage?.input_token_details?.cache_read;
+  const reasoning = usage?.output_token_details?.reasoning;
+  return `finish=${String(finish)} tool_calls=${msg.tool_calls?.length ?? 0} invalid_tool_calls=${msg.invalid_tool_calls?.length ?? 0} text=${text} in_tokens=${usage?.input_tokens ?? "?"} cached=${cached ?? "?"} out_tokens=${usage?.output_tokens ?? "?"}${reasoning ? ` reasoning=${reasoning}` : ""} content=${types || "empty"}`;
+}
+
+/**
+ * Text of a reasoning content part: Gemini-style `{type:"thinking",
+ * thinking}` and LangChain's Responses API `{type:"reasoning", reasoning}`
+ * (OpenAI reasoning summaries, asked for since 第 67 条). Undefined when the
+ * part is not reasoning.
+ */
+export function thinkingText(part: unknown): string | undefined {
+  if (!part || typeof part !== "object" || !("type" in part)) return undefined;
+  const p = part as Record<string, unknown>;
+  if (p.type === "thinking")
+    return typeof p.thinking === "string" ? p.thinking : "";
+  if (p.type === "reasoning")
+    return typeof p.reasoning === "string" ? p.reasoning : "";
+  return undefined;
+}
+
+type WebSearchCall = {
+  id: string;
+  action: string;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  summary: string;
+};
+
+/**
+ * Hosted web_search calls finished in this chunk (LangChain puts the
+ * Responses API `web_search_call` output item in additional_kwargs
+ * .tool_outputs). Action `search` has a query (and, when asked for, the
+ * sources), `open_page` a url, `find_in_page` a pattern and url.
+ */
+export function webSearchCalls(chunk: unknown): WebSearchCall[] {
+  const outputs = (
+    chunk as { additional_kwargs?: { tool_outputs?: unknown } } | undefined
+  )?.additional_kwargs?.tool_outputs;
+  if (!Array.isArray(outputs)) return [];
+  const calls: WebSearchCall[] = [];
+  for (const raw of outputs) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    if (item.type !== "web_search_call" || typeof item.id !== "string") continue;
+    const action = (item.action ?? {}) as Record<string, unknown>;
+    const kind = typeof action.type === "string" ? action.type : "search";
+    const query = typeof action.query === "string" ? action.query.slice(0, 200) : undefined;
+    const url = typeof action.url === "string" ? action.url.slice(0, 300) : undefined;
+    const pattern = typeof action.pattern === "string" ? action.pattern.slice(0, 120) : undefined;
+    const sources = Array.isArray(action.sources)
+      ? action.sources
+          .flatMap((s) =>
+            s && typeof s === "object" && typeof (s as { url?: unknown }).url === "string"
+              ? [{ url: String((s as { url: string }).url).slice(0, 300) }]
+              : [],
+          )
+          .slice(0, 10)
+      : [];
+    const input = {
+      action: kind,
+      ...(query ? { query } : {}),
+      ...(url ? { url } : {}),
+      ...(pattern ? { pattern } : {}),
+    };
+    const summary =
+      kind === "open_page"
+        ? `打开网页${url ? ` ${hostOf(url)}` : ""}`
+        : kind === "find_in_page"
+          ? `在网页里查找${pattern ? `「${pattern}」` : ""}`
+          : `搜索${query ? `「${query}」` : "网页"}`;
+    calls.push({
+      id: item.id,
+      action: kind,
+      status: typeof item.status === "string" ? item.status : "completed",
+      input,
+      output: { ...input, status: item.status ?? "completed", ...(sources.length ? { sources } : {}) },
+      summary,
+    });
+  }
+  return calls;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url.slice(0, 60);
+  }
 }
 
 function toolMs(started: Map<string, number>, id: string): number {

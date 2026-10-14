@@ -14,6 +14,7 @@ import { adaptDeepAgentStream } from "./stream-adapter.js";
 import {
   createResponsesArgumentFiller,
   createToolCallIndexer,
+  normalizeResponsesEvent,
   separateToolCallIndexes,
   streamEventError,
 } from "./tool-call-stream.js";
@@ -554,5 +555,81 @@ describe("Responses function calls without argument deltas", () => {
     expect(fill({ type: "response.output_item.added", output_index: 2, item: item(2, false) })).toBeNull();
     expect(fill({ type: "response.function_call_arguments.delta", item_id: "fc_2", delta: "{\"x" })).toBeNull();
     expect(fill({ type: "response.function_call_arguments.done", item_id: "fc_2", arguments: args[2] })).toBeNull();
+  });
+});
+
+// 第 67 条, lab 2026-10-14: xy2api 0.2.5 serving /v1/responses from a
+// chat-completions account sent output_text parts without `annotations`;
+// LangChain mapped over them and the turn after a tool call failed with
+// "Cannot read properties of undefined (reading 'map')".
+describe("Responses streams converted from chat completions", () => {
+  const message = (text: string) => ({
+    id: "msg_1",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content: [{ type: "output_text", text }],
+  });
+  const converted = [
+    { type: "response.created", response: { id: "resp_1", model: "gpt-5.4", status: "in_progress" } },
+    { type: "response.output_item.added", output_index: 0, item: { ...message(""), content: [] } },
+    { type: "response.content_part.added", output_index: 0, item_id: "msg_1", content_index: 0, part: { type: "output_text", text: "" } },
+    { type: "response.output_text.delta", output_index: 0, item_id: "msg_1", content_index: 0, delta: "好的" },
+    { type: "response.output_item.done", output_index: 0, item: message("好的") },
+    {
+      type: "response.completed",
+      response: { id: "resp_1", model: "gpt-5.4", status: "completed", output: [message("好的")], usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 } },
+    },
+  ];
+  const model = (wrap: (response: Response) => Response) =>
+    new ChatOpenAI({
+      model: "gpt-5.4",
+      apiKey: "test",
+      configuration: { baseURL: "https://gw.test/v1", fetch: async () => wrap(sse(converted, { split: true })) },
+      streaming: true,
+      maxRetries: 0,
+      useResponsesApi: true,
+    });
+
+  it("breaks LangChain without the fix (the bug)", async () => {
+    await expect(model((r) => r).invoke("hi")).rejects.toThrow(/map/);
+  });
+
+  it("reads once the missing arrays are filled", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reply = await model(separateToolCallIndexes).invoke("hi");
+    expect(reply.text).toBe("好的");
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("only touches events that lack the arrays", () => {
+    const whole = { type: "response.output_item.done", item: { type: "message", content: [{ type: "output_text", text: "x", annotations: [] }] } };
+    expect(normalizeResponsesEvent(whole)).toBe(false);
+    expect(normalizeResponsesEvent({ choices: [] })).toBe(false);
+    const bare = { type: "response.completed", response: { id: "r" } };
+    expect(normalizeResponsesEvent(bare)).toBe(true);
+    expect(bare.response).toMatchObject({ output: [] });
+  });
+});
+
+describe("an error inside the stream, before and after output", () => {
+  it("is resendable only before anything reached the page", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = separateToolCallIndexes(
+      sse([{ type: "response.created", response: { id: "r1" } }, { type: "error", code: "server_error", message: "Codex is at capacity" }]),
+    );
+    const early = await first.text().catch((e: unknown) => e);
+    expect(early).toMatchObject({ code: "upstream_busy" });
+    expect((early as { afterOutput?: boolean }).afterOutput).toBeUndefined();
+    const second = separateToolCallIndexes(
+      sse([
+        { type: "response.output_text.delta", item_id: "m", output_index: 0, content_index: 0, delta: "半句" },
+        { type: "error", code: "server_error", message: "Codex is at capacity" },
+      ]),
+    );
+    const late = await second.text().catch((e: unknown) => e);
+    expect(late).toMatchObject({ code: "upstream_busy", afterOutput: true });
+    warn.mockRestore();
   });
 });

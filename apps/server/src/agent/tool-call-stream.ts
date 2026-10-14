@@ -156,6 +156,75 @@ export function streamEventError(payload: unknown): GatewayError | null {
   );
 }
 
+/**
+ * 第 67 条: fills the arrays LangChain's Responses converter maps over
+ * without checking. A gateway that serves the Responses API by converting
+ * a chat-completions upstream (lab xy2api 0.2.5 with an API-key account)
+ * sends output_text parts without `annotations`, and the turn after a tool
+ * call failed with "Cannot read properties of undefined (reading 'map')".
+ * Returns true when it changed the payload.
+ */
+export function normalizeResponsesEvent(payload: unknown): boolean {
+  const event = record(payload);
+  if (typeof event.type !== "string" || !event.type.startsWith("response."))
+    return false;
+  let changed = false;
+  const fixPart = (part: unknown) => {
+    const p = record(part);
+    if (p.type === "output_text" && !Array.isArray(p.annotations)) {
+      p.annotations = [];
+      changed = true;
+    }
+  };
+  const fixItem = (item: unknown) => {
+    const i = record(item);
+    if (i.type === "message") {
+      if (!Array.isArray(i.content)) {
+        i.content = [];
+        changed = true;
+      }
+      for (const part of i.content as unknown[]) fixPart(part);
+    }
+    if (i.type === "reasoning" && i.summary !== undefined && !Array.isArray(i.summary)) {
+      i.summary = [];
+      changed = true;
+    }
+  };
+  if ("part" in event) fixPart(event.part);
+  if ("item" in event) fixItem(event.item);
+  if (event.response && typeof event.response === "object") {
+    const response = record(event.response);
+    if (event.type === "response.completed" && !Array.isArray(response.output)) {
+      response.output = [];
+      changed = true;
+    }
+    if (Array.isArray(response.output)) for (const item of response.output) fixItem(item);
+  }
+  return changed;
+}
+
+/** Events that put visible output (text or tool arguments) on the page. */
+function carriesOutput(payload: unknown): boolean {
+  const event = record(payload);
+  if (
+    event.type === "response.output_text.delta" ||
+    event.type === "response.function_call_arguments.delta" ||
+    event.type === "response.reasoning_summary_text.delta"
+  )
+    return true;
+  const choices = (payload as { choices?: unknown } | null)?.choices;
+  return (
+    Array.isArray(choices) &&
+    choices.some((c) => {
+      const delta = record(record(c).delta);
+      return (
+        (typeof delta.content === "string" && delta.content !== "") ||
+        Array.isArray(delta.tool_calls)
+      );
+    })
+  );
+}
+
 /** Wraps a fetch Response; only `text/event-stream` bodies are rewritten. */
 export function separateToolCallIndexes(response: Response): Response {
   const type = response.headers.get("content-type") ?? "";
@@ -168,6 +237,8 @@ export function separateToolCallIndexes(response: Response): Response {
   let warned = false;
   let filled = 0;
   let failed: GatewayError | null = null;
+  let output = false;
+  let normalized = false;
   const rewrite = (line: string) => {
     if (!line.startsWith("data:")) return line;
     const data = line.slice(5).trim();
@@ -180,11 +251,26 @@ export function separateToolCallIndexes(response: Response): Response {
     }
     const streamError = streamEventError(payload);
     if (streamError) {
+      // After visible output the page already shows part of the answer:
+      // model-retry.ts must not send it again.
+      if (output) streamError.afterOutput = true;
       failed ??= streamError;
       console.warn(
         `[chat-stream] the provider reported an error inside the stream: ${streamError.code}`,
       );
       return line;
+    }
+    if (carriesOutput(payload)) output = true;
+    if (normalizeResponsesEvent(payload)) {
+      if (!normalized) {
+        normalized = true;
+        console.warn(
+          "[chat-stream] the provider's Responses stream lacked arrays LangChain reads (annotations/output); filled them",
+        );
+      }
+      const missing = fillArguments(payload);
+      const line2 = `data: ${JSON.stringify(payload)}`;
+      return missing ? `data: ${JSON.stringify(missing)}\n\n${line2}` : line2;
     }
     const missing = fillArguments(payload);
     if (missing) {

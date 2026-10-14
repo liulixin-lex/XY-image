@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { findChatProviderError } from "../features/chat-providers/errors.js";
@@ -1047,6 +1047,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : { credentials: chatSelection.credentials }),
             ...(persistence ? { store: persistence.store } : {}),
             ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
+            // 第 67 条: 思考强度 and 联网搜索 from the chat panel; one prompt
+            // cache key per conversation thread (hashed: the thread id never
+            // leaves this server).
+            chatOptions: {
+              ...(run.effort ? { effort: run.effort } : {}),
+              ...(run.webSearch ? { webSearch: true } : {}),
+              ...(run.threadId
+                ? {
+                    promptCacheKey: `xyimg-${createHash("sha256").update(run.threadId).digest("hex").slice(0, 32)}`,
+                  }
+                : {}),
+            },
           });
           rlog.lap("agent_factory_done");
         } catch (error) {

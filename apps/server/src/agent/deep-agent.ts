@@ -3,10 +3,23 @@ import type {
   BaseCheckpointSaver,
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ChatOpenAI } from "@langchain/openai";
+import {
+  type ChatEffort,
+  type ChatModelRef,
+  chatWebSearchSupported,
+  parseChatModelRef,
+  resolveChatEffort,
+  usesResponsesApi,
+} from "@loomic/shared";
 import { createDeepAgent } from "deepagents";
 import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
-import { GatewayError, mapGatewayError } from "../features/xy2api/errors.js";
+import {
+  GatewayError,
+  gatewayDiagnostics,
+  mapGatewayError,
+} from "../features/xy2api/errors.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 
 import { Agent as HttpAgent, fetch as httpFetch } from "undici";
@@ -19,6 +32,11 @@ import {
 } from "./backends/index.js";
 import { createGluedToolCallMiddleware } from "./glued-tool-calls.js";
 import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
+import {
+  type SentEffort,
+  chatEffortKwargs,
+  createChatOptionsMiddleware,
+} from "./model-options.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import type {
   PersistImageFn,
@@ -51,9 +69,18 @@ export type LoomicAgentFactory = (options: {
   imageModels?: AvailableModel[];
   credentials?: { apiKey: string; baseUrl: string };
   customChat?: Parameters<typeof createCustomChatModel>[0];
+  /** 第 67 条: 思考强度, 联网搜索, prompt cache key (model-options.ts). */
+  chatOptions?: ChatRunOptions;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
+
+export type ChatRunOptions = {
+  effort?: ChatEffort;
+  webSearch?: boolean;
+  /** Sent as prompt_cache_key: one per conversation thread. */
+  promptCacheKey?: string;
+};
 
 /**
  * Our middleware, after deepagents' own. Glued parallel tool calls from some
@@ -64,11 +91,15 @@ export type LoomicAgentFactory = (options: {
  * Innermost model-call middleware: a call refused as busy, or one that got
  * no response, is sent again (model-retry.ts, 第 67 条).
  */
-export function loomicAgentMiddleware() {
+export function loomicAgentMiddleware(
+  extra: ReturnType<typeof createChatOptionsMiddleware>[] = [],
+) {
   return [
     createGluedToolCallMiddleware(),
     createToolErrorMiddleware(),
     createModelRetryMiddleware(),
+    // Innermost: built-in web search and the effort fallback (第 67 条).
+    ...extra,
   ];
 }
 
@@ -87,6 +118,7 @@ export function createLoomicDeepAgent(options: {
   imageModels?: AvailableModel[];
   credentials?: { apiKey: string; baseUrl: string };
   customChat?: Parameters<typeof createCustomChatModel>[0];
+  chatOptions?: ChatRunOptions;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): LoomicAgent {
@@ -94,11 +126,49 @@ export function createLoomicDeepAgent(options: {
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
 
   const modelSpec = options.model ?? createDefaultModelSpecifier(options.env);
-  const resolvedModel = options.customChat
-    ? createCustomChatModel(options.customChat)
+  // 第 67 条: the chat options this model takes (chat-options.ts decides,
+  // the chat panel shows the same), and a builder for the effort fallback.
+  const ref: ChatModelRef | null = options.customChat
+    ? { source: "custom", providerId: "custom", model: options.customChat.model }
     : typeof modelSpec === "string"
-      ? createStreamingChatModel(modelSpec, options.credentials)
-      : modelSpec;
+      ? parseChatModelRef(
+          modelSpec.includes(":") ? modelSpec : `openai:${modelSpec}`,
+        )
+      : null;
+  const chatOptions = options.chatOptions ?? {};
+  const effort = resolveChatEffort(ref, chatOptions.effort);
+  const webSearch = Boolean(chatOptions.webSearch) && chatWebSearchSupported(ref);
+  const promptCacheKey = chatOptions.promptCacheKey;
+  const build = (sent: SentEffort, search = webSearch) =>
+    options.customChat
+      ? createCustomChatModel({
+          ...options.customChat,
+          effort: sent,
+          ...(promptCacheKey ? { promptCacheKey } : {}),
+        })
+      : createStreamingChatModel(modelSpec as string, options.credentials, {
+          effort: sent,
+          webSearch: search,
+          ...(promptCacheKey ? { promptCacheKey } : {}),
+        });
+  const builtHere = Boolean(options.customChat) || typeof modelSpec === "string";
+  const resolvedModel = builtHere ? build(effort) : (modelSpec as BaseLanguageModel);
+  if (builtHere && ref)
+    console.info(
+      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} webSearch=${webSearch ? "on" : chatOptions.webSearch ? "unsupported" : "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
+    );
+  const optionsMiddleware = builtHere
+    ? [
+        createChatOptionsMiddleware({
+          ref,
+          label: ref?.model ?? "model",
+          effort,
+          webSearch,
+          rebuild: (sent, search) =>
+            build(sent, search) as unknown as BaseChatModel,
+        }),
+      ]
+    : [];
 
   const createUserClient =
     options.createUserClient ??
@@ -141,7 +211,7 @@ export function createLoomicDeepAgent(options: {
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
-    middleware: loomicAgentMiddleware(),
+    middleware: loomicAgentMiddleware(optionsMiddleware),
     model: resolvedModel,
     name: "loomic",
     ...(options.store ? { store: options.store } : {}),
@@ -181,6 +251,7 @@ const chatDispatcher = new HttpAgent({
 export function createStreamingChatModel(
   specifier: string,
   credentials?: { apiKey: string; baseUrl: string },
+  chat: { effort?: SentEffort; webSearch?: boolean; promptCacheKey?: string } = {},
 ): BaseLanguageModel {
   if (!credentials) throw new Error("请先选择可用的对话 Key");
   const modelName = specifier.replace(/^openai:/, "");
@@ -210,9 +281,16 @@ export function createStreamingChatModel(
       } as Parameters<typeof httpFetch>[1])) as unknown as Response;
       if (!response.ok) {
         const body: unknown = await response.json().catch(() => undefined);
-        throw new GatewayError(
-          mapGatewayError({ status: response.status, body }),
-        );
+        // diagnostics: the main site's own words, scrubbed, for the log and
+        // for model-options.ts (a model that refuses an effort level).
+        throw new GatewayError({
+          ...mapGatewayError({ status: response.status, body }),
+          diagnostics: gatewayDiagnostics({
+            status: response.status,
+            body,
+            headers: response.headers,
+          }),
+        });
       }
       // The main site relays other vendors too; see tool-call-stream.ts.
       return separateToolCallIndexes(response);
@@ -224,16 +302,26 @@ export function createStreamingChatModel(
       throw new ChatConnectError(describeErrorForLog(error));
     }
   };
+  // gpt-6* always use the Responses API. The hosted web_search tool exists
+  // only there, so a model with 联网搜索 on goes through it too (LangChain
+  // would switch on its own when it sees the tool; deciding here keeps the
+  // effort fields in the matching shape).
+  const responsesApi = usesResponsesApi(modelName) || Boolean(chat.webSearch);
+  const kwargs = chatEffortKwargs(modelName, chat.effort ?? "auto", responsesApi);
   return new ChatOpenAI({
     model: modelName,
     apiKey: "loomic-transport-credential",
     configuration: { baseURL: `${credentials.baseUrl}/v1`, fetch: transport },
     streaming: true,
-    streamUsage: false,
+    // Usage (incl. cached input tokens) for the per-turn log line
+    // (stream-adapter.ts describeModelTurn); Responses always sends it.
+    streamUsage: true,
     maxRetries: 0,
-    ...(modelName.startsWith("gpt-6-") || modelName.startsWith("gpt-6.")
-      ? { useResponsesApi: true }
-      : {}),
+    ...(responsesApi ? { useResponsesApi: true } : {}),
+    ...(Object.keys(kwargs).length ? { modelKwargs: kwargs } : {}),
+    // OpenAI-style prompt caching: requests with the same key and prefix
+    // land where the prefix is cached (xy2api forwards prompt_cache_key).
+    ...(chat.promptCacheKey ? { promptCacheKey: chat.promptCacheKey } : {}),
   });
 }
 export function createDefaultModelSpecifier(

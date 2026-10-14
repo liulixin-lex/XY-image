@@ -18,7 +18,10 @@ import { GatewayError } from "../features/xy2api/errors.js";
  *
  * Only failures that came before any streamed output are retried:
  * - GatewayError from the xy2api transport (deep-agent.ts), raised on a
- *   non-2xx status before the body is handed to the model client;
+ *   non-2xx status before the body is handed to the model client, or for an
+ *   error event inside the stream before any output (tool-call-stream.ts
+ *   marks one after output with `afterOutput`; e.g. 200 + "Codex is at
+ *   capacity" as the first event, seen on prod 10-14);
  * - ChatConnectError: the request could not be sent or no response came;
  * - ChatProviderError from a personal provider's transport (network.ts),
  *   also raised before the body is returned.
@@ -54,12 +57,17 @@ export function retryableModelFailure(error: unknown): string | undefined {
     (c): c is GatewayError => c instanceof GatewayError,
   );
   if (gateway)
-    return RETRY_GATEWAY_CODES.has(gateway.failure.code)
+    return RETRY_GATEWAY_CODES.has(gateway.failure.code) && !gateway.afterOutput
       ? gateway.failure.code
       : undefined;
   const provider = findChatProviderError(error);
-  if (provider)
+  if (provider) {
+    // provider_unavailable also covers a 400 the provider refused (an
+    // option it does not take): resending that never helps.
+    const status = provider.upstreamStatus;
+    if (status !== undefined && status < 500 && status !== 429) return undefined;
     return RETRY_PROVIDER_CODES.has(provider.code) ? provider.code : undefined;
+  }
   const connect = findCause(
     error,
     (c): c is ChatConnectError => c instanceof ChatConnectError,
