@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { ServerEnv } from "../config/env.js";
 import {
   IMAGE_PROVIDER_BY_PROTOCOL,
   findImageModel,
@@ -10,7 +11,12 @@ import type { RequestAuthenticator } from "../supabase/user.js";
 import { sendAccountError } from "./account.js";
 export function registerImageModelRoutes(
   app: FastifyInstance,
-  options: { auth: RequestAuthenticator; keys: KeyService },
+  options: {
+    auth: RequestAuthenticator;
+    keys: KeyService;
+    /** The site's own output format, shown as 「默认」 next to 格式 (第 66 条). */
+    env?: Pick<ServerEnv, "imageOutputFormat" | "imageOutputCompression">;
+  },
 ) {
   // GET /api/image-models — every model of every image key that is on
   // (第 56 条), grouped by key: the default key first, then newest first.
@@ -22,6 +28,14 @@ export function registerImageModelRoutes(
       if (!user) throw new BillingGuardError("xy2api_reauth_required", 401);
       const keys = await options.keys.imageKeys(user.id);
       return {
+        ...(options.env
+          ? {
+              outputDefaults: {
+                format: options.env.imageOutputFormat,
+                compression: options.env.imageOutputCompression,
+              },
+            }
+          : {}),
         keys: keys.map((key) => ({
           keyId: key.keyId,
           name: key.name,
@@ -52,6 +66,14 @@ export function registerImageModelRoutes(
                     qualities: model.qualities,
                     aspectRatios: model.aspectRatios,
                     maxRatio: model.maxRatio,
+                    // 第 66 条: what 质量「自动」 amounts to, and the OpenAI
+                    // output options (empty for models without them).
+                    ...(model.autoQuality
+                      ? { autoQuality: model.autoQuality }
+                      : {}),
+                    backgrounds: model.backgrounds,
+                    outputFormats: model.outputFormats,
+                    moderations: model.moderations,
                     supportsEdit: model.supportsEdit,
                     maxInputImages: model.supportsEdit
                       ? model.maxInputImages

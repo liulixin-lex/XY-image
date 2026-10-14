@@ -368,7 +368,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     keys: xy2api.keys,
     providers: xy2api.providers,
   });
-  void registerImageModelRoutes(app, { auth, keys: xy2api.keys });
+  void registerImageModelRoutes(app, { auth, keys: xy2api.keys, env });
   void registerPromptRoutes(app, {
     auth,
     optimizer: createPromptOptimizer({

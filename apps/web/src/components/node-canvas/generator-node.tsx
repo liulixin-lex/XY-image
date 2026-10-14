@@ -33,12 +33,20 @@ import { describeIssue } from "../../lib/generation-errors";
 import { describeOutcome, isActiveJob } from "../../lib/image-jobs";
 import {
   ASPECT_RATIOS,
-  QUALITIES,
-  QUALITY_HINT,
+  BACKGROUND_HINT,
+  BACKGROUND_LABEL,
+  COMPRESSION_PRESETS,
+  MODERATION_HINT,
+  MODERATION_LABEL,
+  OUTPUT_FORMAT_HINT,
+  OUTPUT_FORMAT_LABEL,
   QUALITY_LABEL,
   RESOLUTIONS,
   RESOLUTION_HINT,
+  defaultFormatLabel,
   modelCapabilities,
+  qualityHint,
+  qualityOptions as qualityLevels,
   resolutionUnavailable,
 } from "../../lib/image-model-meta";
 import {
@@ -219,20 +227,76 @@ export const GeneratorNode = memo(function GeneratorNode({
       }),
     [caps.resolutions, caps.maxRatio, send.aspectRatio],
   );
+  // 第 66 条: only the levels this model has (GPT Image 2.5 adds 极高 /
+  // 最高); a level kept from another model shows as its nearest one.
   const qualityOptions = useMemo(
     () =>
-      QUALITIES.map((q) => {
-        const enabled = q === "auto" || caps.qualities.includes(q);
-        return {
-          value: q,
-          text: QUALITY_LABEL[q],
-          label: QUALITY_LABEL[q],
-          disabled: !enabled,
-          description: enabled ? QUALITY_HINT[q] : "当前模型不可调",
-        };
-      }),
-    [caps.qualities],
+      qualityLevels(caps).map((q) => ({
+        value: q,
+        text: QUALITY_LABEL[q],
+        label: QUALITY_LABEL[q],
+        description: caps.qualities.length
+          ? qualityHint(q, caps)
+          : "当前模型不可调，由模型决定",
+      })),
+    [caps],
   );
+  // 第 66 条: OpenAI output options; rows only for models that take them.
+  const formatOptions = useMemo(
+    () => [
+      {
+        value: "default",
+        text: "默认",
+        label: defaultFormatLabel(caps),
+        description: "按站点设置",
+      },
+      ...caps.outputFormats.map((f) => ({
+        value: f,
+        text: OUTPUT_FORMAT_LABEL[f],
+        label: OUTPUT_FORMAT_LABEL[f],
+        description: OUTPUT_FORMAT_HINT[f],
+      })),
+    ],
+    [caps],
+  );
+  const compressionOptions = useMemo(
+    () => [
+      {
+        value: "default",
+        text: "默认",
+        label: caps.outputDefaults ? `默认 · ${caps.outputDefaults.compression}` : "默认",
+        description: "按站点设置",
+      },
+      ...COMPRESSION_PRESETS.map((value) => ({
+        value: String(value),
+        text: String(value),
+        label: String(value),
+        description: value === 100 ? "压缩最少，文件最大" : "数字越小文件越小",
+      })),
+    ],
+    [caps.outputDefaults],
+  );
+  const backgroundOptions = useMemo(
+    () =>
+      caps.backgrounds.map((b) => ({
+        value: b,
+        text: BACKGROUND_LABEL[b],
+        label: BACKGROUND_LABEL[b],
+        description: BACKGROUND_HINT[b],
+      })),
+    [caps.backgrounds],
+  );
+  const moderationOptions = useMemo(
+    () =>
+      caps.moderations.map((m) => ({
+        value: m,
+        text: MODERATION_LABEL[m],
+        label: MODERATION_LABEL[m],
+        description: MODERATION_HINT[m],
+      })),
+    [caps.moderations],
+  );
+  const effectiveFormat = send.outputFormat ?? caps.outputDefaults?.format ?? "jpeg";
 
   const status = runStatus(
     runJobIds,
@@ -303,6 +367,81 @@ export const GeneratorNode = memo(function GeneratorNode({
               popupClassName="w-[200px]"
             />
           </Row>
+          {caps.outputFormats.length ? (
+            <Row label="格式">
+              <Picker
+                value={send.outputFormat ?? "default"}
+                onValueChange={(value) =>
+                  update({
+                    outputFormat:
+                      value === "default"
+                        ? null
+                        : (value as GeneratorConfig["outputFormat"]),
+                  })
+                }
+                options={formatOptions}
+                ariaLabel="格式"
+                disabled={sending}
+                align="end"
+                className={pickerClass}
+                popupClassName="w-[240px]"
+              />
+            </Row>
+          ) : null}
+          {caps.outputFormats.length && effectiveFormat !== "png" ? (
+            <Row label="压缩">
+              <Picker
+                value={
+                  send.outputCompression === null
+                    ? "default"
+                    : String(send.outputCompression)
+                }
+                onValueChange={(value) =>
+                  update({
+                    outputCompression: value === "default" ? null : Number(value),
+                  })
+                }
+                options={compressionOptions}
+                ariaLabel="压缩"
+                disabled={sending}
+                align="end"
+                className={pickerClass}
+                popupClassName="w-[220px]"
+              />
+            </Row>
+          ) : null}
+          {caps.backgrounds.length ? (
+            <Row label="背景">
+              <Picker
+                value={send.background}
+                onValueChange={(value) =>
+                  update({ background: value as GeneratorConfig["background"] })
+                }
+                options={backgroundOptions}
+                ariaLabel="背景"
+                disabled={sending}
+                align="end"
+                className={pickerClass}
+                popupClassName="w-[260px]"
+              />
+            </Row>
+          ) : null}
+          {caps.moderations.length ? (
+            <Row label="审核">
+              <Picker
+                value={send.moderation}
+                onValueChange={(value) =>
+                  update({ moderation: value as GeneratorConfig["moderation"] })
+                }
+                options={moderationOptions}
+                ariaLabel="审核"
+                disabled={sending}
+                align="end"
+                className={pickerClass}
+                popupClassName="w-[260px]"
+              />
+            </Row>
+          ) : null}
           <Row label="数量">
             <CountInput
               value={config.count}

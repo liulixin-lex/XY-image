@@ -1,4 +1,6 @@
 import {
+  IMAGE_BACKGROUNDS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
   LEGACY_IMAGE_QUALITIES,
@@ -8,6 +10,7 @@ import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { storedOutputOptions } from "../features/xy2api/billing-guard.js";
 import {
   BillingGuardError,
   DeliveryPendingError,
@@ -24,8 +27,11 @@ const schema = z.object({
   model: z.string().optional(),
   aspectRatio: z.string().max(10).optional(),
   resolution: z.enum(IMAGE_RESOLUTIONS).optional(),
-  /** auto / low / medium / high; standard / hd from older pages still work. */
+  /** auto … max; standard / hd from older pages still work. */
   quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
+  /** 第 66 条: OpenAI background / output format; other models ignore them. */
+  background: z.enum(IMAGE_BACKGROUNDS).optional(),
+  outputFormat: z.enum(IMAGE_OUTPUT_FORMATS).optional(),
   inputImages: z.array(z.string()).max(14).optional(),
 });
 export function registerGenerateRoutes(
@@ -62,6 +68,8 @@ export function registerGenerateRoutes(
               quality: payload.quality,
               aspect_ratio: payload.aspectRatio,
               input_images: payload.inputImages,
+              background: payload.background,
+              output_format: payload.outputFormat,
             },
             { sendsNow: true },
           );
@@ -76,6 +84,7 @@ export function registerGenerateRoutes(
               resolution: prepared.resolution,
               quality: prepared.quality,
               aspect_ratio: prepared.aspect_ratio,
+              ...storedOutputOptions(prepared),
               ...(payload.inputImages
                 ? { input_images: payload.inputImages }
                 : {}),

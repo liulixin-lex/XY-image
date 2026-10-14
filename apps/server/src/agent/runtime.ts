@@ -34,6 +34,7 @@ import {
   IMAGE_PROVIDER_BY_PROTOCOL,
   findImageModel,
 } from "../features/xy2api/catalog.js";
+import { storedOutputOptions } from "../features/xy2api/billing-guard.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { Xy2apiServices } from "../features/xy2api/services.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
@@ -641,6 +642,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     quality: input.quality,
                     aspect_ratio: input.aspectRatio,
                     input_images: input.inputImages,
+                    background: input.background,
+                    output_format: input.outputFormat,
                   },
                 );
                 return jobSvc.createJob(user, {
@@ -657,6 +660,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     resolution: prepared.resolution,
                     quality: prepared.quality,
                     aspect_ratio: prepared.aspect_ratio,
+                    ...storedOutputOptions(prepared),
                     ...(input.inputImages
                       ? { input_images: input.inputImages }
                       : {}),

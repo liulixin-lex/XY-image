@@ -528,6 +528,49 @@ describe("generator plan (第 56 条)", () => {
     expect(plan.params).toMatchObject({ model: "gpt-image-2", keyId: 9 });
   });
 
+  it("sends GPT Image 2.5's output options and drops them for other models (第 66 条)", () => {
+    const withSunburst = [
+      ...models,
+      {
+        id: "gpt-image-2.5-sunburst",
+        displayName: "GPT Image 2.5 Sunburst",
+        description: "",
+        keyId: 3,
+        keyName: "A",
+        qualities: ["auto", "low", "medium", "high", "xhigh", "max"],
+        backgrounds: ["auto", "opaque", "transparent"],
+        outputFormats: ["jpeg", "png", "webp"],
+        moderations: ["auto", "low"],
+      },
+    ] as ImageModelInfo[];
+    const options = { quality: "max", background: "transparent", moderation: "low", outputCompression: 70 };
+    const sunburst = planGenerator({
+      ...base,
+      models: withSunburst,
+      config: config({ model: "gpt-image-2.5-sunburst", keyId: 3, ...options }),
+    });
+    expect(sunburst.params).toMatchObject({
+      quality: "max",
+      background: "transparent",
+      // Transparent needs png; compression means nothing for png.
+      outputFormat: "png",
+      outputCompression: null,
+      moderation: "low",
+    });
+    // The node keeps its settings; Nano Banana Pro just does not get them.
+    const pro = planGenerator({
+      ...base,
+      models: withSunburst,
+      config: config({ model: "nano-banana-pro", keyId: 3, ...options }),
+    });
+    expect(pro.params).toMatchObject({
+      quality: "auto",
+      background: "auto",
+      outputFormat: null,
+      moderation: "auto",
+    });
+  });
+
   it("a key that went away falls back to the same model on another key", () => {
     const plan = planGenerator({ ...base, config: config({ model: "gpt-image-2", keyId: 44 }) });
     expect(plan.params).toMatchObject({ model: "gpt-image-2", keyId: 3 });

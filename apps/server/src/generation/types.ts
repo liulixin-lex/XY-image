@@ -1,5 +1,8 @@
 import type {
+  ImageBackground,
   ImageEdit,
+  ImageModeration,
+  ImageOutputFormat,
   ImageQuality,
   ImageResolution,
 } from "@loomic/shared";
@@ -19,6 +22,9 @@ export interface ModelInfo {
   resolutions?: readonly string[];
   qualities?: readonly string[];
   aspectRatios?: readonly string[];
+  /** 第 66 条, OpenAI models: 背景 and output formats the model takes. */
+  backgrounds?: readonly string[];
+  outputFormats?: readonly string[];
   supportsEdit?: boolean;
   maxInputImages?: number;
 }
@@ -28,9 +34,13 @@ export interface ModelInfo {
  * knobs. Each provider translates them into its vendor's own fields; see
  * features/xy2api/catalog.ts for the protocol mapping.
  */
-export type { ImageQuality, ImageResolution } from "@loomic/shared";
-
-export type OutputFormat = "png" | "jpg" | "webp";
+export type {
+  ImageBackground,
+  ImageModeration,
+  ImageOutputFormat,
+  ImageQuality,
+  ImageResolution,
+} from "@loomic/shared";
 
 export interface ImageGenerateParams {
   /** The user's words; mask edits wrap them (generation/mask-edit.ts). */
@@ -40,10 +50,17 @@ export interface ImageGenerateParams {
   inputImages?: string[];
   /** 画质: 1K / 2K / 4K. */
   resolution?: ImageResolution;
-  /** 质量: auto (vendor default) / low / medium / high. */
+  /** 质量: auto (vendor default) / low … max, as the model accepts. */
   quality?: ImageQuality;
-  /** Output format preference */
-  outputFormat?: OutputFormat;
+  /**
+   * 第 66 条, OpenAI only (other providers ignore them): file format (unset:
+   * LOOMIC_IMAGE_OUTPUT_FORMAT), jpeg / webp compression, background and
+   * moderation (generations only).
+   */
+  outputFormat?: ImageOutputFormat;
+  outputCompression?: number;
+  background?: ImageBackground;
+  moderation?: ImageModeration;
   metadata?: Record<string, unknown>;
   /** 局部重绘 / 扩图 on inputImages[0]. */
   edit?: ImageEdit;

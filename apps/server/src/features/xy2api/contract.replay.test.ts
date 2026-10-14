@@ -304,6 +304,12 @@ for (const { version, dir } of versionDirs()) {
     it.each(expected)("%s maps to %s (not charged)", (scenario, code) => {
       const fixture = load(scenario);
       if (!fixture) return; // scenario added after this version was recorded
+      // xy2api 0.3.0 changed two of these upstream faults (第 66 条, CI
+      // 10-14): it no longer cools the account after an empty or 500 answer,
+      // so the after_* requests succeed; and it answers an empty image list
+      // with 200 and bills it. Neither is a refusal to map: the success is
+      // fine, the billed empty answer is covered by the provider test below.
+      if (fixture.response.status < 300) return;
       const failure = mapGatewayError({
         status: fixture.response.status,
         body: fixture.response.json,
@@ -340,6 +346,37 @@ for (const { version, dir } of versionDirs()) {
         });
         expect(failure.billing, scenario).not.toBe("not_charged");
       }
+    });
+
+    it("keeps an upstream's empty image list 待核对 with its request id", async () => {
+      const fixture = load("gateway.images.upstream_empty");
+      if (!fixture || fixture.response.status >= 300) return; // refused before 0.3.0
+      armed = fixture;
+      const provider = new Xy2apiOpenAIImageProvider(catalog, {
+        imageOutputFormat: "png",
+        imageOutputCompression: 90,
+      });
+      const error = await provider
+        .generate(
+          { model: "gpt-image-2", prompt: "fixture", resolution: "1K" },
+          { apiKey: "key", baseUrl },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(GatewayError);
+      const failure = (error as GatewayError).failure;
+      // xy2api billed it (billing.json): never "not charged", and keep the
+      // request id so the reconciler can match the usage row.
+      expect(failure.billing).toBe("unknown");
+      expect(failure.requestId).toBe(
+        fixture.response.headers["x-client-request-id"],
+      );
+      // A 2xx handed to the mapper directly is never "not charged" either.
+      expect(
+        mapGatewayError({
+          status: fixture.response.status,
+          body: fixture.response.json,
+        }).billing,
+      ).toBe("unknown");
     });
 
     it("OpenAI image provider parses success and carries the request id", async () => {

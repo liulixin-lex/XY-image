@@ -240,7 +240,8 @@ function applyOutputFormat(
   format: string | undefined,
 ): void {
   if (!format || NO_OUTPUT_FORMAT_MODELS.has(model)) return;
-  input.output_format = format;
+  // Replicate's image models spell it "jpg".
+  input.output_format = format === "jpeg" ? "jpg" : format;
 }
 
 // ── Provider implementation ──────────────────────────────────────────────
@@ -322,7 +323,7 @@ export class ReplicateImageProvider implements ImageProvider {
       );
     }
 
-    const mimeType = params.outputFormat === "jpg" ? "image/jpeg"
+    const mimeType = params.outputFormat === "jpeg" ? "image/jpeg"
       : params.outputFormat === "webp" ? "image/webp"
       : "image/png";
 

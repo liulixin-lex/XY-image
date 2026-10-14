@@ -416,7 +416,10 @@ describe("image billing lifecycle", () => {
     { prompt: "x".repeat(4001), model: "gpt-image-2" },
     { prompt: "test", model: "unavailable-model" },
     { prompt: "test", model: "gpt-image-2", resolution: "8K" },
-    { prompt: "test", model: "gpt-image-2", resolution: "2K", quality: "max" },
+    // "max" is a real level since 第 66 条; an unknown one is still refused.
+    { prompt: "test", model: "gpt-image-2", resolution: "2K", quality: "ultra-max" },
+    { prompt: "test", model: "gpt-image-2", resolution: "2K", quality: "auto", output_format: "gif" },
+    { prompt: "test", model: "gpt-image-2", resolution: "2K", quality: "auto", output_compression: 101 },
     { prompt: "test", model: "gpt-image-2", aspect_ratio: "wide" },
   ])("revalidates untrusted job data", async (payload) => {
     const fixture = setup();

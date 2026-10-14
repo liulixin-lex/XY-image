@@ -196,6 +196,85 @@ describe("per-call gateway image transports", () => {
       quality: "high",
     });
   });
+  it("sends GPT Image 2.5's top levels, format, background and moderation (第 66 条)", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2.5-sunburst",
+        prompt: "fixture",
+        resolution: "2K",
+        quality: "max",
+        background: "transparent",
+        moderation: "low",
+      },
+      { apiKey: "synthetic-openai-key", baseUrl: server.baseUrl },
+    );
+    const sent = JSON.parse(server.requests[0]?.body ?? "{}");
+    expect(sent).toMatchObject({
+      quality: "max",
+      background: "transparent",
+      moderation: "low",
+      // Transparent needs png: the server default (jpeg) is not used.
+      output_format: "png",
+    });
+    expect(sent).not.toHaveProperty("output_compression");
+  });
+  it("sends the user's webp and compression instead of the server default", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2.5-flare",
+        prompt: "fixture",
+        quality: "xhigh",
+        outputFormat: "webp",
+        outputCompression: 70,
+      },
+      { apiKey: "synthetic-openai-key", baseUrl: server.baseUrl },
+    );
+    const sent = JSON.parse(server.requests[0]?.body ?? "{}");
+    expect(sent).toMatchObject({
+      quality: "xhigh",
+      output_format: "webp",
+      output_compression: 70,
+    });
+    expect(sent).not.toHaveProperty("background");
+    expect(sent).not.toHaveProperty("moderation");
+  });
+  it("keeps gpt-image-2 within what it supports", async () => {
+    const server = await gateway(200, { data: [{ b64_json: await png() }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2",
+        prompt: "fixture",
+        quality: "max",
+        background: "transparent",
+      },
+      { apiKey: "synthetic-openai-key", baseUrl: server.baseUrl },
+    );
+    const sent = JSON.parse(server.requests[0]?.body ?? "{}");
+    // 最高 runs at its top level; transparency is not offered there.
+    expect(sent).toMatchObject({ quality: "high", output_format: "jpeg" });
+    expect(sent).not.toHaveProperty("background");
+  });
+  it("leaves moderation out of edits, which have no such field", async () => {
+    const data = await png();
+    const server = await gateway(200, { data: [{ b64_json: data }] });
+    await openai.generate(
+      {
+        model: "gpt-image-2.5-sunburst",
+        prompt: "fixture",
+        inputImages: [`data:image/png;base64,${data}`],
+        background: "transparent",
+        moderation: "low",
+      },
+      { apiKey: "synthetic-edit-key", baseUrl: server.baseUrl },
+    );
+    const body = server.requests[0]?.body ?? "";
+    expect(server.requests[0]?.path).toBe("/v1/images/edits");
+    expect(body).toContain('name="background"');
+    expect(body).toContain("transparent");
+    expect(body).not.toContain('name="moderation"');
+  });
   it("keeps every OpenAI size legal and inside the tier the main site bills", () => {
     const catalogModel = catalog.find((model) => model.id === "gpt-image-2");
     if (!catalogModel) throw new Error("missing");

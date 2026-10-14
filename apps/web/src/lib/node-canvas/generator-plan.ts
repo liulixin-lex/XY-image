@@ -5,11 +5,7 @@
  * runs every generator it feeds at once: both must send the same model, key
  * and values the node shows.
  */
-import {
-  type ImageQuality,
-  type ImageResolution,
-  resolveImageParams,
-} from "@loomic/shared";
+import { type ResolvedImageParams, resolveImageParams } from "@loomic/shared";
 
 import { modelCapabilities } from "../image-model-meta";
 import { defaultModel, findModel } from "../image-model-ref";
@@ -32,7 +28,8 @@ export type GeneratorPlan = {
   model: ImageModelInfo | null;
   /** The node's own model is listed (on its key, or the same model on another). */
   pickedHere: boolean;
-  send: { aspectRatio: string; resolution: ImageResolution; quality: ImageQuality };
+  /** What will be sent: the node's values moved to the model's nearest ones. */
+  send: Omit<ResolvedImageParams, "adjusted">;
   refLimit: number;
   /** Connected prompts, then the node's own text. */
   prompt: string;
@@ -73,10 +70,14 @@ export function planGenerator({
   // first model listed before the saved default arrives would be sent.
   const awaitingDefault = !picked && !accountSettled;
   const caps = modelCapabilities(model);
-  const send = resolveImageParams(caps, {
+  const { adjusted: _adjusted, ...send } = resolveImageParams(caps, {
     resolution: config.resolution,
     quality: config.quality,
     aspectRatio: config.aspectRatio,
+    outputFormat: config.outputFormat,
+    outputCompression: config.outputCompression,
+    background: config.background,
+    moderation: config.moderation,
   });
   const prompt = composePrompt(inputs, own);
   const refLimit = caps.maxInputImages;
@@ -111,6 +112,10 @@ export function planGenerator({
             aspectRatio: send.aspectRatio,
             resolution: send.resolution,
             quality: send.quality,
+            outputFormat: send.outputFormat,
+            outputCompression: send.outputCompression,
+            background: send.background,
+            moderation: send.moderation,
           }
         : null,
   };

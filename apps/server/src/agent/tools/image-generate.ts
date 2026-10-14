@@ -1,6 +1,10 @@
 import {
+  IMAGE_BACKGROUNDS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
+  type ImageBackground,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   normalizeImageParams,
@@ -18,6 +22,8 @@ function describeCapabilities(model: AvailableModel): string {
     model.resolutions?.length ? `sizes ${model.resolutions.join("/")}` : "",
     model.qualities?.length ? `quality ${model.qualities.join("/")}` : "",
     model.aspectRatios?.length ? `ratios ${model.aspectRatios.join(", ")}` : "",
+    model.backgrounds?.includes("transparent") ? "transparent background" : "",
+    model.outputFormats?.length ? `formats ${model.outputFormats.join("/")}` : "",
     model.supportsEdit === false
       ? "no reference images"
       : model.maxInputImages
@@ -86,13 +92,19 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .optional()
       .default("auto")
       .describe(
-        `Rendering effort, one of ${IMAGE_QUALITIES.join(", ")}: auto (vendor default, recommended), low (fast drafts), medium, high (most detail, slowest). Ignored by models without this setting; any other value is read as auto.`,
+        `Rendering effort, one of ${IMAGE_QUALITIES.join(", ")}: auto (vendor default, recommended), low (fast drafts), medium, high (most detail, slow); xhigh and max (GPT Image 2.5 only, slowest) only when the user asks for the very best. A level the model lacks runs at its nearest lower level; models without this setting ignore it.`,
       ),
     outputFormat: z
       .string()
       .optional()
       .describe(
-        "Output image format: png for transparency, jpg for photos, webp for web.",
+        `File format for models that list formats above, one of ${IMAGE_OUTPUT_FORMATS.join(", ")}: png (lossless, keeps transparency), jpeg (photos, smallest), webp (web). Leave it out to use the site default.`,
+      ),
+    background: z
+      .string()
+      .optional()
+      .describe(
+        `Background for models that list "transparent background" above, one of ${IMAGE_BACKGROUNDS.join(", ")}: transparent for logos, icons, stickers and cut-out products (the file becomes PNG); opaque; auto (default). Other models ignore it.`,
       ),
     inputImages: z
       .array(z.string())
@@ -133,6 +145,7 @@ type ImageGenerateInput = {
   resolution?: string;
   quality?: string;
   outputFormat?: string;
+  background?: string;
   inputImages?: string[];
   placementX?: number;
   placementY?: number;
@@ -181,6 +194,9 @@ export type SubmitImageJobFn = (input: {
   inputImages?: string[];
   resolution?: string;
   quality?: string;
+  /** 第 66 条: OpenAI background / file format; other models ignore them. */
+  background?: ImageBackground;
+  outputFormat?: ImageOutputFormat;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -216,10 +232,27 @@ export type ImageJobBillingStatus =
 export function normalizeToolImageParams(input: {
   resolution?: string | undefined;
   quality?: string | undefined;
-}): { resolution: ImageResolution; quality: ImageQuality; adjusted: string[] } {
+  outputFormat?: string | undefined;
+  background?: string | undefined;
+}): {
+  resolution: ImageResolution;
+  quality: ImageQuality;
+  outputFormat?: ImageOutputFormat;
+  background?: ImageBackground;
+  adjusted: string[];
+} {
   const resolution = input.resolution?.trim().toUpperCase() || undefined;
   const quality = input.quality?.trim().toLowerCase() || undefined;
   const params = normalizeImageParams({ resolution, quality });
+  // "jpg" is how most people (and models) spell it.
+  const formatText = input.outputFormat?.trim().toLowerCase().replace(/^jpg$/, "jpeg") || undefined;
+  const outputFormat = (IMAGE_OUTPUT_FORMATS as readonly string[]).includes(formatText ?? "")
+    ? (formatText as ImageOutputFormat)
+    : undefined;
+  const backgroundText = input.background?.trim().toLowerCase() || undefined;
+  const background = (IMAGE_BACKGROUNDS as readonly string[]).includes(backgroundText ?? "")
+    ? (backgroundText as ImageBackground)
+    : undefined;
   const adjusted = [
     resolution !== undefined && resolution !== params.resolution
       ? `resolution ${input.resolution}→${params.resolution}`
@@ -227,8 +260,15 @@ export function normalizeToolImageParams(input: {
     quality !== undefined && quality !== params.quality
       ? `quality ${input.quality}→${params.quality}`
       : "",
+    formatText !== undefined && !outputFormat ? `format ${input.outputFormat}→default` : "",
+    backgroundText !== undefined && !background ? `background ${input.background}→auto` : "",
   ].filter(Boolean);
-  return { ...params, adjusted };
+  return {
+    ...params,
+    ...(outputFormat ? { outputFormat } : {}),
+    ...(background ? { background } : {}),
+    adjusted,
+  };
 }
 
 export async function runImageGenerate(
@@ -296,6 +336,8 @@ export async function runImageGenerate(
         aspectRatio: input.aspectRatio ?? "1:1",
         resolution: params.resolution,
         quality: params.quality,
+        ...(params.background ? { background: params.background } : {}),
+        ...(params.outputFormat ? { outputFormat: params.outputFormat } : {}),
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
       });
 

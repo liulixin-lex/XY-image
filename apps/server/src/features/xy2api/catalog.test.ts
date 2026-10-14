@@ -96,17 +96,33 @@ describe("image catalog", () => {
       "grok-imagine-image",
       "gemini-3.1-flash-image",
     ]);
+    // 第 66 条: GPT Image 2.5 takes xhigh / max and transparent backgrounds;
+    // gpt-image-2 stops at high, its transparency is preview-only (not offered).
     expect(pick("gpt-image-2.5-flare")).toMatchObject({
       vendor: "openai",
       resolutions: ["1K", "2K", "4K"],
-      qualities: ["auto", "low", "medium", "high"],
+      qualities: ["auto", "low", "medium", "high", "xhigh", "max"],
+      backgrounds: ["auto", "opaque", "transparent"],
+      outputFormats: ["jpeg", "png", "webp"],
+      moderations: ["auto", "low"],
       sizing: "flexible",
+    });
+    expect(pick("gpt-image-2")).toMatchObject({
+      qualities: ["auto", "low", "medium", "high"],
+      backgrounds: [],
+      outputFormats: ["jpeg", "png", "webp"],
     });
     expect(pick("gemini-3-pro-image-preview")).toMatchObject({
       vendor: "google",
       resolutions: ["1K", "2K", "4K"],
       qualities: [],
+      backgrounds: [],
+      outputFormats: [],
+      moderations: [],
     });
+    // 自动 is what Google documents as each model's default thinking level.
+    expect(pick("nano-banana-2.1")?.autoQuality).toBe("medium");
+    expect(pick("gemini-3.1-flash-image")?.autoQuality).toBe("low");
     expect(pick("nano-banana-2.1")?.vendorQuality).toEqual({
       low: "minimal",
       medium: "medium",
@@ -116,9 +132,13 @@ describe("image catalog", () => {
       vendor: "xai",
       resolutions: ["1K", "2K"],
       qualities: ["auto", "low", "medium"],
+      autoQuality: "low",
       supportsEdit: true,
       maxInputImages: 3,
     });
+    // xAI documents `quality` for grok-imagine-image-2.0 only.
+    expect(pick("grok-imagine-image-quality")?.qualities).toEqual([]);
+    expect(pick("grok-imagine-image")?.qualities).toEqual([]);
   });
   it("adds a model from LOOMIC_IMAGE_MODELS with protocol defaults", () => {
     const [model] = loadImageCatalog(
@@ -148,18 +168,27 @@ describe("image catalog", () => {
         quality: "high",
         aspectRatio: "5:4",
       }),
-    ).toEqual({
+    ).toMatchObject({
       resolution: "2K",
-      quality: "auto",
+      // Grok 2.0 stops at medium: 高 runs at medium (第 66 条; was auto).
+      quality: "medium",
       aspectRatio: "4:3",
-      adjusted: ["aspect 5:4→4:3", "resolution 4K→2K", "quality high→auto"],
+      adjusted: ["aspect 5:4→4:3", "resolution 4K→2K", "quality high→medium"],
     });
     expect(resolveImageParams(grok, {})).toEqual({
       resolution: "2K",
       quality: "auto",
       aspectRatio: "1:1",
+      background: "auto",
+      outputFormat: null,
+      outputCompression: null,
+      moderation: "auto",
       adjusted: [],
     });
+    // OpenAI-only options are dropped for Grok.
+    expect(
+      resolveImageParams(grok, { background: "transparent", outputFormat: "png" }),
+    ).toMatchObject({ background: "auto", outputFormat: null });
     // OpenAI cannot make 16:9 at 1K (billed by long edge, minimum pixels):
     // it moves up to 2K rather than changing the picture's shape.
     const gpt = findImageModel(catalog, "gpt-image-2");

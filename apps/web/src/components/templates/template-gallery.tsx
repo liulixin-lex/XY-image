@@ -13,7 +13,9 @@
  * a filled-in template; 「我的」 lists those and the user's own templates
  * with {blanks} (新建模板). See lib/my-templates.ts.
  */
-import { IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS } from "@loomic/shared";
+import { IMAGE_ASPECT_RATIOS, IMAGE_QUALITIES, IMAGE_RESOLUTIONS } from "@loomic/shared";
+
+import { QUALITY_LABEL } from "@/lib/image-model-meta";
 import {
   ArrowLeftIcon,
   BookmarkIcon,
@@ -102,8 +104,9 @@ const LOOK: Record<TemplateCategory, { icon: LucideIcon; tint: string }> = {
   mine: { icon: BookmarkIcon, tint: "#d4412a" },
 };
 
-const QUALITY_LABEL = { auto: "自动", low: "低", medium: "中", high: "高" } as const;
-const QUALITIES = ["auto", "low", "medium", "high"] as const;
+// 第 66 条: every level, 极高 / 最高 included; a model without them runs at
+// its nearest level (the note under the picker says so).
+const QUALITIES = IMAGE_QUALITIES;
 
 export type TemplateUse = {
   template: ImageTemplate;

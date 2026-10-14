@@ -125,7 +125,24 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       resolution: params.resolution,
       quality: params.quality,
       aspectRatio: params.aspectRatio,
+      background: params.background,
+      outputFormat: params.outputFormat,
+      outputCompression: params.outputCompression,
+      moderation: params.moderation,
     });
+    // 第 66 条: the user's format, else the server's (transparent has
+    // already been moved to png by resolveImageParams when needed).
+    const format = resolved.outputFormat ?? this.env.imageOutputFormat;
+    if (
+      resolved.outputFormat ||
+      resolved.background !== "auto" ||
+      resolved.moderation !== "auto" ||
+      resolved.quality === "xhigh" ||
+      resolved.quality === "max"
+    )
+      console.info(
+        `[xy2api-openai] ${params.model} quality=${resolved.quality} format=${format}${resolved.outputCompression !== null ? `/${resolved.outputCompression}` : ""} background=${resolved.background} moderation=${resolved.moderation}`,
+      );
     const size = openaiImageSize(
       model.sizing,
       resolved.resolution,
@@ -197,13 +214,25 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
         // The SDK's size union predates flexible WxH sizes.
         size: size as "1024x1024",
         // "auto" is the API default; omit it so gateways that only know
-        // low / medium / high still accept the call.
-        ...(resolved.quality !== "auto" ? { quality: resolved.quality } : {}),
-        output_format: this.env.imageOutputFormat,
-        ...(this.env.imageOutputFormat !== "png"
-          ? { output_compression: this.env.imageOutputCompression }
+        // low / medium / high still accept the call. xhigh / max (GPT Image
+        // 2.5) are newer than the SDK's type.
+        ...(resolved.quality !== "auto"
+          ? { quality: resolved.quality as "high" }
+          : {}),
+        output_format: format,
+        ...(format !== "png"
+          ? {
+              output_compression:
+                resolved.outputCompression ?? this.env.imageOutputCompression,
+            }
+          : {}),
+        ...(resolved.background !== "auto"
+          ? { background: resolved.background }
           : {}),
       };
+      // The edit endpoint has no `moderation`; generations only.
+      const moderation =
+        resolved.moderation !== "auto" ? { moderation: resolved.moderation } : {};
       const result = await (editInputs
         ? client.images.edit(
             { ...request, ...editInputs },
@@ -226,7 +255,10 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
               },
               { signal: ctx.signal },
             )
-          : client.images.generate(request, { signal: ctx.signal })
+          : client.images.generate(
+              { ...request, ...moderation },
+              { signal: ctx.signal },
+            )
       ).withResponse();
       const output = result.data.data?.[0];
       let bytes: Buffer;
@@ -237,7 +269,7 @@ export class Xy2apiOpenAIImageProvider implements ImageProvider {
       const metadata = await sharp(bytes).metadata();
       if (!metadata.width || !metadata.height)
         throw new GatewayError(mapGatewayError({}));
-      const mimeType = `image/${metadata.format === "jpg" ? "jpeg" : (metadata.format ?? this.env.imageOutputFormat)}`;
+      const mimeType = `image/${metadata.format === "jpg" ? "jpeg" : (metadata.format ?? format)}`;
       return {
         url: `data:${mimeType};base64,${bytes.toString("base64")}`,
         mimeType,

@@ -73,7 +73,14 @@ export class OpenAIImageProvider implements ImageProvider {
     }
 
     const size = imageSize(params);
-    const quality = params.quality ?? "auto";
+    // xhigh / max exist on GPT Image 2.5 only (第 66 条); older models get
+    // their top level. The SDK's type predates them.
+    const wanted = params.quality ?? "auto";
+    const quality = (
+      (wanted === "xhigh" || wanted === "max") && !model.includes("2.5")
+        ? "high"
+        : wanted
+    ) as "high";
 
     try {
       const request = {
