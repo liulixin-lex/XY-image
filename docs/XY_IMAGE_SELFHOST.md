@@ -344,6 +344,23 @@ HAProxy 每 5 秒向隧道对面发起一次 TCP 连接做检查，主站 Caddy 
 - Node 自带 fetch 默认最多等响应头 300 秒，所以经隧道最长可以等到 300 秒，不再是 125 秒。
 - 主站防火墙收紧 443（比如只放行 Cloudflare 的地址段）时，要保留隧道那条规则。
 
+### 和主站装在同一台机器（10-14 agent01，image2.gguuai.com）
+
+生图站也可以直接装在主站服务器上，这时不需要隧道，也不经过 Cloudflare：后端把 gguuai.com 解析到本机 Caddy。image2.gguuai.com 就是这样部署的（主站 15.204.81.104，部署目录 `/opt/xy-image2`，交接说明在服务器上的 `/opt/xy-image2/DEPLOYMENT.md`）。
+
+- **生成**：和单域名一样跑 `prepare.mjs --origin … --project <项目名> --xy2api-url https://gguuai.com`。本机端口 3101/18000 没被占用就用默认值。
+- **后端怎么到主站**：在 `compose.json` 里给默认网络固定一个网段（例如 `172.31.250.0/24`，网关 `.1`，先确认和本机已有的 Docker 网络、隧道不冲突），再给 xy-api、xy-worker 加 `extra_hosts: ["gguuai.com:<网关地址>"]`。网关地址是宿主机自己的地址，连接直接到达主站 Caddy 的 443，拿到的是 gguuai.com 自己的证书，`XY2API_BASE_URL` 不用改。这里没用 `host-gateway`：它指向 docker0 的地址，用本项目网络自己的网关更直观，也不依赖 docker0。
+  - 主站看到的来源地址是这个网段里的容器地址。给 Key 设了 IP 白名单的用户要加上这个网段。
+  - 主站防火墙要允许来自这个网段到 443（ufw 默认放行 443 就够了）。
+  - 和隧道一样，最长等待取决于 Node fetch 的 300 秒响应头上限，没有 Cloudflare 的 125 秒限制。
+- **别影响主站**：
+  - 每个服务都设 `mem_limit`、`cpus`，再加 `oom_score_adj: 300`。整机内存紧张时，内核先杀生图站的容器。数据库也要设上限，和独占机器时不同。
+  - 后端镜像在别的机器上构建，传过来 `docker load`，`pull_policy: never`、删掉 `build`，主站机器上永远不构建。
+  - 部署目录放在一块固定大小的数据盘上，例如稀疏文件加 loop 挂载。fstab 带 `nofail` 和 `x-systemd.before=docker.service`，挂载点目录先 `chattr +i`。这样图片和备份最多占这么大，写不满主站根盘；盘没挂上时，容器起不来，但不会往根盘写数据。
+  - 主站 Caddyfile 只在末尾加一行 `import` 生图站的站点文件。先 `caddy validate`，再 `systemctl reload caddy`，这是平滑重载，进程不重启。站点文件用 prepare 生成的 `Caddyfile`，API 和 Auth 的上游加 `header_up X-Forwarded-For {client_ip}` 和 `header_up X-Real-IP {client_ip}`，只认 Caddy 自己算出的访客地址。
+  - 备份和监控用独立命名的 systemd unit，备份时间避开主站自己的备份窗口。
+- **验收时对比主站**：改动前后各记一次 Caddy 的 PID 和启动时间、主站各容器的启动时间和重启次数、首页和 `/health`，三者都不能变。
+
 ## 备份与恢复
 
 `backup.mjs` 是停写的一致性备份，**会造成维护窗口**，仅在部署运维需要时执行；本轮没有运行真实备份。它停止正在运行的写入服务（保留DB），等待应用优雅停止；保存 postgres 和 `_supabase` 的自定义格式dump、角色SQL、Storage文件、DB自定义密钥配置、应用和Supabase环境文件、部署版本及恢复服务清单，另含 `deployment-config.tar.gz`（实际使用的Envoy脱敏配置、functions、pooler与DB顶层初始化SQL，不含DB数据目录）。手动和调度共享锁，停写失败标记阻止下一轮误报成功。全部成功生成SHA-256清单后才恢复原来运行的服务。失败保留部分结果和停机状态，人工检查 `resume.json` 后恢复，不把部分备份当成功。

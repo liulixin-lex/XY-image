@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-14，v0.0.13）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：「三种开始方式」按页翻，模板窗口「品牌套件」不再被裁；25 张示例提示词重写；技能市场新增 10 个技能、可按用途筛选；生图模板增加到 69 个（17 类），可以设风格、要求、比例和画质，可存「我的模板」。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-14，v0.0.13）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com；第二个站点 [image2.gguuai.com](https://image2.gguuai.com) 同日部署在主站服务器上，数据和 image.gguuai.com 互不共享。** 本版：「三种开始方式」按页翻，模板窗口「品牌套件」不再被裁；25 张示例提示词重写；技能市场新增 10 个技能、可按用途筛选；生图模板增加到 69 个（17 类），可以设风格、要求、比例和画质，可存「我的模板」。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
