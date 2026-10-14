@@ -263,6 +263,10 @@ export function mapGatewayError(input: {
   let known = Boolean(
     status && (input.responseReceived ?? body !== undefined),
   );
+  // A 2xx is never a refusal: if it carries no usable image, xy2api may
+  // still have billed it (0.3.0 answers an upstream's empty image list with
+  // 200 and records the usage), so it is 待核对, never "not charged".
+  if (status && status >= 200 && status < 300) known = false;
   if (known) {
     // xy2api risk control blocks with error type content_policy_violation and
     // an admin-chosen status (default 403, any of 400-599).
