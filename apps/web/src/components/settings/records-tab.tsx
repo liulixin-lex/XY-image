@@ -29,6 +29,7 @@ import {
   type ImageJobView,
   isActiveJob,
   isFailedJob,
+  isRetryingJob,
   isSavingJob,
   jobLabel,
   listImage,
@@ -403,7 +404,7 @@ export function RecordsTab() {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-fg">
                         <span className="inline-flex items-center gap-2">
-                          {isSavingJob(job) ? "保存中" : STATUS[job.status]}
+                          {isSavingJob(job) ? "保存中" : isRetryingJob(job) ? "等待重试" : STATUS[job.status]}
                           <BillingBadge status={job.billing} active={active} />
                         </span>
                       </td>

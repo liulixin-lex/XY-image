@@ -31,9 +31,11 @@ import { resolveImagePreference } from "../src/hooks/use-image-model-preference"
 import { AuthProvider, EXPIRED_LOGIN_PATH } from "../src/lib/auth-context";
 import { describeIssue, issueCodeOf } from "../src/lib/generation-errors";
 import {
+  describeOutcome,
   groupByBatch,
   isActiveJob,
   isFailedJob,
+  isRetryingJob,
   isSavingJob,
   isUnsentJob,
   jobLabel,
@@ -194,6 +196,25 @@ describe("image job views", () => {
       maybeCharged: false,
       action: "none",
     });
+  });
+
+  it("shows a busy refusal the worker will send again as waiting, still cancelable (第 67 条)", () => {
+    const view = toImageJobView({
+      ...base,
+      status: "queued",
+      billing_status: "none",
+      error_code: "upstream_retrying",
+      error_message: "主站繁忙，约 25 秒后自动重试（第 2 次）",
+    } as BackgroundJob);
+    expect(isActiveJob(view)).toBe(true);
+    expect(isRetryingJob(view)).toBe(true);
+    expect(isUnsentJob(view)).toBe(true);
+    expect(jobStatusLabel(view)).toBe("等待重试");
+    expect(describeOutcome(view)).toEqual({ tone: "queued", title: "等待重试" });
+    // Sent again: an ordinary running job.
+    const sent = { ...view, status: "running" as const };
+    expect(isRetryingJob(sent)).toBe(false);
+    expect(describeOutcome(sent).title).toBe("生成中");
   });
 
   it("lets a reconciled billing outcome replace the maybe-charged guess", () => {

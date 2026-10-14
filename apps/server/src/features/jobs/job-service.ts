@@ -157,6 +157,18 @@ export type JobService = {
     errorCode: string,
     errorMessage: string,
   ): Promise<void>;
+  /**
+   * 第 67 条 auto-retry: a send the main site refused as busy, with nothing
+   * charged, goes back to queued and unsent (billing none, so it can still
+   * be canceled for free), its request and task ids cleared so a later
+   * 待核对 is never matched to this attempt. Only from running +
+   * not_charged; false when the row was in any other state.
+   */
+  requeueForRetry(
+    jobId: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<boolean>;
   /** Puts an existing job on its queue after `delaySeconds` (sync route storage retry). */
   scheduleRedelivery(jobId: string, delaySeconds: number): Promise<void>;
 };
@@ -616,6 +628,29 @@ export function createJobService(options: {
         .eq("id", jobId)
         .in("status", ["queued", "running"]);
       checkStoreError(error);
+    },
+
+    async requeueForRetry(jobId, errorCode, errorMessage) {
+      const { data, error } = await options
+        .getAdminClient()
+        .from("background_jobs")
+        .update({
+          status: "queued",
+          billing_status: "none",
+          error_code: errorCode,
+          error_message: errorMessage,
+          xy2api_request_id: null,
+          xy2api_task_id: null,
+          xy2api_task_submitted_at: null,
+          xy2api_task_polled_at: null,
+        })
+        .eq("id", jobId)
+        .eq("status", "running")
+        .eq("billing_status", "not_charged")
+        .select("id")
+        .maybeSingle();
+      checkStoreError(error);
+      return Boolean(data);
     },
 
     async scheduleRedelivery(jobId, delaySeconds) {

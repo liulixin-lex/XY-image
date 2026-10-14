@@ -24,6 +24,7 @@ import {
   formatTime,
   isActiveJob,
   isFailedJob,
+  isRetryingJob,
   isUnsentJob,
   jobAspect,
   listImage,
@@ -459,8 +460,12 @@ function Placeholder({
         role="status"
         className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-line-strong bg-tint/[0.03] px-4 text-center"
       >
-        <span className="font-display text-[18px] text-fg">排队中</span>
-        <span className="text-[12px] leading-relaxed text-fg-soft">还没发出，前面的完成后再发</span>
+        <span className="font-display text-[18px] text-fg">{outcome.title}</span>
+        <span className="text-[12px] leading-relaxed text-fg-soft">
+          {isRetryingJob(job)
+            ? (job.errorMessage ?? "主站繁忙，稍后自动重试")
+            : "还没发出，前面的完成后再发"}
+        </span>
         <button
           type="button"
           onClick={() => actions.onCancelJob(job)}

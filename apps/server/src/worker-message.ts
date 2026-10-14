@@ -5,8 +5,13 @@ import {
   getExecutor,
 } from "./features/jobs/job-executor.js";
 import {
+  AUTO_RETRY_CODE,
+  autoRetryDecision,
+} from "./features/jobs/auto-retry.js";
+import {
   BillingGuardError,
   DeliveryPendingError,
+  GatewayError,
 } from "./features/xy2api/errors.js";
 import { ImageTaskParkedError } from "./features/xy2api/image-task.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
@@ -107,8 +112,8 @@ export async function processMessage(
       : undefined,
   );
 
-  // Increment attempt count
-  await ctx.jobService.incrementAttempt(jobId);
+  // Increment attempt count (sends so far, for the auto-retry below)
+  const { attempt_count: sends } = await ctx.jobService.incrementAttempt(jobId);
 
   // Mark running
   await ctx.jobService.markRunning(jobId);
@@ -145,6 +150,30 @@ export async function processMessage(
     if (latest?.status === "canceled" && latest.billing_status === "none") {
       await ctx.pgmq.archive(queue, msg.msg_id);
       console.log(`${tag} Job ${jobId} canceled before it was sent`);
+      return;
+    }
+    // 第 67 条: refused as busy with nothing charged → queued again, sent
+    // again after a pause (features/jobs/auto-retry.ts). Image jobs only;
+    // the runner has recorded billing not_charged by now.
+    const retry =
+      jobType === "image_generation" && err instanceof GatewayError
+        ? autoRetryDecision({
+            failure: err.failure,
+            sends,
+            maxRetries: ctx.env?.imageAutoRetries ?? 2,
+            createdAt: current.created_at,
+          })
+        : undefined;
+    if (
+      retry &&
+      (await ctx.jobService
+        .requeueForRetry(jobId, AUTO_RETRY_CODE, retry.message)
+        .catch(() => false))
+    ) {
+      await ctx.pgmq.setVt(queue, msg.msg_id, retry.delaySeconds);
+      console.warn(
+        `${tag} Job ${jobId} ${err instanceof GatewayError ? err.failure.code : ""} on send ${sends}, nothing charged; send ${retry.nextSend} in ${retry.delaySeconds}s`,
+      );
       return;
     }
     const errorCode =

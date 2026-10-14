@@ -681,10 +681,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           );
           jobLap("job_created", { jobId: job.id });
 
-          // Poll until terminal state
-          // Allow the provider's ten-minute timeout plus queue overhead.
+          // Poll until terminal state. A 4K high job takes up to ~4 min, and
+          // a busy refusal is sent again up to twice after 20–90 s pauses
+          // (第 67 条, features/jobs/auto-retry.ts), so wait 15 min. Past
+          // that the tool says the image is still coming (not a failure);
+          // the worker places it and the page polls the job.
           const POLL_INTERVAL = 2000;
-          const MAX_WAIT = 660_000;
+          const MAX_WAIT = 900_000;
           const start = Date.now();
           let pollCount = 0;
 
