@@ -172,9 +172,20 @@ export function isSavingJob(job: Pick<ImageJobView, "status" | "errorCode">) {
   return isActiveJob(job) && job.errorCode === "storage_retrying";
 }
 
-/** STATUS_LABEL, with 保存中 for a job waiting for a storage retry. */
+/**
+ * The main site turned it away as busy with nothing charged; the worker sends
+ * it again after a pause (server features/jobs/auto-retry.ts, 第 67 条).
+ * Unsent meanwhile, so it can still be canceled.
+ */
+export function isRetryingJob(job: Pick<ImageJobView, "status" | "errorCode">) {
+  return job.status === "queued" && job.errorCode === "upstream_retrying";
+}
+
+/** STATUS_LABEL, with 保存中 / 等待重试 for jobs the server is still working on. */
 export function jobStatusLabel(job: Pick<ImageJobView, "status" | "errorCode">) {
-  return isSavingJob(job) ? "保存中" : STATUS_LABEL[job.status];
+  if (isSavingJob(job)) return "保存中";
+  if (isRetryingJob(job)) return "等待重试";
+  return STATUS_LABEL[job.status];
 }
 
 export const STATUS_LABEL: Record<ImageJobView["status"], string> = {
@@ -243,6 +254,7 @@ export type JobOutcome = {
 export function describeOutcome(job: ImageJobView): JobOutcome {
   if (isSavingJob(job)) return { tone: "saving", title: "图片已生成，正在保存" };
   if (job.status === "running") return { tone: "running", title: "生成中" };
+  if (isRetryingJob(job)) return { tone: "queued", title: "等待重试" };
   if (job.status === "queued") return { tone: "queued", title: "排队中" };
   // Canceled before the dispatch: nothing reached the main site.
   if (job.status === "canceled" && job.billing === "none")

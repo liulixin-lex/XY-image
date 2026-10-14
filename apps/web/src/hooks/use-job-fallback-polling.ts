@@ -10,8 +10,12 @@ import { fetchJob, fetchJobs } from "../lib/server-api";
 
 /** Interval between polling attempts (ms) */
 const POLL_INTERVAL_MS = 5_000;
-/** Maximum total polling duration before giving up (ms) */
-const MAX_POLL_DURATION_MS = 10 * 60 * 1_000; // 10 minutes
+/**
+ * Maximum total polling duration before giving up (ms). The agent already
+ * waited 15 minutes; a job sent again after a busy refusal (第 67 条) can
+ * still be on its way.
+ */
+const MAX_POLL_DURATION_MS = 30 * 60 * 1_000; // 30 minutes
 /**
  * A generated image storage refused (`pending: "storage"`): the worker retries
  * the upload for about 75 minutes, so poll slower and longer. Past this the
@@ -23,7 +27,7 @@ const STORAGE_MAX_POLL_DURATION_MS = 90 * 60 * 1_000;
  * A job found still queued or running (see watchCanvasJobs): the provider
  * call can take up to ten minutes after the worker picks it up.
  */
-const ACTIVE_MAX_POLL_DURATION_MS = 15 * 60 * 1_000;
+const ACTIVE_MAX_POLL_DURATION_MS = 30 * 60 * 1_000;
 /** Terminal job statuses that should stop polling */
 const TERMINAL_FAILURE_STATUSES = new Set(["failed", "dead_letter", "canceled"]);
 

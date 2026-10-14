@@ -171,14 +171,18 @@ describe("useJobFallbackPolling", () => {
     expect(polls).toBeLessThanOrEqual(361);
   });
 
-  it("keeps the 5 s / 10 min polling for agent timeouts", async () => {
+  it("polls agent timeouts every 5 s for 30 min (第 67 条: retried jobs come later)", async () => {
     fetchJobMock.mockResolvedValue({ job: { status: "running" } });
     const { check } = setup();
-    check(completed({ error: "Job timed out after 300s", jobId: "job-1" }));
+    check(completed({ error: "Job timed out after 900s", jobId: "job-1" }));
     await act(() => vi.advanceTimersByTimeAsync(5_000));
     expect(fetchJobMock).toHaveBeenCalledTimes(1);
-    await act(() => vi.advanceTimersByTimeAsync(15 * 60_000));
-    expect(fetchJobMock.mock.calls.length).toBeLessThanOrEqual(121);
+    await act(() => vi.advanceTimersByTimeAsync(35 * 60_000));
+    const polls = fetchJobMock.mock.calls.length;
+    expect(polls).toBeGreaterThan(300);
+    expect(polls).toBeLessThanOrEqual(361);
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(fetchJobMock.mock.calls.length).toBe(polls);
   });
 
   it("does not poll failed jobs or results without a job id", async () => {

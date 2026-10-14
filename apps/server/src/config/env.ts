@@ -84,12 +84,21 @@ export type ServerEnv = {
   /** Worker settles 待核对 image jobs from the xy2api usage list (default on). */
   xy2apiBillingReconcile?: boolean;
   /**
-   * XY2API_ASYNC_IMAGES=on sends OpenAI and Grok image calls as main-site
-   * async tasks (submit, poll; features/xy2api/image-task.ts). Off by
-   * default. A main site without them answers 404 and the call goes
-   * synchronously, so "on" is safe against any xy2api version.
+   * XY2API_ASYNC_IMAGES sends OpenAI and Grok image calls as main-site
+   * async tasks (submit, poll; features/xy2api/image-task.ts). On by default
+   * since 第 67 条: the 2026-10-14 server move dropped the line from
+   * server.env and long 4K calls went back to one held-open request. A main
+   * site without tasks answers 404 and the call goes synchronously, so "on"
+   * is safe against any xy2api version; "off" turns it off.
    */
   xy2apiAsyncImages?: "on" | "off";
+  /**
+   * LOOMIC_IMAGE_AUTO_RETRIES: how many times the worker sends an image job
+   * again after the main site refused it as busy with nothing charged
+   * (upstream_busy, rate_limited, xy2api_unavailable). Default 2; 0 = never.
+   * features/jobs/auto-retry.ts.
+   */
+  imageAutoRetries?: number;
   /** XY2API_ASYNC_IMAGE_USERS: when set, only these user ids (canary). */
   xy2apiAsyncImageUsers?: string[];
   /**
@@ -291,7 +300,8 @@ export function loadServerEnv(
     workerPollIntervalMs: integer("WORKER_POLL_INTERVAL_MS", 2000),
     workerMaxBatchSize: integer("WORKER_MAX_BATCH_SIZE", 10),
     xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
-    xy2apiAsyncImages: source.XY2API_ASYNC_IMAGES === "on" ? "on" : "off",
+    xy2apiAsyncImages: source.XY2API_ASYNC_IMAGES === "off" ? "off" : "on",
+    imageAutoRetries: integer("LOOMIC_IMAGE_AUTO_RETRIES", 2, 5, 0),
     xy2apiAsyncImageUsers: (source.XY2API_ASYNC_IMAGE_USERS ?? "")
       .split(",")
       .map((value) => value.trim())

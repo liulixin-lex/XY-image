@@ -18,6 +18,7 @@ import {
   createAgentBackend,
 } from "./backends/index.js";
 import { createGluedToolCallMiddleware } from "./glued-tool-calls.js";
+import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import type {
   PersistImageFn,
@@ -28,6 +29,7 @@ import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 import { XY2API_USER_AGENT } from "../utils/user-agent.js";
+import { describeErrorForLog } from "../utils/error-sanitizer.js";
 
 export type LoomicAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -59,9 +61,15 @@ export type LoomicAgentFactory = (options: {
  * Innermost tool-call middleware: tool errors go back to the model instead
  * of ending the run (tool-errors.ts). Every wrapModelCall hook adds a layer
  * of MiddlewareError around model errors (see utils/error-chain.ts).
+ * Innermost model-call middleware: a call refused as busy, or one that got
+ * no response, is sent again (model-retry.ts, 第 67 条).
  */
 export function loomicAgentMiddleware() {
-  return [createGluedToolCallMiddleware(), createToolErrorMiddleware()];
+  return [
+    createGluedToolCallMiddleware(),
+    createToolErrorMiddleware(),
+    createModelRetryMiddleware(),
+  ];
 }
 
 export function createLoomicDeepAgent(options: {
@@ -159,10 +167,16 @@ export function createLoomicDeepAgent(options: {
 }
 
 // Only the transport closure sees the credential; it is never put in graph state.
+// 第 67 条: no time limit on a whole answer (a long reasoning call is fine),
+// but a connection that goes silent for 10 minutes is dropped instead of
+// holding the run forever (one old-prod run hung for almost two hours until
+// the stale-run sweeper marked it). Reasoning streams send events while the
+// model thinks, so 10 silent minutes means the connection is gone.
+export const CHAT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const chatDispatcher = new HttpAgent({
   connect: { timeout: 60000 },
-  headersTimeout: 0,
-  bodyTimeout: 0,
+  headersTimeout: CHAT_IDLE_TIMEOUT_MS,
+  bodyTimeout: CHAT_IDLE_TIMEOUT_MS,
 });
 export function createStreamingChatModel(
   specifier: string,
@@ -204,7 +218,10 @@ export function createStreamingChatModel(
       return separateToolCallIndexes(response);
     } catch (error) {
       if (error instanceof GatewayError) throw error;
-      throw new Error("对话连接中断，请稍后再试");
+      // No response at all (refused, reset, timed out before the headers):
+      // nothing was streamed yet, so model-retry.ts may send it again.
+      if (init?.signal?.aborted) throw error;
+      throw new ChatConnectError(describeErrorForLog(error));
     }
   };
   return new ChatOpenAI({

@@ -7,6 +7,8 @@ import {
 import {
   BillingGuardError,
   DeliveryPendingError,
+  GatewayError,
+  mapGatewayError,
 } from "./features/xy2api/errors.js";
 import { ImageTaskParkedError } from "./features/xy2api/image-task.js";
 import type { PgmqMessage } from "./queue/pgmq-client.js";
@@ -38,6 +40,10 @@ function fixture(status = "queued", billing_status = "none") {
       }),
       markRetrying: vi.fn(async () => {
         job.status = "queued";
+      }),
+      requeueForRetry: vi.fn(async () => {
+        job.status = "queued";
+        return true;
       }),
     },
     pgmq: {
@@ -175,6 +181,116 @@ describe("worker completion and redelivery", () => {
       expect(f.ctx.pgmq.archive).toHaveBeenCalledOnce();
     },
   );
+});
+
+describe("auto-retry of busy refusals (第 67 条)", () => {
+  function refused(
+    status: number,
+    sends = 1,
+    options: { createdAgoMs?: number; answeredByXy2api?: boolean } = {},
+  ) {
+    const f = fixture();
+    Object.assign(f.job, {
+      created_at: new Date(
+        Date.now() - (options.createdAgoMs ?? 30_000),
+      ).toISOString(),
+    });
+    vi.mocked(f.ctx.jobService.incrementAttempt).mockResolvedValue({
+      attempt_count: sends,
+      max_attempts: 1,
+    });
+    f.execute.mockRejectedValue(
+      new GatewayError(
+        mapGatewayError({
+          status,
+          body: { error: { message: "No available compatible accounts" } },
+          responseReceived: true,
+          ...(options.answeredByXy2api === undefined
+            ? {}
+            : { answeredByXy2api: options.answeredByXy2api }),
+        }),
+      ),
+    );
+    return f;
+  }
+  it("queues a 503 the main site answered again instead of failing it", async () => {
+    const f = refused(503);
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).toHaveBeenCalledWith(
+      "job-1",
+      "upstream_retrying",
+      expect.stringContaining("第 2 次"),
+    );
+    const delay = vi.mocked(f.ctx.pgmq.setVt).mock.calls[0]?.[2] ?? 0;
+    expect(delay).toBeGreaterThanOrEqual(20);
+    expect(delay).toBeLessThanOrEqual(30);
+    expect(f.ctx.jobService.markDeadLetter).not.toHaveBeenCalled();
+    expect(f.ctx.pgmq.archive).not.toHaveBeenCalled();
+    expect(f.job.status).toBe("queued");
+  });
+  it("retries a 429 too", async () => {
+    const f = refused(429, 2);
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).toHaveBeenCalledOnce();
+    const delay = vi.mocked(f.ctx.pgmq.setVt).mock.calls[0]?.[2] ?? 0;
+    expect(delay).toBeGreaterThanOrEqual(60);
+  });
+  it("fails it after the last retry", async () => {
+    const f = refused(503, 3);
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledWith(
+      "job-1",
+      "upstream_busy",
+      expect.any(String),
+    );
+  });
+  it("never resends a 5xx that may have been billed (cut in between)", async () => {
+    const f = refused(502, 1, { answeredByXy2api: false });
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledWith(
+      "job-1",
+      "upstream_unknown",
+      expect.any(String),
+    );
+  });
+  it("does not resend a refusal that is not about load", async () => {
+    const f = fixture();
+    Object.assign(f.job, { created_at: new Date().toISOString() });
+    f.execute.mockRejectedValue(
+      new GatewayError(
+        mapGatewayError({
+          status: 400,
+          body: { error: { message: "bad size" } },
+          responseReceived: true,
+        }),
+      ),
+    );
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledOnce();
+  });
+  it("lets an old job fail", async () => {
+    const f = refused(503, 1, { createdAgoMs: 25 * 60 * 1000 });
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledOnce();
+  });
+  it("is off with LOOMIC_IMAGE_AUTO_RETRIES=0", async () => {
+    const f = refused(503);
+    Object.assign(f.ctx, { env: { imageAutoRetries: 0 } });
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledOnce();
+  });
+  it("fails the job when it can no longer be put back", async () => {
+    const f = refused(503);
+    vi.mocked(f.ctx.jobService.requeueForRetry).mockResolvedValue(false);
+    await f.run();
+    expect(f.ctx.pgmq.setVt).not.toHaveBeenCalled();
+    expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledOnce();
+  });
 });
 
 describe("per-user dispatch gate", () => {

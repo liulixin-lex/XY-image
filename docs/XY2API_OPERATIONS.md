@@ -176,7 +176,7 @@ order by created_at desc;
 
 大图要 1～3 分钟。同步调用要一直占着一条连接，中途被代理或网络掐断，结果就不明（待核对）。异步调用时，主站收下请求立刻返回任务号，图在主站后台生成，本站每隔几秒查一次结果，连接断了只是少查一次（代码 `features/xy2api/image-task.ts`，迁移 `20261012000001`）。
 
-- **开关**：`XY2API_ASYNC_IMAGES=on`（默认 `off`）。`XY2API_ASYNC_IMAGE_USERS` 填逗号分隔的用户 ID 时，只有这些用户走异步（灰度），留空就是所有人。API 和 Worker 都读这两个变量，改完重建两个容器。
+- **开关**：`XY2API_ASYNC_IMAGES`，第 67 条起默认 `on`，写 `off` 才关（之前默认关；10-14 换服务器时 `server.env` 漏了这一行，正式站悄悄回到了同步）。`XY2API_ASYNC_IMAGE_USERS` 填逗号分隔的用户 ID 时，只有这些用户走异步（灰度），留空就是所有人。API 和 Worker 都读这两个变量，改完重建两个容器。
 - **范围**：OpenAI 和 Grok 的 Key（目录协议 `openai-images`、`xai-images`）。Gemini 主站没有异步接口，仍走同步。
 - **主站前提**：主站管理员要在「备份 → 异步图片对象存储」里开启存储。没开时提交返回 404 "async image tasks are not enabled"，这时什么都没发出去，本站改走同步，并在 10 分钟内不再对这类 Key 试异步（日志 `async image tasks unavailable for <平台> keys`）。主站的调度模式还必须是 `sub2api`（gguuai.com 从 09-29 起就是）：在 `controlled` 模式下，xy2api 0.2.5/0.2.6 会把后台任务绑在提交请求的连接上，202 一返回任务就失败（主站日志 `upstream request failed: context canceled`，不扣费，本站显示主站繁忙）。主站要切到 `controlled` 时，先把本站异步关掉。
 - **流程**：`POST /v1/images/{generations,edits}/async` 返回 202、任务号和 `X-Client-Request-ID`；任务号、请求 ID、提交时间写进任务行（`xy2api_task_id`、`xy2api_request_id`、`xy2api_task_submitted_at`）之后才开始查。`GET /v1/images/tasks/<任务号>` 前 30 秒每 3 秒查一次，2 分钟内每 5 秒，之后每 10 秒，主站给了 `Retry-After` 就不早于它（最多 30 秒）。完成后结果是主站对象存储里的链接，本站只接受 https，最多读 3 次、最大 64 MiB，之后和同步结果一样保存。
@@ -203,6 +203,21 @@ order by xy2api_task_submitted_at;
 `since_last_poll` 超过 2 分钟、状态还是 `running` 的任务说明没人在查：先看 Worker 是否在跑、日志里有没有 `[task-resumer]`。异步任务的平均耗时可以按 `xy2api_task_submitted_at` 到 `completed_at` 算。主站对象存储里的结果图不会自动删除，存储桶要配生命周期规则（只针对结果前缀，例如 `images/`，保留 7 天），这一步在主站做。
 
 实验环境演练：`~/xy-lab/e2e/async-setup.sh on|off`（实验主站的对象存储和调度模式），`~/xy-lab/e2e/async.sh`（`image` 正常出图、`resume` 重启 Worker、`edge` 主站断开 20 秒、`inline` 杀掉 API、`fallback` 主站关掉异步后回退同步），都在全量回归里。
+
+### 繁忙自动重试（第 67 条）
+
+主站明确回了“忙”、而且没扣费的生图，Worker 不再直接判失败，而是放回队列，过一会儿重发（代码 `features/jobs/auto-retry.ts`、`worker-message.ts`）。
+
+- **哪些会重发**：`upstream_busy`（主站自己回的 5xx，例如 503 "No available compatible accounts"、502 "Upstream request failed"）、`rate_limited`（429，例如 "Concurrency limit exceeded for account"）、`xy2api_unavailable`（请求没发出去）。三种都是主站带着请求 ID 回的错误或根本没发出，主站不记用量。
+- **哪些绝不重发**：待核对（中间被掐断、2xx 没有图、异步任务生成后才失败）、内容审核、参数错误、余额不足、Key 问题。
+- **次数和间隔**：`LOOMIC_IMAGE_AUTO_RETRIES`（默认 2，0 = 关，最多 5）。第 2 次在约 20～30 秒后，第 3 次在约 60～90 秒后（随机错开，避免一批被拒的任务同时回来）。创建超过 20 分钟的任务不再重发。
+- **重发前的状态**：任务回到 `queued`、计费 `none`，`error_code = upstream_retrying`，`error_message` 写“主站繁忙，约 N 秒后自动重试（第 N 次）”，上一次的请求 ID 和异步任务号清空（下一次失败若是待核对，不会对到上一次的请求 ID）。这段时间里任务还没发出，用户可以免费取消。生图页卡片显示「等待重试」和这句话。
+- **依据**：旧正式站 10-10～10-14 约 300 个生图任务里 58 个以 `upstream_busy` / `rate_limited` 失败，集中在多张 4K 同时生成的时段；同一请求过一两分钟通常能分到空闲账号。
+- 设计助手等图最长 15 分钟（`agent/runtime.ts`），覆盖重发；还没好就告诉用户“还在生成，好了自动放到画布上”，页面接着查 30 分钟。
+
+日志关键字：`Job … upstream_busy on send 1, nothing charged; send 2 in 24s`（Worker）。
+
+对话模型也一样（`agent/model-retry.ts`）：主站回“忙”（503、429）或连接没建立起来时，等 2、6、15 秒各再发一次；已经开始输出的回答不会重发。日志 `[agent-model] call failed (…); try 2/4 in 2000ms`。对话连接 10 分钟没有任何数据就断开（以前不限，曾有一次运行挂了将近两小时）。
 
 ### 工作区成员与数据隔离
 
