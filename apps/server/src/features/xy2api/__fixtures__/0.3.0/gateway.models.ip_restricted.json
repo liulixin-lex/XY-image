@@ -1,0 +1,21 @@
+{
+  "scenario": "gateway.models.ip_restricted",
+  "tier": "A",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "7cb403bd-98d9-4f7e-9326-7727acdf8a53",
+      "x-request-id": "282a8da4-b466-4a80-8b36-f74dd2db1681"
+    },
+    "json": {
+      "code": "ACCESS_DENIED",
+      "message": "Access denied. Your IP is 172.18.0.1"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "scenario": "gateway.images.upstream_429",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture [[mock:status=429]]"
+    }
+  },
+  "response": {
+    "status": 429,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "2e71c9f6-30dc-46c3-96c8-070beea5ab2a",
+      "x-request-id": "d46b1614-ef6f-4001-957b-d7df8bae3491"
+    },
+    "json": {
+      "error": {
+        "message": "Upstream rate limit exceeded, please retry later",
+        "type": "rate_limit_error"
+      }
+    }
+  }
+}

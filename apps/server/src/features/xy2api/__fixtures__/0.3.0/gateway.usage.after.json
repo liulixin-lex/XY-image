@@ -1,0 +1,90 @@
+{
+  "scenario": "gateway.usage.after",
+  "tier": "C",
+  "note": "after one generation + one edit",
+  "request": {
+    "method": "GET",
+    "path": "/v1/usage",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "34d3f40e-3144-4b45-a1a9-c1fcb24f51de",
+      "x-request-id": "167a08e1-3bf7-4e03-9bb6-d7832c87a24d"
+    },
+    "json": {
+      "balance": 49.839595,
+      "daily_usage": [
+        {
+          "date": "2026-10-14",
+          "requests": 4,
+          "input_tokens": 104,
+          "output_tokens": 2135,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "total_tokens": 2239,
+          "cost": 0.080405,
+          "actual_cost": 0.080405
+        }
+      ],
+      "isValid": true,
+      "mode": "unrestricted",
+      "model_stats": [
+        {
+          "model": "gpt-image-2",
+          "requests": 2,
+          "input_tokens": 80,
+          "output_tokens": 2112,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 2192,
+          "cost": 0.08,
+          "actual_cost": 0.08,
+          "account_cost": 0.08
+        },
+        {
+          "model": "gpt-5.4",
+          "requests": 2,
+          "input_tokens": 24,
+          "output_tokens": 23,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 47,
+          "cost": 0.000405,
+          "actual_cost": 0.000405,
+          "account_cost": 0.000405
+        }
+      ],
+      "planName": "钱包余额",
+      "remaining": 49.839595,
+      "unit": "USD",
+      "usage": {
+        "average_duration_ms": 17.5,
+        "rpm": 0,
+        "today": {
+          "actual_cost": 0.080405,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost": 0.080405,
+          "input_tokens": 104,
+          "output_tokens": 2135,
+          "requests": 4,
+          "total_tokens": 2239
+        },
+        "total": {
+          "actual_cost": 0.080405,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost": 0.080405,
+          "input_tokens": 104,
+          "output_tokens": 2135,
+          "requests": 4,
+          "total_tokens": 2239
+        },
+        "tpm": 447
+      }
+    }
+  }
+}
