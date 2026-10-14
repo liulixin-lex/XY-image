@@ -632,6 +632,12 @@ async function handleImages(req, res, raw, ctx, { edit }) {
   ctx.model = params.model;
   // Start of the prompt (lab prompts only): shows the server's edit wording arrived.
   ctx.promptHead = String(params.prompt ?? "").slice(0, 48);
+  // The image options as sent (第 66 条 drill: 质量 / 格式 / 压缩 / 背景 / 审核).
+  ctx.options = Object.fromEntries(
+    ["size", "quality", "output_format", "output_compression", "background", "moderation"]
+      .filter((key) => params[key] !== undefined)
+      .map((key) => [key, params[key]]),
+  );
   const d = directives(params.prompt);
   ctx.directives = d;
   if (d.delay) await sleep(Number(d.delay));
