@@ -54,6 +54,9 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
   // 第 67 条: the model's built-in web search (run at the main site).
   web_search: { label: "联网搜索", icon: "search", showCard: true },
+  // 第 67 条 审图 and file editing.
+  view_images: { label: "查看图片", icon: "eye", showCard: true },
+  apply_patch: { label: "修改资料", icon: "tool", showCard: false },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
   // deepagents' built-in file tools: the assistant reading skill notes or
   // keeping scratch files. Raw file text means nothing to the user, so only
@@ -196,6 +199,11 @@ export function describeToolResult(
       const errors = Array.isArray(output.errors) ? output.errors.length : 0;
       if (!applied && errors) return `${errors} 处改动没有成功`;
       return errors ? `改了 ${applied} 处，${errors} 处没有成功` : `改了 ${applied} 处`;
+    }
+    case "view_images": {
+      const shown = count(output.shown);
+      if (shown === null) return null;
+      return shown === 0 ? "没有找到这些图片" : `看了 ${shown} 张图`;
     }
     case "web_search": {
       const sources = Array.isArray(output.sources) ? output.sources.length : 0;

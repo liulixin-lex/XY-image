@@ -16,6 +16,9 @@ import { createPersistSandboxFileTool } from "./persist-sandbox-file.js";
 import { createProjectSearchTool } from "./project-search.js";
 import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import { createVideoGenerateTool } from "./video-generate.js";
+import { createViewImagesTool } from "./view-images.js";
+import { createApplyPatchTool } from "./apply-patch.js";
+import type { ReviewImageStore } from "../vision.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
 export { createVideoGenerateTool } from "./video-generate.js";
@@ -60,10 +63,14 @@ export function createMainAgentTools(
     sandboxDir?: string;
     submitImageJob?: SubmitImageJobFn;
     availableModels?: AvailableModel[];
+    /** 第 67 条 审图: pictures the model is shown (agent/vision.ts). */
+    reviewImages?: ReviewImageStore;
   },
 ) {
   const tools: StructuredTool[] = [
     createProjectSearchTool(backend),
+    // 第 67 条: multi-place, multi-file edits in one call (Codex format).
+    createApplyPatchTool(backend) as unknown as StructuredTool,
     createInspectCanvasTool(deps),
     createManipulateCanvasTool(deps),
     createImageGenerateTool({
@@ -87,6 +94,15 @@ export function createMainAgentTools(
       createScreenshotCanvasTool({
         connectionManager: deps.connectionManager,
         ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
+        ...(deps.reviewImages ? { reviewImages: deps.reviewImages } : {}),
+      }),
+    );
+  }
+  if (deps.reviewImages) {
+    tools.push(
+      createViewImagesTool({
+        createUserClient: deps.createUserClient,
+        reviewImages: deps.reviewImages,
       }),
     );
   }

@@ -68,7 +68,8 @@ export function refusedChatOption(
   );
   const provider = gateway ? undefined : findChatProviderError(error);
   if (provider)
-    return provider.upstreamStatus === 400 || provider.upstreamStatus === 422
+    return (provider.upstreamStatus === 400 || provider.upstreamStatus === 422) &&
+      provider.refusedOption !== "image"
       ? provider.refusedOption
       : undefined;
   const status = gateway?.failure.diagnostics?.status;

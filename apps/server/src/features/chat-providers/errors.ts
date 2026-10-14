@@ -1,3 +1,7 @@
+import {
+  isContextOverflowText,
+  markContextOverflow,
+} from "../../utils/context-overflow.js";
 import { causeChain, findCause } from "../../utils/error-chain.js";
 
 const messages = {
@@ -28,7 +32,7 @@ export class ChatProviderError extends Error {
    * provider's own text, which may echo the user's key (agent/
    * model-options.ts reads it to drop the option and call again).
    */
-  refusedOption?: "web_search" | "effort";
+  refusedOption?: "web_search" | "effort" | "image";
   constructor(
     readonly code: ChatProviderErrorCode,
     readonly statusCode = 400,
@@ -62,9 +66,15 @@ export function mapProviderStatus(status: number, body = "", models = false) {
   const error = new ChatProviderError(code);
   error.modelsEndpointMissing = models && status === 404;
   error.upstreamStatus = status;
+  // Too long for the model: deepagents' summarization catches a
+  // ContextOverflowError anywhere in the cause chain and compacts.
+  if ((status === 400 || status === 413 || status === 422) && isContextOverflowText(body))
+    markContextOverflow(error);
   if (status >= 400 && status < 500) {
     if (/web[_ ]?search|hosted tool|tool type|unsupported tool|search tool/i.test(body))
       error.refusedOption = "web_search";
+    else if (/image_url|image input|vision|multimodal|multi-modal/i.test(body))
+      error.refusedOption = "image";
     else if (/reasoning|effort|thinking/i.test(body)) error.refusedOption = "effort";
   }
   return error;

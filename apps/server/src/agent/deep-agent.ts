@@ -14,6 +14,7 @@ import {
   usesResponsesApi,
 } from "@loomic/shared";
 import { createDeepAgent } from "deepagents";
+import { createMiddleware } from "langchain";
 import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
 import {
   GatewayError,
@@ -45,6 +46,16 @@ import type {
 import { createMainAgentTools } from "./tools/index.js";
 import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
+import { type ReviewImageStore, createVisionReviewMiddleware } from "./vision.js";
+import { createProjectMemoryMiddleware } from "./project-memory.js";
+import {
+  createReadToolRetryMiddleware,
+  createRunBudgetMiddleware,
+} from "./run-budget.js";
+import {
+  isContextOverflowText,
+  markContextOverflow,
+} from "../utils/context-overflow.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 import { XY2API_USER_AGENT } from "../utils/user-agent.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
@@ -71,6 +82,8 @@ export type LoomicAgentFactory = (options: {
   customChat?: Parameters<typeof createCustomChatModel>[0];
   /** 第 67 条: 思考强度, 联网搜索, prompt cache key (model-options.ts). */
   chatOptions?: ChatRunOptions;
+  /** 第 67 条 审图: pictures the model is shown (vision.ts). */
+  reviewImages?: ReviewImageStore;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
@@ -92,11 +105,18 @@ export type ChatRunOptions = {
  * no response, is sent again (model-retry.ts, 第 67 条).
  */
 export function loomicAgentMiddleware(
-  extra: ReturnType<typeof createChatOptionsMiddleware>[] = [],
+  extra: ReturnType<typeof createMiddleware>[] = [],
+  context: ReturnType<typeof createMiddleware>[] = [],
 ) {
   return [
     createGluedToolCallMiddleware(),
     createToolErrorMiddleware(),
+    // Inside the tool-errors one: read-only tools get a second try first.
+    createReadToolRetryMiddleware(),
+    // 第 67 条: a run stops after RUN_MODEL_CALL_BUDGET model calls.
+    createRunBudgetMiddleware(),
+    // Project memory and other system-prompt context (project-memory.ts).
+    ...context,
     createModelRetryMiddleware(),
     // Innermost: built-in web search and the effort fallback (第 67 条).
     ...extra,
@@ -119,6 +139,7 @@ export function createLoomicDeepAgent(options: {
   credentials?: { apiKey: string; baseUrl: string };
   customChat?: Parameters<typeof createCustomChatModel>[0];
   chatOptions?: ChatRunOptions;
+  reviewImages?: ReviewImageStore;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): LoomicAgent {
@@ -157,7 +178,7 @@ export function createLoomicDeepAgent(options: {
     console.info(
       `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} webSearch=${webSearch ? "on" : chatOptions.webSearch ? "unsupported" : "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
     );
-  const optionsMiddleware = builtHere
+  const optionsMiddleware: ReturnType<typeof createMiddleware>[] = builtHere
     ? [
         createChatOptionsMiddleware({
           ref,
@@ -169,6 +190,10 @@ export function createLoomicDeepAgent(options: {
         }),
       ]
     : [];
+  // Innermost of all: a model that refuses pictures is called again without
+  // them before the options middleware could take it for an option refusal.
+  if (options.reviewImages)
+    optionsMiddleware.push(createVisionReviewMiddleware(options.reviewImages));
 
   const createUserClient =
     options.createUserClient ??
@@ -211,7 +236,9 @@ export function createLoomicDeepAgent(options: {
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
-    middleware: loomicAgentMiddleware(optionsMiddleware),
+    middleware: loomicAgentMiddleware(optionsMiddleware, [
+      createProjectMemoryMiddleware(backendResult.factory),
+    ]),
     model: resolvedModel,
     name: "loomic",
     ...(options.store ? { store: options.store } : {}),
@@ -232,6 +259,7 @@ export function createLoomicDeepAgent(options: {
         ? { submitImageJob: options.submitImageJob }
         : {}),
       availableModels: options.imageModels ?? [],
+      ...(options.reviewImages ? { reviewImages: options.reviewImages } : {}),
     }),
   });
 }
@@ -283,7 +311,7 @@ export function createStreamingChatModel(
         const body: unknown = await response.json().catch(() => undefined);
         // diagnostics: the main site's own words, scrubbed, for the log and
         // for model-options.ts (a model that refuses an effort level).
-        throw new GatewayError({
+        const refusal = new GatewayError({
           ...mapGatewayError({ status: response.status, body }),
           diagnostics: gatewayDiagnostics({
             status: response.status,
@@ -291,6 +319,19 @@ export function createStreamingChatModel(
             headers: response.headers,
           }),
         });
+        // Too long for the model: deepagents compacts and calls again.
+        if (
+          [400, 413, 422].includes(response.status) &&
+          isContextOverflowText(
+            `${refusal.failure.diagnostics?.errorId ?? ""} ${refusal.failure.diagnostics?.message ?? ""}`,
+          )
+        ) {
+          console.warn(
+            `[agent-model] ${modelName} answered ${response.status}: the conversation is longer than its context; summarizing`,
+          );
+          markContextOverflow(refusal);
+        }
+        throw refusal;
       }
       // The main site relays other vendors too; see tool-call-stream.ts.
       return separateToolCallIndexes(response);
