@@ -42,7 +42,7 @@ import {
 } from "@/lib/server-api";
 import { cn } from "@/lib/utils";
 import { SKILL_CATEGORY_LABELS } from "./categories";
-import { curatedCategories, curatedTags, filterCurated } from "./curated";
+import { curatedCategories, curatedDomains, curatedTags, filterCurated, isNewSkill, templateCount } from "./curated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -308,11 +308,19 @@ function CuratedSkillCard({
         {skill.isFeatured && (
           <Sparkles aria-label="推荐" className="size-3.5 shrink-0 text-acc-text" />
         )}
+        {isNewSkill(skill) ? (
+          <span className="shrink-0 rounded-[6px] bg-acc-soft px-1.5 py-0.5 text-[11px] font-semibold text-acc-text">
+            新上架
+          </span>
+        ) : null}
       </div>
 
       <p className="mb-3 line-clamp-2 flex-1 text-[13px] leading-relaxed text-fg-soft">
         {skill.description}
       </p>
+      {templateCount(skill) > 0 ? (
+        <p className="mb-3 text-[12px] text-fg-muted">配 {templateCount(skill)} 个生图模板</p>
+      ) : null}
 
       <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
         <div className="flex min-w-0 flex-wrap gap-1">
@@ -380,9 +388,11 @@ export function MarketplacePanel({
 }: MarketplacePanelProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<SkillCategory | null>(null);
+  const [domain, setDomain] = useState<string | null>(null);
   const [communityOpen, setCommunityOpen] = useState(false);
   const categories = curatedCategories(skills);
-  const shown = filterCurated(skills, { query, category });
+  const domains = curatedDomains(skills);
+  const shown = filterCurated(skills, { query, category, domain });
   const total = filterCurated(skills, { query: "", category: null }).length;
 
   return (
@@ -414,7 +424,7 @@ export function MarketplacePanel({
           />
           <input
             type="search"
-            placeholder="搜索精选技能，如 小红书、主图"
+            placeholder="搜索精选技能，如 二次元、梗图、反推"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="搜索精选技能"
@@ -422,6 +432,27 @@ export function MarketplacePanel({
           />
         </div>
       </div>
+
+      {/* 用途 (第 64 条): finer than the categories, matched on names and tags. */}
+      {domains.length > 1 ? (
+        <fieldset className="-mt-2 mb-5 flex flex-wrap gap-1.5 sm:mb-6">
+          <legend className="sr-only">按用途筛选</legend>
+          {[null, ...domains].map((d) => (
+            <button
+              key={d ?? "all"}
+              type="button"
+              aria-pressed={domain === d}
+              onClick={() => setDomain(d)}
+              className={cn(
+                "h-8 rounded-[9px] px-2.5 text-[12.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
+                domain === d ? "bg-fg text-ground" : "bg-tint/[0.05] text-fg-soft hover:text-fg",
+              )}
+            >
+              {d ?? "所有用途"}
+            </button>
+          ))}
+        </fieldset>
+      ) : null}
 
       {loading ? (
         <div className="flex justify-center py-16">
