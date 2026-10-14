@@ -90,6 +90,16 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.trim() !== "") : [];
 }
 
+/** metadata.sources: {name, url} with an http(s) url only. */
+function sourceList(value: unknown): Array<{ name: string; url: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const { name, url } = item as { name?: unknown; url?: unknown };
+    return typeof name === "string" && typeof url === "string" && /^https?:\/\//.test(url) ? [{ name, url }] : [];
+  });
+}
+
 export function SkillDetailDialog({
   skill,
   open,
@@ -190,7 +200,8 @@ export function SkillDetailDialog({
           const templates = stringList(skill.metadata?.templates)
             .map((id) => findTemplate(id))
             .filter((t): t is NonNullable<typeof t> => t !== null);
-          if (!examples.length && !templates.length) return null;
+          const sources = sourceList(skill.metadata?.sources);
+          if (!examples.length && !templates.length && !sources.length) return null;
           return (
             <div className="space-y-3 rounded-[12px] bg-tint/[0.04] p-3.5">
               {examples.length ? (
@@ -220,6 +231,26 @@ export function SkillDetailDialog({
                       </button>
                     ))}
                   </div>
+                </div>
+              ) : null}
+              {/* 第 64 条: where the advice in the skill comes from. */}
+              {sources.length ? (
+                <div className="space-y-1.5">
+                  <span className="text-xs font-medium text-fg-muted">参考来源</span>
+                  <ul className="space-y-1">
+                    {sources.map((source) => (
+                      <li key={source.url} className="text-[12.5px] leading-relaxed">
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-fg-soft underline decoration-line-strong underline-offset-4 transition-colors hover:text-fg hover:decoration-acc"
+                        >
+                          {source.name}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </div>

@@ -484,12 +484,13 @@ export const Composer = forwardRef<
       );
   };
 
-  const applyTemplate = ({ template, prompt: text }: TemplateUse) => {
+  const applyTemplate = ({ template, prompt: text, settings }: TemplateUse) => {
     setPrompt(text);
     setBeforeRewrite(null);
-    setResolution(template.resolution);
-    setQuality(template.quality);
-    if (template.aspectRatio) setRatio(template.aspectRatio);
+    // The user's choice in the template's 更多设置, else the template's suggestion.
+    setResolution(settings.resolution);
+    setQuality(settings.quality);
+    if (settings.aspectRatio) setRatio(settings.aspectRatio);
     setTemplatesOpen(false);
     if (template.reference?.need === "required" && attachments.length === 0)
       toast(`「${template.name}」要用原图：在「参考图」里加上要改的图片再生成。`);

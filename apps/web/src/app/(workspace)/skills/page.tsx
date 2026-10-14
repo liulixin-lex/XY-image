@@ -522,12 +522,12 @@ export default function SkillsPage() {
           key={`${templateId ?? "list"}-${templateOpens}`}
           initialTemplateId={templateId}
           useLabel="去生图使用"
-          onUse={({ template, prompt }) => {
+          onUse={({ template, prompt, settings }) => {
             savePendingDraft({
               prompt,
-              resolution: template.resolution,
-              quality: template.quality,
-              ...(template.aspectRatio ? { aspectRatio: template.aspectRatio } : {}),
+              resolution: settings.resolution,
+              quality: settings.quality,
+              ...(settings.aspectRatio ? { aspectRatio: settings.aspectRatio } : {}),
             });
             console.info("[skills] template → studio", { template: template.id });
             router.push("/studio");

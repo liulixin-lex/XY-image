@@ -11,8 +11,14 @@ import type { ShowcaseItem } from "./showcase";
  * Live miniatures of the three ways to start (第 63 条): the studio, the
  * canvas and the template gallery, each acting out one short scene whenever
  * `play` changes to a new non-zero value (typing a description, pictures
- * developing, wires drawing); 0 leaves the finished picture. They are pictures of the product, not controls: aria-hidden,
- * no focusable elements; the real pages are one click away.
+ * developing, wires drawing); 0 leaves the finished picture. They are
+ * pictures of the product, not controls: aria-hidden, no focusable
+ * elements; the real pages are one click away.
+ *
+ * Layout (第 64 条): every scene fills the height it is given. Text blocks
+ * keep their natural height and the pictures take what is left (flex,
+ * min-h-0, object-cover), so nothing is pushed out of a short window — the
+ * 品牌套件 card used to be cut off at the bottom of the 模板 window.
  *
  * Every scene ends in the same state the static markup shows, so reduced
  * motion, a scene that never plays and server rendering all look finished.
@@ -33,6 +39,8 @@ function useScene(
         const q = gsap.utils.selector(root);
         const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
         build(tl, q);
+        // A scene cut short (the window went to the back) still ends finished.
+        return () => tl.progress(1);
       });
       return () => mm.revert();
     },
@@ -62,6 +70,9 @@ function typeInto(
       onUpdate: () => {
         el.textContent = text.slice(0, Math.round(state.n));
       },
+      onComplete: () => {
+        el.textContent = text;
+      },
     },
     at,
   );
@@ -86,6 +97,8 @@ function Picture({
   );
 }
 
+const CARD = "rounded-[14px] bg-panel shadow-[0_10px_24px_-18px_var(--shadow-2)]";
+
 /** The studio: a description typed, settings set, four pictures developing. */
 export function StudioDemo({
   samples,
@@ -96,37 +109,18 @@ export function StudioDemo({
     : "雾中山谷，胶片质感，电影光";
   const root = useScene(play, (tl, q) => {
     typeInto(tl, q("[data-type]")[0], prompt, 0.15, 1.3);
-    tl.from(
-      q("[data-chip]"),
-      { y: 8, opacity: 0, stagger: 0.07, duration: 0.4 },
-      1.1,
-    )
+    tl.from(q("[data-chip]"), { y: 8, opacity: 0, stagger: 0.07, duration: 0.4 }, 1.1)
       .fromTo(
         q("[data-go]"),
         { scale: 1 },
-        {
-          scale: 0.93,
-          duration: 0.12,
-          yoyo: true,
-          repeat: 1,
-          ease: "power1.inOut",
-        },
+        { scale: 0.93, duration: 0.12, yoyo: true, repeat: 1, ease: "power1.inOut" },
         1.7,
       )
-      .from(
-        q("[data-scan]"),
-        { opacity: 0, duration: 0.25, stagger: 0.05 },
-        1.85,
-      )
+      .from(q("[data-scan]"), { opacity: 0, duration: 0.25, stagger: 0.05 }, 1.85)
       .fromTo(
         q("[data-pic]"),
         { clipPath: "inset(100% 0% 0% 0%)" },
-        {
-          clipPath: "inset(0% 0% 0% 0%)",
-          duration: 0.75,
-          stagger: 0.32,
-          ease: "power2.inOut",
-        },
+        { clipPath: "inset(0% 0% 0% 0%)", duration: 0.75, stagger: 0.32, ease: "power2.inOut" },
         2.6,
       )
       .from(q("[data-ring]"), { opacity: 0, scale: 0.94, duration: 0.4 }, 4.2);
@@ -135,19 +129,20 @@ export function StudioDemo({
     <div
       ref={root}
       aria-hidden
-      className="flex h-full flex-col justify-center gap-5 rounded-[18px] bg-well p-5 select-none sm:p-7"
+      className="flex h-full min-h-0 flex-col gap-4 rounded-[18px] bg-well p-4 select-none sm:p-5"
     >
-      <div className="rounded-[14px] bg-panel px-4 py-3.5 shadow-[0_10px_24px_-18px_var(--shadow-2)]">
+      <div className={cn(CARD, "shrink-0 px-4 py-3")}>
         <span className="poster-label text-[12px] text-fg-muted">描述</span>
-        <p className="mt-1.5 min-h-[1.6em] text-[14px] leading-relaxed text-fg">
+        <p className="mt-1 min-h-[1.6em] truncate text-[14px] leading-relaxed text-fg">
           <span data-type>{prompt}</span>
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[3px] animate-pulse bg-acc" />
         </p>
       </div>
-      <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
+      {/* The batch takes whatever height is left. */}
+      <div className="grid min-h-0 flex-1 grid-cols-4 gap-2.5 sm:gap-3">
         {samples.slice(0, 4).map((item, index) => (
-          <div key={item.id} className="relative">
-            <div className="sk-frame relative aspect-[3/4] rounded-[12px] bg-panel">
+          <div key={item.id} className="relative min-h-0">
+            <div className="sk-frame relative h-full rounded-[12px] bg-panel">
               <span data-scan aria-hidden className="gen-scan" />
               <div data-pic className="absolute inset-0">
                 <Picture item={item} />
@@ -162,7 +157,7 @@ export function StudioDemo({
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {["3:4", "4K", "质量高", "GPT Image 2.5"].map((chip) => (
           <span
             key={chip}
@@ -199,32 +194,16 @@ export function CanvasDemo({
         { strokeDashoffset: 0, duration: 0.5, ease: "power2.inOut" },
         0.55,
       )
-      .from(
-        q("[data-node=gen]"),
-        { scale: 0.7, opacity: 0, duration: 0.45, ease: "back.out(2)" },
-        0.9,
-      )
+      .from(q("[data-node=gen]"), { scale: 0.7, opacity: 0, duration: 0.45, ease: "back.out(2)" }, 0.9)
       .fromTo(
         q("[data-wire=out]"),
         { strokeDashoffset: 1 },
-        {
-          strokeDashoffset: 0,
-          duration: 0.55,
-          stagger: 0.12,
-          ease: "power2.inOut",
-        },
+        { strokeDashoffset: 0, duration: 0.55, stagger: 0.12, ease: "power2.inOut" },
         1.35,
       )
       .from(
         q("[data-node=result]"),
-        {
-          scale: 0.6,
-          opacity: 0,
-          rotate: -6,
-          duration: 0.55,
-          stagger: 0.14,
-          ease: "back.out(1.7)",
-        },
+        { scale: 0.6, opacity: 0, rotate: -6, duration: 0.55, stagger: 0.14, ease: "back.out(1.7)" },
         1.75,
       )
       .from(q("[data-bubble]"), { y: 12, opacity: 0, duration: 0.4 }, 2.6);
@@ -234,7 +213,7 @@ export function CanvasDemo({
     <div
       ref={root}
       aria-hidden
-      className="relative h-full min-h-[300px] overflow-hidden rounded-[18px] bg-well bg-[radial-gradient(rgb(var(--tint)/0.14)_1px,transparent_1px)] [background-size:20px_20px] select-none"
+      className="relative h-full min-h-[240px] overflow-hidden rounded-[18px] bg-well bg-[radial-gradient(rgb(var(--tint)/0.14)_1px,transparent_1px)] [background-size:20px_20px] select-none"
     >
       <svg
         aria-hidden="true"
@@ -244,43 +223,14 @@ export function CanvasDemo({
         fill="none"
         strokeWidth="2"
       >
-        <path
-          data-wire="in"
-          pathLength={1}
-          strokeDasharray="1"
-          d="M206 102 C 250 102, 240 160, 286 160"
-          stroke="var(--acc)"
-        />
-        <path
-          data-wire="out"
-          pathLength={1}
-          strokeDasharray="1"
-          d="M402 160 C 440 160, 436 73, 474 73"
-          stroke="var(--line-strong)"
-        />
-        <path
-          data-wire="out"
-          pathLength={1}
-          strokeDasharray="1"
-          d="M402 160 C 480 160, 520 156, 586 156"
-          stroke="var(--line-strong)"
-        />
-        <path
-          data-wire="out"
-          pathLength={1}
-          strokeDasharray="1"
-          d="M402 160 C 440 160, 436 246, 474 246"
-          stroke="var(--line-strong)"
-        />
+        <path data-wire="in" pathLength={1} strokeDasharray="1" d="M206 102 C 250 102, 240 160, 286 160" stroke="var(--acc)" />
+        <path data-wire="out" pathLength={1} strokeDasharray="1" d="M402 160 C 440 160, 436 73, 474 73" stroke="var(--line-strong)" />
+        <path data-wire="out" pathLength={1} strokeDasharray="1" d="M402 160 C 480 160, 520 156, 586 156" stroke="var(--line-strong)" />
+        <path data-wire="out" pathLength={1} strokeDasharray="1" d="M402 160 C 440 160, 436 246, 474 246" stroke="var(--line-strong)" />
       </svg>
-      <div
-        data-node="prompt"
-        className="glass absolute top-[18%] left-[3%] w-[27%] rounded-[12px] p-3"
-      >
+      <div data-node="prompt" className="glass absolute top-[18%] left-[3%] w-[27%] rounded-[12px] p-3">
         <span className="poster-label text-[13px] text-fg">描述</span>
-        <p className="mt-1.5 line-clamp-3 text-[11.5px] leading-[1.55] text-fg-soft">
-          {samples[0]?.title}
-        </p>
+        <p className="mt-1.5 line-clamp-3 text-[11.5px] leading-[1.55] text-fg-soft">{samples[0]?.title}</p>
       </div>
       <div
         data-node="gen"
@@ -292,7 +242,7 @@ export function CanvasDemo({
         <figure
           key={item.id}
           data-node="result"
-          className="sk-frame absolute m-0 aspect-[3/4] w-[13%] rounded-[10px] shadow-[0_14px_24px_-14px_var(--shadow-2)]"
+          className="sk-frame absolute m-0 h-[30%] w-[13%] rounded-[10px] shadow-[0_14px_24px_-14px_var(--shadow-2)]"
           style={CANVAS_LAYOUT[index]}
         >
           <Picture item={item} />
@@ -308,11 +258,11 @@ export function CanvasDemo({
   );
 }
 
-/** Where the three results sit on the board (fractions of 700×320). */
+/** Where the three results sit on the board (fractions of the board). */
 const CANVAS_LAYOUT: CSSProperties[] = [
-  { left: "68%", top: "4%" },
-  { left: "84%", top: "30%" },
-  { left: "68%", top: "58%" },
+  { left: "68%", top: "6%" },
+  { left: "84%", top: "34%" },
+  { left: "68%", top: "60%" },
 ];
 
 /** A template filled in, then a brand kit's colours, each with its picture. */
@@ -336,52 +286,30 @@ export function TemplateDemo({
       { clipPath: "inset(0% 0% 0% 0%)", duration: 0.8, ease: "power2.inOut" },
       1.9,
     )
-      .from(
-        q("[data-swatch]"),
-        {
-          y: -14,
-          opacity: 0,
-          stagger: 0.07,
-          duration: 0.4,
-          ease: "back.out(2)",
-        },
-        2.5,
-      )
+      .from(q("[data-swatch]"), { y: -14, opacity: 0, stagger: 0.07, duration: 0.4, ease: "back.out(2)" }, 2.5)
       .fromTo(
         q("[data-pic=b]"),
         { clipPath: "inset(0% 100% 0% 0%)" },
         { clipPath: "inset(0% 0% 0% 0%)", duration: 0.8, ease: "power2.inOut" },
         3.0,
       )
-      .from(
-        q("[data-stamp]"),
-        {
-          scale: 1.6,
-          opacity: 0,
-          rotate: 12,
-          duration: 0.45,
-          ease: "back.out(2.2)",
-        },
-        3.6,
-      );
+      .from(q("[data-stamp]"), { scale: 1.6, opacity: 0, rotate: 12, duration: 0.45, ease: "back.out(2.2)" }, 3.6);
   });
   return (
     <div
       ref={root}
       aria-hidden
-      className="grid h-full grid-cols-2 gap-4 rounded-[18px] bg-well p-5 select-none sm:p-7"
+      className="grid h-full min-h-0 grid-cols-2 gap-3 rounded-[18px] bg-well p-4 select-none sm:gap-4 sm:p-5"
     >
-      <div className="flex flex-col gap-3">
-        <div className="rounded-[14px] bg-panel p-4 shadow-[0_10px_24px_-18px_var(--shadow-2)]">
+      {/* Left: the template's fields, then the portrait they describe. */}
+      <div className="flex min-h-0 flex-col gap-3">
+        <div className={cn(CARD, "shrink-0 p-3.5")}>
           <span className="poster-label text-[13px] text-fg">写实人像</span>
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-[12px]">
+          <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12px]">
             {fields.map(([label, value]) => (
               <div key={label} className="contents">
                 <dt className="text-fg-muted">{label}</dt>
-                <dd
-                  data-field
-                  className="min-h-[1.5em] truncate border-b border-dashed border-line-strong text-fg"
-                >
+                <dd data-field className="min-h-[1.5em] truncate border-b border-dashed border-line-strong text-fg">
                   {value}
                 </dd>
               </div>
@@ -389,46 +317,34 @@ export function TemplateDemo({
           </dl>
         </div>
         {first ? (
-          <div
-            data-pic="a"
-            className="sk-frame aspect-[3/4] w-[78%] self-end rounded-[12px] shadow-[0_18px_30px_-18px_var(--shadow-2)]"
-          >
+          <div data-pic="a" className="sk-frame min-h-0 flex-1 rounded-[12px] shadow-[0_18px_30px_-18px_var(--shadow-2)]">
             <Picture item={first} />
           </div>
         ) : null}
       </div>
-      <div className="flex flex-col gap-3">
+      {/* Right: the brand-kit picture, then the kit itself, both inside the window. */}
+      <div className="flex min-h-0 flex-col gap-3">
         {second ? (
-          <div className="relative w-[78%]">
-            <div
-              data-pic="b"
-              className="sk-frame aspect-[3/4] rounded-[12px] shadow-[0_18px_30px_-18px_var(--shadow-2)]"
-            >
+          <div className="relative min-h-0 flex-1">
+            <div data-pic="b" className="sk-frame h-full rounded-[12px] shadow-[0_18px_30px_-18px_var(--shadow-2)]">
               <Picture item={second} />
             </div>
             <span
               data-stamp
-              className="absolute right-[-10px] bottom-[10%] flex size-9 -rotate-6 items-center justify-center rounded-[10px] bg-acc font-display text-[13px] text-acc-ink shadow-acc"
+              className="absolute right-2 bottom-2 flex size-8 -rotate-6 items-center justify-center rounded-[9px] bg-acc font-display text-[12px] text-acc-ink shadow-acc"
             >
               G
             </span>
           </div>
         ) : null}
-        <div className="rounded-[14px] bg-panel p-4 shadow-[0_10px_24px_-18px_var(--shadow-2)]">
+        <div className={cn(CARD, "shrink-0 p-3.5")}>
           <span className="poster-label text-[13px] text-fg">品牌套件</span>
-          <div className="mt-3 flex gap-1.5">
-            {["#d4412a", "#24212b", "#f1e3d3", "#2f6f68", "#e9b44c"].map(
-              (colour) => (
-                <span
-                  key={colour}
-                  data-swatch
-                  className="h-7 flex-1 rounded-[6px]"
-                  style={{ background: colour }}
-                />
-              ),
-            )}
+          <div className="mt-2.5 flex gap-1.5">
+            {["#d4412a", "#24212b", "#f1e3d3", "#2f6f68", "#e9b44c"].map((colour) => (
+              <span key={colour} data-swatch className="h-6 flex-1 rounded-[6px]" style={{ background: colour }} />
+            ))}
           </div>
-          <p className="mt-2.5 text-[12px] text-fg-muted">配色 · 标志 · 调性</p>
+          <p className="mt-2 text-[12px] text-fg-muted">配色 · 标志 · 调性</p>
         </div>
       </div>
     </div>

@@ -13,8 +13,12 @@ vi.mock("../src/lib/server-api", async (importOriginal) => ({
 }));
 
 import {
+  curatedDomains,
   filterCurated,
+  inDomain,
   installedTabSkills,
+  isNewSkill,
+  templateCount,
   withInstallState,
 } from "../src/components/skills/curated";
 import { MarketplacePanel } from "../src/components/skills/marketplace-panel";
@@ -106,6 +110,31 @@ describe("curated skill helpers", () => {
         (s) => s.slug,
       ),
     ).toEqual(["xy-marketing-copy"]);
+  });
+});
+
+describe("curated 用途, 新上架 and examples (第 64 条)", () => {
+  const anime = skill({ slug: "xy-anime-art", name: "二次元与动漫", metadata: { market: "curated", tags: ["二次元", "立绘"], added: "2026-10-14", templates: ["anime-character", "anime-scene"], examples: ["画一个银发魔法少女"] } });
+  const meme = skill({ slug: "xy-meme", name: "梗图与表情包", metadata: { market: "curated", tags: ["梗图"] } });
+  const poster = skill({ slug: "xy-poster-design", name: "海报设计", isFeatured: true, metadata: { market: "curated", tags: ["海报"] } });
+
+  it("finds 用途 from names and tags, only for the ones present", () => {
+    expect(inDomain(anime, "二次元")).toBe(true);
+    expect(inDomain(meme, "二次元")).toBe(false);
+    expect(curatedDomains([anime, meme, poster])).toEqual(["海报", "二次元", "梗图"]);
+    expect(filterCurated([anime, meme, poster], { query: "", category: null, domain: "梗图" }).map((s) => s.slug)).toEqual(["xy-meme"]);
+  });
+
+  it("marks skills added in the last 30 days as new and sorts them after featured", () => {
+    const now = Date.parse("2026-10-20T00:00:00Z");
+    expect(isNewSkill(anime, now)).toBe(true);
+    expect(isNewSkill(anime, Date.parse("2026-12-01T00:00:00Z"))).toBe(false);
+    expect(isNewSkill(meme, now)).toBe(false);
+    expect(templateCount(anime)).toBe(2);
+  });
+
+  it("searches example requests too", () => {
+    expect(filterCurated([anime, meme], { query: "魔法少女", category: null }).map((s) => s.slug)).toEqual(["xy-anime-art"]);
   });
 });
 
