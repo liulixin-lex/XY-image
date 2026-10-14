@@ -11,6 +11,8 @@ import type { ShowcaseItem } from "./showcase";
  * in turn (Aceternity 3D Marquee). Each column holds its pictures four times and moves by one
  * copy (globals.css wall-up / wall-down), so the loop is seamless. Decorative: the
  * pictures are listed with their captions in the 示例 section above.
+ * Every width (第 63 条): phones show five wider columns, centred lower so
+ * they fill the band under the words; from md up all eight, to the right.
  * Reduced motion: the wall stands still.
  *
  * The tiles mount only when the wall comes within a screen of the viewport
@@ -61,13 +63,8 @@ export function ImageWall({
     >
       {near ? (
         <div
-          className="absolute top-1/2 left-1/2 grid w-[125%] grid-cols-8 gap-3"
-          style={
-            {
-              transform: "translate(-38%, -50%) rotateX(50deg) rotateZ(-36deg)",
-              transformStyle: "preserve-3d",
-            } as CSSProperties
-          }
+          className="absolute top-[70%] left-1/2 grid w-[200%] grid-cols-5 gap-3 [transform:translate(-50%,-50%)_rotateX(50deg)_rotateZ(-36deg)] md:top-1/2 md:w-[125%] md:grid-cols-8 md:[transform:translate(-38%,-50%)_rotateX(50deg)_rotateZ(-36deg)]"
+          style={{ transformStyle: "preserve-3d" } as CSSProperties}
         >
           {cols.map((col, c) => (
             <div
@@ -76,6 +73,8 @@ export function ImageWall({
               className={cn(
                 "flex flex-col gap-3 self-start",
                 c % 2 ? "wall-col-down" : "wall-col-up",
+                // Phones keep the first five columns.
+                c >= 5 && "max-md:hidden",
               )}
               style={{ animationDuration: `${40 + (c % 4) * 8}s` }}
             >

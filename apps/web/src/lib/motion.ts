@@ -26,6 +26,12 @@ export const MOTION_OK = "(prefers-reduced-motion: no-preference)";
 /** Wide screens with a mouse: pinned scenes and pointer tilt. */
 export const DESKTOP_MOTION = `${MOTION_OK} and (min-width: 1024px)`;
 
+/**
+ * Tablets and narrow desktop windows too (第 63 条): a 983 px window used to
+ * get the phone layout of every scene. Scenes that work at 768 px use this.
+ */
+export const TABLET_MOTION = `${MOTION_OK} and (min-width: 768px)`;
+
 /** Pointer-driven tilt needs a precise pointer that can hover. */
 export const POINTER_MOTION = `${MOTION_OK} and (hover: hover) and (pointer: fine)`;
 
