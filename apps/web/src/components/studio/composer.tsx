@@ -1128,11 +1128,12 @@ export function Field({
   return (
     <div>
       <div className="mb-2 flex items-baseline gap-2">
-        <Label {...(htmlFor ? { htmlFor } : {})} className="poster-label text-[17px] leading-none text-fg">
+        {/* shrink-0: a long note wraps itself, never the two-character label. */}
+        <Label {...(htmlFor ? { htmlFor } : {})} className="poster-label shrink-0 text-[17px] leading-none whitespace-nowrap text-fg">
           {label}
         </Label>
         {note ? (
-          <span className={cn("text-[12.5px]", noteTone === "alert" ? "text-alert" : "text-fg-muted")}>
+          <span className={cn("min-w-0 text-[12.5px]", noteTone === "alert" ? "text-alert" : "text-fg-muted")}>
             {note}
           </span>
         ) : null}
