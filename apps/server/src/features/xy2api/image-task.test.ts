@@ -6,15 +6,18 @@ import {
   type ImageTaskMode,
   TASK_DEADLINE_MS,
   asyncImagesOff,
+  deleteImageTask,
   imageTaskFetch,
   imageTaskOutcome,
   markAsyncImagesOff,
   pollDelayMs,
+  resetAsyncCapabilities,
   resetAsyncImagesOff,
 } from "./image-task.js";
 
 afterEach(() => {
   resetAsyncImagesOff();
+  resetAsyncCapabilities();
   vi.restoreAllMocks();
 });
 
@@ -39,14 +42,35 @@ const accepted = () =>
 const task = (status: string, extra: Record<string, unknown> = {}) =>
   json(200, { id: "imgtask_0123456789abcdef", object: "image.generation.task", status, ...extra }, status === "processing" ? { "retry-after": "3" } : {});
 
-/** A scripted main site: answers in order, records what was asked. */
+/**
+ * A scripted main site: answers in order, records what was asked. The
+ * capabilities probe (xy2api 0.3.0) is answered apart: 404 (a 0.2.x site)
+ * unless a site is built with mainSiteV2.
+ */
 function mainSite(...answers: (Response | Error)[]) {
-  const calls: { url: string; method: string; auth?: string | null }[] = [];
+  return scripted(() => json(404, { error: { message: "not found" } }), answers);
+}
+const V2_CAPABILITIES = {
+  object: "image.async.capabilities",
+  version: 2,
+  enabled: true,
+  idempotency: true,
+  billing_in_task: true,
+  delete: true,
+  long_poll_max_seconds: 30,
+};
+function mainSiteV2(...answers: (Response | Error)[]) {
+  return scripted(() => json(200, V2_CAPABILITIES), answers);
+}
+function scripted(capabilities: () => Response, answers: (Response | Error)[]) {
+  const calls: { url: string; method: string; auth?: string | null; idempotencyKey?: string | null }[] = [];
   const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).endsWith("/v1/images/async/capabilities")) return capabilities();
     calls.push({
       url: String(input),
       method: init?.method ?? "GET",
       auth: new Headers(init?.headers).get("authorization"),
+      idempotencyKey: new Headers(init?.headers).get("idempotency-key"),
     });
     const next = answers.shift();
     if (!next) throw new Error("unexpected call");
@@ -82,6 +106,107 @@ function setup(mode: ImageTaskMode, site: ReturnType<typeof mainSite>) {
       }),
   };
 }
+
+describe("async image tasks v2 (xy2api 0.3.0, 第 67 条)", () => {
+  const TASK = `${BASE}/v1/images/tasks/imgtask_0123456789abcdef`;
+  it("sends an Idempotency-Key and asks again with it when the 202 was lost", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const replay = json(
+      200,
+      { id: "imgtask_0123456789abcdef", task_id: "imgtask_0123456789abcdef", status: "processing", request_id: "client:req-v2" },
+      { "idempotent-replayed": "true" },
+    );
+    const site = mainSiteV2(
+      new TypeError("fetch failed"),
+      replay,
+      task("completed", { http_status: 200, result: { created: 1, data: [{ url: "https://bucket.example.com/a.png" }] } }),
+    );
+    const mode: ImageTaskMode = { idempotencyKey: "xyimg.job-1.1" };
+    const { generate } = setup(mode, site);
+    const response = await generate();
+    expect(response.status).toBe(200);
+    expect(site.calls.slice(0, 2).map((c) => [c.method, c.idempotencyKey])).toEqual([
+      ["POST", "xyimg.job-1.1"],
+      ["POST", "xyimg.job-1.1"],
+    ]);
+    expect(mode.handle?.requestId).toBe("req-v2");
+    // Long polling: one poll held by the main site.
+    expect(site.calls[2]?.url).toBe(`${TASK}?wait=25`);
+  });
+
+  it("asks again at once after a poll the main site held for its full wait", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = 1_000_000;
+    const waits: number[] = [];
+    const answers = [accepted(), "hold", task("completed", { http_status: 200, result: { created: 1, data: [] } })];
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/capabilities")) return json(200, V2_CAPABILITIES);
+      const next = answers.shift();
+      if (next === "hold") {
+        clock += 25_000; // the main site held the poll for its wait
+        return task("processing");
+      }
+      return next as Response;
+    });
+    const send = imageTaskFetch({ idempotencyKey: "k" }, {
+      apiKey: "sk", baseUrl: BASE, fetch, now: () => clock,
+      sleep: async (ms) => { waits.push(ms); clock += ms; },
+    });
+    await send(`${BASE}/v1/images/generations`, { method: "POST", body: "{}" });
+    expect(waits).toEqual([1000, 0]);
+  });
+
+  it("answers a failed task the ledger says was not charged like a refusal (sent again by the worker)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const site = mainSiteV2(
+      accepted(),
+      task("failed", { http_status: 503, error: { code: "task_interrupted", message: "instance stopped" }, billing: { status: "not_charged" } }),
+    );
+    const { generate } = setup({ idempotencyKey: "k" }, site);
+    const response = await generate();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-client-request-id")).toBe("req-202");
+    expect(await response.json()).toMatchObject({ error: { code: "task_interrupted" } });
+  });
+
+  it("waits for a failed task's billing to settle, then leaves a charged one 待核对", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const failed = (status: string) =>
+      task("failed", { http_status: 502, error: { code: "result_storage_failed", message: "storage" }, billing: { status } });
+    const site = mainSiteV2(accepted(), failed("pending"), failed("charged"));
+    const { generate } = setup({ idempotencyKey: "k" }, site);
+    const error = await generate().catch((caught) => caught);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect(error.failure).toMatchObject({ code: "upstream_unknown", billing: "unknown", requestId: "req-202" });
+    expect(site.calls).toHaveLength(3);
+  });
+
+  it("turns the key's task limit into a wait, nothing sent", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const site = mainSiteV2(
+      json(429, { error: { type: "too_many_tasks", code: "too_many_tasks", message: "too many image tasks in progress" } }, { "retry-after": "5" }),
+    );
+    const { generate } = setup({ idempotencyKey: "k" }, site);
+    const error = await generate().catch((caught) => caught);
+    expect(error).toBeInstanceOf(GatewayError);
+    expect(error.failure).toMatchObject({ code: "rate_limited", billing: "not_charged", throttleSeconds: 5 });
+  });
+
+  it("deletes a stored task when the main site offers it, and not on 0.2.x", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const v2 = mainSiteV2(json(200, { deleted: true }));
+    expect(await deleteImageTask("imgtask_1", { apiKey: "sk", baseUrl: BASE, fetch: v2.fetch })).toBe(true);
+    expect(v2.calls[0]).toMatchObject({ method: "DELETE", url: `${BASE}/v1/images/tasks/imgtask_1` });
+    resetAsyncCapabilities();
+    const v1 = mainSite();
+    expect(await deleteImageTask("imgtask_1", { apiKey: "sk", baseUrl: BASE, fetch: v1.fetch })).toBe(false);
+    expect(v1.calls).toHaveLength(0);
+  });
+});
 
 describe("async image tasks", () => {
   it("submits, stores the handle, polls and answers like the synchronous call", async () => {

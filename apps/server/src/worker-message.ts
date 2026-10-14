@@ -167,12 +167,19 @@ export async function processMessage(
     if (
       retry &&
       (await ctx.jobService
-        .requeueForRetry(jobId, AUTO_RETRY_CODE, retry.message)
+        .requeueForRetry(
+          jobId,
+          AUTO_RETRY_CODE,
+          retry.message,
+          ...(retry.throttled ? [sends - 1] : []),
+        )
         .catch(() => false))
     ) {
       await ctx.pgmq.setVt(queue, msg.msg_id, retry.delaySeconds);
       console.warn(
-        `${tag} Job ${jobId} ${err instanceof GatewayError ? err.failure.code : ""} on send ${sends}, nothing charged; send ${retry.nextSend} in ${retry.delaySeconds}s`,
+        retry.throttled
+          ? `${tag} Job ${jobId} held back by the main site's task limit, nothing sent; again in ${retry.delaySeconds}s`
+          : `${tag} Job ${jobId} ${err instanceof GatewayError ? err.failure.code : ""} on send ${sends}, nothing charged; send ${retry.nextSend} in ${retry.delaySeconds}s`,
       );
       return;
     }

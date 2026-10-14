@@ -35,6 +35,12 @@ async function asyncGateway(outcome: Outcome) {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const path = req.url ?? "";
+    // A 0.2.x main site: no capabilities endpoint (第 67 条 probes it).
+    if (path === "/v1/images/async/capabilities") {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "not found" } }));
+      return;
+    }
     requests.push({
       method: req.method ?? "",
       path,

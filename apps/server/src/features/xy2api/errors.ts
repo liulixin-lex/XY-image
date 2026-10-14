@@ -163,6 +163,12 @@ export type GatewayFailure = {
   /** xy2api X-Client-Request-ID; usage records are keyed "client:<id>" */
   requestId?: string;
   diagnostics?: GatewayDiagnostics;
+  /**
+   * The main site asked to wait this long before sending again, and nothing
+   * was created (async too_many_tasks, 第 67 条): the worker requeues the job
+   * without counting it as a send (features/jobs/auto-retry.ts).
+   */
+  throttleSeconds?: number;
 };
 
 /**

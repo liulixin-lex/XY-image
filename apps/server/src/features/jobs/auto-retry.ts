@@ -37,6 +37,8 @@ export type AutoRetryDecision = {
   nextSend: number;
   /** What the job shows meanwhile. */
   message: string;
+  /** A wait for the main site's task limit, not a failed send. */
+  throttled?: boolean;
 };
 
 /**
@@ -44,7 +46,7 @@ export type AutoRetryDecision = {
  * far, this one included (the job's attempt_count after incrementAttempt).
  */
 export function autoRetryDecision(input: {
-  failure: Pick<GatewayFailure, "code" | "billing" | "retryable">;
+  failure: Pick<GatewayFailure, "code" | "billing" | "retryable" | "throttleSeconds">;
   sends: number;
   maxRetries: number;
   createdAt: string;
@@ -55,9 +57,22 @@ export function autoRetryDecision(input: {
   if (maxRetries <= 0) return undefined;
   if (failure.billing !== "not_charged" || !failure.retryable) return undefined;
   if (!RETRY_CODES.has(failure.code)) return undefined;
-  if (sends > maxRetries) return undefined;
   const age = (input.now ?? Date.now()) - Date.parse(input.createdAt);
   if (!Number.isFinite(age) || age > AUTO_RETRY_MAX_AGE_MS) return undefined;
+  // The main site's task limit for the key (async too_many_tasks): nothing
+  // was created, so it is a wait, not a send; only the age limit applies.
+  if (failure.throttleSeconds) {
+    const delaySeconds = Math.round(
+      failure.throttleSeconds * (1 + 0.5 * (input.random ?? Math.random)()),
+    );
+    return {
+      delaySeconds,
+      nextSend: sends,
+      message: `主站正在处理的任务较多，约 ${delaySeconds} 秒后自动发送`,
+      throttled: true,
+    };
+  }
+  if (sends > maxRetries) return undefined;
   const base = BASE_DELAYS[Math.min(sends - 1, BASE_DELAYS.length - 1)] ?? 60;
   // Up to +50 %, so a burst of refused jobs does not come back all at once.
   const delaySeconds = Math.round(base * (1 + 0.5 * (input.random ?? Math.random)()));

@@ -284,6 +284,23 @@ describe("auto-retry of busy refusals (第 67 条)", () => {
     expect(f.ctx.jobService.requeueForRetry).not.toHaveBeenCalled();
     expect(f.ctx.jobService.markDeadLetter).toHaveBeenCalledOnce();
   });
+  it("puts a job held back by the task limit back without counting the send", async () => {
+    const f = fixture();
+    Object.assign(f.job, { created_at: new Date().toISOString() });
+    vi.mocked(f.ctx.jobService.incrementAttempt).mockResolvedValue({ attempt_count: 3, max_attempts: 1 });
+    f.execute.mockRejectedValue(
+      new GatewayError({ ...mapGatewayError({ status: 429, body: {}, responseReceived: true }), throttleSeconds: 5 }),
+    );
+    await f.run();
+    expect(f.ctx.jobService.requeueForRetry).toHaveBeenCalledWith(
+      "job-1",
+      "upstream_retrying",
+      expect.stringContaining("自动发送"),
+      2,
+    );
+    expect(f.ctx.jobService.markDeadLetter).not.toHaveBeenCalled();
+  });
+
   it("fails the job when it can no longer be put back", async () => {
     const f = refused(503);
     vi.mocked(f.ctx.jobService.requeueForRetry).mockResolvedValue(false);
