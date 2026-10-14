@@ -11,10 +11,12 @@ import { ImageWall } from "./image-wall";
 import { SAMPLE_ALT, SHOWCASE_ITEMS } from "./showcase";
 
 /**
- * The closing poster: the call to action on ink, and on its right a wall of
- * every sample tilted back in 3D, its columns drifting (ImageWall; the user
- * picked it from recorded previews, 第 62 条). Ink fades over the wall's
- * left edge so the words stay clear; small screens show only the words.
+ * The closing poster: the call to action on ink, and a wall of every sample
+ * tilted back in 3D, its columns drifting (ImageWall; the user picked it from
+ * recorded previews, 第 62 条). From md up the wall fills the right and ink
+ * fades over its left edge; on phones it fills a band under the words and
+ * the ink fades downwards. It shows at every width since 第 63 条 (it used to
+ * start at lg, so a 983 px window saw only the words).
  */
 export function Closing({
   registerUrl,
@@ -32,9 +34,8 @@ export function Closing({
       <section aria-labelledby="closing-title" className="relative z-10 pt-8 pb-24 lg:pt-12 lg:pb-32">
         <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[clamp(24px,3.6vw,64px)]">
           {/* An inked poster: graphite in light, pale in dark; the coral action reads on both. */}
-          <div className="relative grid overflow-hidden rounded-[24px] bg-fg text-ground shadow-[0_40px_80px_-40px_var(--shadow-2)] lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]"
-          >
-            <div className="relative z-[1] flex flex-col gap-10 px-7 py-14 sm:px-12 lg:px-16 lg:py-20">
+          <div className="relative grid overflow-hidden rounded-[24px] bg-fg text-ground shadow-[0_40px_80px_-40px_var(--shadow-2)] md:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+            <div className="relative z-[1] flex flex-col gap-10 px-7 pt-14 pb-4 sm:px-12 md:py-16 lg:px-16 lg:py-20">
               <h2 id="closing-title" className="font-display text-[clamp(52px,6.4vw,104px)] leading-[1.02] font-normal">
                 写一句话，
                 <br />
@@ -72,13 +73,14 @@ export function Closing({
                 ) : null}
               </div>
             </div>
-            <ImageWall items={SHOWCASE_ITEMS} className="hidden lg:block" />
+            <ImageWall items={SHOWCASE_ITEMS} />
+            {/* Ink over the wall where the words are: downwards on phones, from the left from md up. */}
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-0 hidden bg-[linear-gradient(90deg,var(--fg)_28%,color-mix(in_srgb,var(--fg)_55%,transparent)_52%,transparent_80%)] lg:block"
+              className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,var(--fg)_52%,color-mix(in_srgb,var(--fg)_60%,transparent)_64%,transparent_84%)] md:bg-[linear-gradient(90deg,var(--fg)_36%,color-mix(in_srgb,var(--fg)_60%,transparent)_58%,transparent_86%)] lg:bg-[linear-gradient(90deg,var(--fg)_28%,color-mix(in_srgb,var(--fg)_55%,transparent)_52%,transparent_80%)]"
             />
-            <div aria-hidden className="relative hidden min-h-[460px] lg:block">
-              <span className="absolute top-[11%] left-[58%] -rotate-6 rounded-[10px] bg-acc px-3.5 py-2 font-display text-[17px] leading-none text-acc-ink shadow-acc">
+            <div aria-hidden className="relative h-[280px] md:h-auto md:min-h-[420px] lg:min-h-[460px]">
+              <span className="absolute top-[34%] right-[8%] -rotate-6 rounded-[10px] bg-acc px-3.5 py-2 font-display text-[17px] leading-none text-acc-ink shadow-acc md:top-[11%] md:right-auto md:left-[58%]">
                 {SAMPLE_ALT}
               </span>
             </div>

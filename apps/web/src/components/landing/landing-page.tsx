@@ -7,7 +7,8 @@ import { BillingSection } from "@/components/landing/billing";
 import { Closing } from "@/components/landing/closing";
 import { GallerySection } from "@/components/landing/gallery";
 import { Hero } from "@/components/landing/hero";
-import { FeaturesSection, ModelsSection } from "@/components/landing/models";
+import { FeaturesSection } from "@/components/landing/features";
+import { ModelsSection } from "@/components/landing/models";
 import { ProductScreen } from "@/components/landing/product-screen";
 import type { PromptBoxHandle } from "@/components/landing/prompt-box";
 import { SHOWCASE_ITEMS, type ShowcaseItem } from "@/components/landing/showcase";
@@ -21,9 +22,9 @@ import { fetchAuthConfig } from "@/lib/xy2api-api";
 const sampleAt = (index: number) => SHOWCASE_ITEMS[index % SHOWCASE_ITEMS.length] as ShowcaseItem;
 const sample = (id: string) => SHOWCASE_ITEMS.find((item) => item.id === id) ?? sampleAt(0);
 /**
- * Pictures in the feature cards, chosen to fit what each card shows: a
- * studio batch of four looks, a canvas board of one sci-fi set, and two
- * portraits for the 写实人像 template.
+ * Pictures in the three ways' windows, chosen to fit what each one acts
+ * out: a studio batch of four looks, a canvas board of one sci-fi set, and
+ * two portraits for the 写实人像 template.
  */
 const FEATURE_SAMPLES = [
   ...["silk-sky", "red-cloak", "ruby-crown", "neon-city"],
@@ -41,8 +42,9 @@ const BILLING_SAMPLE = sample("dawn-veil");
  * Main-site links come from the API's public config when it answers, with
  * the build-time URL as a fallback so the page never waits on the network.
  *
- * Motion (第 62 条; the user picked the coverflow gallery and the stacking
- * feature cards from recorded previews): see each section's component.
+ * Motion (第 62 / 63 条; the user picked each scene from recorded previews:
+ * the sample globe, the ways deck, the closing wall): see each section's
+ * component.
  */
 export function LandingPage() {
   const fallback = getXy2apiWebUrl();
