@@ -21,9 +21,9 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ToolBlock } from "@loomic/shared";
 import { LiveDot } from "@/components/ambient/live-dot";
 import { cn } from "@/lib/utils";
+import type { ToolBlock } from "@loomic/shared";
 import { ChatImage } from "./image-lightbox";
 import { type MediaOutcome, describeMediaOutcome } from "./media-outcome";
 import {
@@ -34,6 +34,7 @@ import {
   formatParamValue,
   getToolConfig,
   isHumanReadable,
+  webSources,
 } from "./utils";
 
 /* ------------------------------------------------------------------ */
@@ -703,6 +704,7 @@ function ToolOutputRenderer({
   if (toolName === "get_brand_kit" && isBrandKitOutput(output)) {
     return <BrandKitOutput data={output} />;
   }
+  if (WEB_TOOLS.has(toolName)) return <WebSearchOutput output={output} />;
 
   const entries = Object.entries(output);
   const isSimple = entries.every(
@@ -742,6 +744,102 @@ function ToolOutputRenderer({
           {JSON.stringify(output, null, 2)}
         </pre>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Web search output (第 67 / 68 条)                                    */
+/* ------------------------------------------------------------------ */
+
+const WEB_TOOLS = new Set(["web_search", "search_web", "read_webpage"]);
+
+function WebSearchOutput({ output }: { output: Record<string, unknown> }) {
+  const sources = webSources(output);
+  // Gemini's own searches, linked to Google Search (its grounding rules).
+  const searches = Array.isArray(output.searches)
+    ? output.searches.filter((q): q is string => typeof q === "string")
+    : [];
+  const query = typeof output.query === "string" ? output.query : null;
+  const error = typeof output.error === "string" ? output.error : null;
+  return (
+    <div className="space-y-3">
+      {query ? (
+        <div className="rounded-[10px] bg-tint/[0.05] px-3 py-2">
+          <div className="text-[11px] font-medium text-fg-muted">搜索内容</div>
+          <div className="mt-0.5 text-[13.5px] text-fg break-words">
+            {query}
+          </div>
+        </div>
+      ) : null}
+      {searches.length ? (
+        <div>
+          <div className="mb-1.5 text-[12px] font-semibold text-fg-soft">
+            Google 搜索
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {searches.map((q) => (
+              <a
+                key={q}
+                href={`https://www.google.com/search?q=${encodeURIComponent(q)}`}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="inline-flex max-w-full items-center gap-1 rounded-full bg-tint/[0.06] px-2.5 py-1 text-[12px] text-fg transition-colors hover:bg-tint/[0.1] focus-visible:outline-2 focus-visible:outline-acc"
+              >
+                <SearchIcon
+                  aria-hidden
+                  className="size-3 shrink-0 text-fg-soft"
+                  strokeWidth={2}
+                />
+                <span className="truncate">{q}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {sources.length ? (
+        <div>
+          <div className="mb-1.5 text-[12px] font-semibold text-fg-soft">
+            {sources.length === 1 && !query
+              ? "网页"
+              : `来源（${sources.length}）`}
+          </div>
+          <ul className="space-y-1">
+            {sources.map((source) => (
+              <li key={source.url}>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="group flex items-start gap-2 rounded-[10px] px-2.5 py-2 transition-colors hover:bg-tint/[0.05] focus-visible:outline-2 focus-visible:outline-acc"
+                >
+                  <ArrowUpRightIcon
+                    aria-hidden
+                    className="mt-0.5 size-3.5 shrink-0 text-fg-soft group-hover:text-acc-text"
+                    strokeWidth={2}
+                  />
+                  <span className="min-w-0">
+                    <span className="line-clamp-2 text-[13px] leading-snug text-fg">
+                      {source.title ?? source.host}
+                    </span>
+                    <span className="block truncate text-[11.5px] text-fg-muted">
+                      {source.host}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {error ? (
+        <div className="rounded-[10px] bg-tint/[0.05] px-3 py-2 text-[13px] text-fg-muted">
+          {error}
+        </div>
+      ) : null}
+      {!query && !sources.length && !error ? (
+        <div className="text-[13px] text-fg-muted">没有可显示的来源</div>
+      ) : null}
     </div>
   );
 }

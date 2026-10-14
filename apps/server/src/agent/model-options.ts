@@ -1,4 +1,5 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { StructuredTool } from "@langchain/core/tools";
 import {
   CHAT_EFFORTS,
   type ChatEffort,
@@ -13,18 +14,25 @@ import { GatewayError } from "../features/xy2api/errors.js";
 import { findCause } from "../utils/error-chain.js";
 
 /**
- * 第 67 条: per-run chat options, applied innermost around every model call.
+ * 第 67 / 68 条: per-run chat options, applied innermost around every model
+ * call.
  *
- * - 联网搜索: the hosted `web_search` tool of the Responses API is added to
- *   the tools the model sees (chat-options.ts says which models get it). The
- *   main site runs the search inside the same response; nothing executes
- *   here, and the stream adapter shows the searches (web_search_call items).
+ * - 联网搜索 (chat-options.ts chatWebSearchMode says how, per model):
+ *   - "hosted": the Responses API `web_search` tool is added to the tools
+ *     the model sees. The main site runs the search inside the same
+ *     response; nothing executes here, and the stream adapter shows the
+ *     searches (web_search_call items).
+ *   - "tools": the search_web / read_webpage function tools
+ *     (tools/web-search.ts: Gemini's own Google Search, or the free search).
+ *   They are registered with the agent through this middleware and shown to
+ *   the model only while their mode is on.
  * - 思考强度: the model is built with the level (deep-agent.ts
  *   createStreamingChatModel); see chatEffortKwargs for the wire format.
  *
  * A model that still refuses either (an HTTP 400/422 whose text names it) is
  * called again without it, once per step, and the rest of the run goes on
- * without it: a choice in the chat panel must never end a run. Logged as
+ * without it: a choice in the chat panel must never end a run. A refused
+ * built-in search becomes the search tools rather than no search. Logged as
  * `[agent-model] … refused …`.
  */
 
@@ -68,14 +76,19 @@ export function refusedChatOption(
   );
   const provider = gateway ? undefined : findChatProviderError(error);
   if (provider)
-    return (provider.upstreamStatus === 400 || provider.upstreamStatus === 422) &&
+    return (provider.upstreamStatus === 400 ||
+      provider.upstreamStatus === 422) &&
       provider.refusedOption !== "image"
       ? provider.refusedOption
       : undefined;
   const status = gateway?.failure.diagnostics?.status;
   if (status !== 400 && status !== 422) return undefined;
   const text = `${gateway?.failure.diagnostics?.errorId ?? ""} ${gateway?.failure.diagnostics?.message ?? ""}`;
-  if (/web[_ ]?search|hosted tool|tool type|unsupported tool|search tool/i.test(text))
+  if (
+    /web[_ ]?search|hosted tool|tool type|unsupported tool|search tool/i.test(
+      text,
+    )
+  )
     return "web_search";
   if (/reasoning|effort|thinking/i.test(text)) return "effort";
   return undefined;
@@ -99,7 +112,9 @@ function rejectedRequest(
   if (gateway) {
     const status = gateway.failure.diagnostics?.status;
     return (
-      ["invalid_input", "model_not_accessible"].includes(gateway.failure.code) &&
+      ["invalid_input", "model_not_accessible"].includes(
+        gateway.failure.code,
+      ) &&
       status !== undefined &&
       statuses.includes(status)
     );
@@ -107,7 +122,9 @@ function rejectedRequest(
   const provider = findChatProviderError(error);
   return (
     provider !== undefined &&
-    ["provider_unavailable", "provider_model_not_found"].includes(provider.code) &&
+    ["provider_unavailable", "provider_model_not_found"].includes(
+      provider.code,
+    ) &&
     provider.upstreamStatus !== undefined &&
     statuses.includes(provider.upstreamStatus)
   );
@@ -125,33 +142,55 @@ export function lowerChatEffort(
   const offered = chatEffortsFor(ref).filter((e) => e !== "auto");
   const rank = CHAT_EFFORTS.indexOf(effort);
   return (
-    [...offered].reverse().find((e) => CHAT_EFFORTS.indexOf(e) < rank) ??
-    "auto"
+    [...offered].reverse().find((e) => CHAT_EFFORTS.indexOf(e) < rank) ?? "auto"
   );
+}
+
+/** How the model searches this run: its own search, our tools, or not. */
+export type SearchRoute = "hosted" | "tools" | "off";
+
+function toolName(tool: unknown): string | undefined {
+  const name = (tool as { name?: unknown } | null)?.name;
+  return typeof name === "string" ? name : undefined;
 }
 
 export function createChatOptionsMiddleware(options: {
   ref: ChatModelRef | null;
   label: string;
   effort: ChatEffort;
-  webSearch: boolean;
+  search: SearchRoute;
+  /**
+   * search_web / read_webpage: used for "tools", and what a refused
+   * "hosted" search falls back to. Empty: a refusal means no search.
+   */
+  searchTools?: StructuredTool[];
   /**
    * The chat model with other options (same transport, same key). Without
-   * web search a model that is not Responses-native goes back to Chat
+   * hosted search a model that is not Responses-native goes back to Chat
    * Completions (deep-agent.ts createStreamingChatModel).
    */
-  rebuild: (effort: SentEffort, webSearch: boolean) => BaseChatModel;
+  rebuild: (effort: SentEffort, hostedSearch: boolean) => BaseChatModel;
 }) {
   let effort: SentEffort = options.effort;
-  let webSearch = options.webSearch;
+  let search: SearchRoute = options.search;
   let model: BaseChatModel | undefined;
+  const searchTools = options.searchTools ?? [];
+  const searchNames = new Set(searchTools.map((t) => t.name));
   return createMiddleware({
     name: "LoomicChatOptions",
+    // Registered so the agent can run them; shown per call below.
+    ...(searchTools.length ? { tools: searchTools } : {}),
     wrapModelCall: async (request, handler) => {
       for (let step = 0; ; step++) {
-        const tools = webSearch
-          ? [...request.tools, WEB_SEARCH_TOOL]
-          : request.tools;
+        const base = request.tools.filter(
+          (t) => !searchNames.has(toolName(t) ?? ""),
+        );
+        const tools =
+          search === "hosted"
+            ? [...base, WEB_SEARCH_TOOL]
+            : search === "tools"
+              ? [...base, ...searchTools]
+              : base;
         try {
           return await handler({
             ...request,
@@ -173,22 +212,23 @@ export function createChatOptionsMiddleware(options: {
               `[agent-model] ${options.label} refused a request with effort ${effort}; trying without`,
             );
             effort = "auto";
-            model = options.rebuild(effort, webSearch);
+            model = options.rebuild(effort, search === "hosted");
             continue;
           }
-          // With search on, a 4xx that names nothing may be the Responses
-          // API itself (a group whose upstream lacks it): without search
-          // the model goes back to the API it used before 第 67 条.
+          // With hosted search on, a 4xx that names nothing may be the
+          // Responses API itself (a group whose upstream lacks it): the
+          // model goes back to the API it used before 第 67 条 and searches
+          // with the search tools instead (第 68 条).
           if (
-            webSearch &&
+            search === "hosted" &&
             step < 6 &&
             (refused === "web_search" ||
               (!refused && rejectedRequest(error, [400, 404, 405, 422])))
           ) {
-            webSearch = false;
+            search = searchTools.length ? "tools" : "off";
             model = options.rebuild(effort, false);
             console.warn(
-              `[agent-model] ${options.label} refused a request with built-in web search (${refused ?? "unnamed 4xx"}); this run goes on without it`,
+              `[agent-model] ${options.label} refused a request with built-in web search (${refused ?? "unnamed 4xx"}); this run ${search === "tools" ? "searches with the web search tool instead" : "goes on without it"}`,
             );
             continue;
           }
@@ -198,7 +238,16 @@ export function createChatOptionsMiddleware(options: {
               `[agent-model] ${options.label} refused effort ${effort}; trying ${next}`,
             );
             effort = next;
-            model = options.rebuild(effort, webSearch);
+            model = options.rebuild(effort, search === "hosted");
+            continue;
+          }
+          // A provider that cannot take our search tools (some refuse
+          // function tools they do not know): go on without them.
+          if (search === "tools" && step < 6 && refused === "web_search") {
+            search = "off";
+            console.warn(
+              `[agent-model] ${options.label} refused the web search tools; this run goes on without them`,
+            );
             continue;
           }
           throw error;

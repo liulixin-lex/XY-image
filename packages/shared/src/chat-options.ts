@@ -2,31 +2,44 @@ import { z } from "zod";
 
 import { type ChatModelRef, parseChatModelRef } from "./chat-models.js";
 
-// 第 67 条: the design assistant's 思考强度 (reasoning effort) and built-in
-// web search, per chat model. The chat panel shows only what this file says
-// a model takes, and the server sends exactly what resolveChatEffort and
-// chatWebSearchSupported return, so the two never disagree.
+// 第 67 / 68 条: the design assistant's 思考强度 (reasoning effort) and 联网搜索
+// (web search), per chat model. The chat panel shows only what this file
+// says a model takes, and the server sends exactly what resolveChatEffort
+// and chatWebSearchMode return, so the two never disagree.
 //
-// Main site (xy2api 0.3.0, backend/internal/service/
-// openai_reasoning_effort_policy.go and the apicompat converters):
+// 思考强度 through the main site (xy2api 0.3.0 source, checked 2026-10-14):
 // - OpenAI / Codex (gpt-*, o*, codex*): reasoning.effort low / medium /
-//   high / xhigh / max (gpt-6.1-sol lists all five; older ones may stop at
-//   xhigh, and a group ceiling may lower it: "downgrade" by default).
-// - Claude: low / medium / high / xhigh / max → output_config.effort
-//   (xhigh becomes max on most models).
-// - Gemini: low / medium / high (OpenAI-compatible reasoning_effort).
-// - Grok: low / medium / high; xhigh on grok-4.6 / 4.7 (xy2api turns xhigh
-//   into high elsewhere).
+//   high / xhigh / max (openai_reasoning_effort_policy.go; a group ceiling
+//   may lower it, "downgrade" by default). Measured: reasoning tokens grow
+//   with the level (gpt-6-sol 12 → 24, gpt-5.6-sol 10 → 19).
+// - Claude: low … max → output_config.effort (xhigh becomes max on most).
+// - Grok: openai_gateway_grok.go keeps the level only for grok-4.3 / 4.5 /
+//   4.6 / 4.7, grok-3-mini and the grok-4.20 reasoning models (xhigh only on
+//   4.6 / 4.7, max becomes high) and drops it for the rest (composer, build,
+//   non-reasoning), which therefore offer 自动 only.
+// - Gemini: 自动 only. Chat Completions to a Gemini group go through the
+//   Claude-messages converter, whose convertClaudeGenerationConfig keeps
+//   max tokens, temperature, top_p and stop and nothing else, so any level
+//   is dropped (measured: same output either way). Only the native
+//   generateContent API takes thinkingLevel (measured: 109 thought tokens at
+//   low, 375 at high). TODO(第 68 条): offer low/medium/high once the main
+//   site maps reasoning_effort to thinkingConfig on that path.
 // - A personal provider: low / medium / high, the OpenAI-compatible values
 //   most of them accept.
 // The server steps down once if a model still refuses the level
 // (agent/model-options.ts).
 //
-// Built-in web search: the hosted `web_search` tool of the Responses API.
-// xy2api forwards it for Codex accounts (and keeps replayed search history
-// valid, openai_oauth_web_search_history.go) and for Grok groups (xAI's
-// native web_search). Gemini's google_search needs its own result display
-// (Google's grounding rules) and personal providers vary, so they get none.
+// 联网搜索 (chatWebSearchMode), every chat model has one:
+// - "hosted": the model's own search inside the answer, the Responses API
+//   web_search tool, run by the main site: OpenAI models (Codex accounts)
+//   and Grok (xAI's native search). Measured: searches, cites, current.
+// - "gemini": Gemini's own Google Search, called as a tool. Next to function
+//   tools Gemini does not ground, alone it does (features/web-search/
+//   gemini-grounded.ts on the server).
+// - "free": a search_web / read_webpage tool backed by free sources (and an
+//   operator's search API key when set) for every other model: personal
+//   providers, Claude, DeepSeek, Qwen, GLM, Kimi, …
+// A model that refuses its built-in search at run time switches to "free".
 
 export const CHAT_EFFORTS = [
   "auto",
@@ -74,8 +87,22 @@ export function usesResponsesApi(model: string): boolean {
   return /^gpt-6[.-]/.test(model.trim().toLowerCase());
 }
 
-function grokTakesXhigh(model: string) {
-  return /^grok-4\.[67](-latest)?$/.test(model.trim().toLowerCase());
+function bareModelId(model: string) {
+  return model.trim().toLowerCase().replace(/^.*\//, "");
+}
+
+/** Grok levels as the main site forwards them (openai_gateway_grok.go). */
+function grokEfforts(model: string): ChatEffort[] {
+  const id = bareModelId(model);
+  if (/^grok-4\.[67](-latest)?$/.test(id))
+    return ["auto", "low", "medium", "high", "xhigh"];
+  if (
+    /^grok-(4\.[35](-latest)?|3-mini(-fast)?|4\.20(-0309)?-reasoning|4\.20-multi-agent(-0309)?)$/.test(
+      id,
+    )
+  )
+    return ["auto", "low", "medium", "high"];
+  return ["auto"];
 }
 
 /** Levels the model takes, 自动 first. */
@@ -87,11 +114,10 @@ export function chatEffortsFor(ref: ChatModelRef | null): ChatEffort[] {
     case "claude":
       return [...CHAT_EFFORTS];
     case "gemini":
-      return ["auto", "low", "medium", "high"];
+      // The main site drops it on the Chat Completions path (see above).
+      return ["auto"];
     case "grok":
-      return grokTakesXhigh(ref.model)
-        ? ["auto", "low", "medium", "high", "xhigh"]
-        : ["auto", "low", "medium", "high"];
+      return grokEfforts(ref.model);
     default:
       // Unknown vendors on the main site: the common three.
       return ["auto", "low", "medium", "high"];
@@ -117,18 +143,42 @@ export function resolveChatEffort(
   );
 }
 
-/** Whether the model gets the hosted web_search tool. */
-export function chatWebSearchSupported(ref: ChatModelRef | null): boolean {
-  if (!ref || ref.source !== "xy2api") return false;
+export type ChatWebSearchMode = "hosted" | "gemini" | "free";
+
+/** How 联网搜索 works for this model (see the top of this file). */
+export function chatWebSearchMode(
+  ref: ChatModelRef | null,
+): ChatWebSearchMode | null {
+  if (!ref) return null;
+  if (ref.source !== "xy2api") return "free";
   const family = chatModelFamily(ref.model);
-  return family === "openai" || family === "grok";
+  if (family === "openai" || family === "grok") return "hosted";
+  if (family === "gemini") return "gemini";
+  return "free";
 }
+
+/** Whether the chat panel offers 联网搜索 for this model (all models now). */
+export function chatWebSearchSupported(ref: ChatModelRef | null): boolean {
+  return chatWebSearchMode(ref) !== null;
+}
+
+export const CHAT_WEB_SEARCH_HINT: Record<ChatWebSearchMode, string> = {
+  hosted: "用模型自带的联网搜索",
+  gemini: "用 Gemini 自带的 Google 搜索",
+  free: "用免费网页搜索",
+};
 
 /** Same, from an id as /api/models lists it (`openai:<model>`, `custom:…`). */
 export function chatOptionsForModelId(id: string | null | undefined): {
   efforts: ChatEffort[];
   webSearch: boolean;
+  webSearchMode: ChatWebSearchMode | null;
 } {
   const ref = id ? parseChatModelRef(id) : null;
-  return { efforts: chatEffortsFor(ref), webSearch: chatWebSearchSupported(ref) };
+  const webSearchMode = chatWebSearchMode(ref);
+  return {
+    efforts: chatEffortsFor(ref),
+    webSearch: webSearchMode !== null,
+    webSearchMode,
+  };
 }

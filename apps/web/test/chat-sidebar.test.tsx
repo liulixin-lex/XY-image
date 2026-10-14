@@ -6,9 +6,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StreamEvent, WsCommandAck } from "@loomic/shared";
-import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { ToastProvider } from "../src/components/toast";
+import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const {
   createSessionMock,
@@ -55,8 +55,19 @@ vi.mock("../src/lib/account-context", () => ({
     refreshChatModels: vi.fn(),
     imageModels: { data: [], loading: false, error: null },
   }),
-  useImageModels: () => ({ data: [], loading: false, error: null, refresh: vi.fn() }),
-  useChatModels: () => ({ data: chatModelsState.data, loading: false, error: null, xy2apiError: null, refresh: vi.fn() }),
+  useImageModels: () => ({
+    data: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+  useChatModels: () => ({
+    data: chatModelsState.data,
+    loading: false,
+    error: null,
+    xy2apiError: null,
+    refresh: vi.fn(),
+  }),
 }));
 
 function createMockWs(): WebSocketHandle {
@@ -158,18 +169,38 @@ describe("ChatSidebar", () => {
 
   it("sends 思考强度 and 联网搜索 with a run, as the model takes them (第 67 条)", async () => {
     chatModelsState.data = [
-      { id: "openai:gpt-6.1-sol", name: "gpt-6.1-sol", provider: "openai", source: "xy2api", billing: "xy2api" },
-      { id: "openai:gemini-3.8-flash", name: "gemini-3.8-flash", provider: "openai", source: "xy2api", billing: "xy2api" },
+      {
+        id: "openai:gpt-6.1-sol",
+        name: "gpt-6.1-sol",
+        provider: "openai",
+        source: "xy2api",
+        billing: "xy2api",
+      },
+      {
+        id: "openai:gemini-3.8-flash",
+        name: "gemini-3.8-flash",
+        provider: "openai",
+        source: "xy2api",
+        billing: "xy2api",
+      },
     ];
     localStorage.setItem("xy:agent-model", "openai:gpt-6.1-sol");
     localStorage.setItem("xy:agent-effort", "max");
     try {
       render(
         <ToastProvider>
-          <ChatSidebar accessToken="token_abc" canvasId="canvas-1" open onToggle={() => {}} ws={mockWs} />
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
         </ToastProvider>,
       );
-      expect(await screen.findByRole("combobox", { name: "思考强度：最高" })).toBeTruthy();
+      expect(
+        await screen.findByRole("combobox", { name: "思考强度：最高" }),
+      ).toBeTruthy();
       const globe = screen.getByRole("button", { name: "联网搜索" });
       expect(globe.getAttribute("aria-pressed")).toBe("true");
       await userEvent.click(globe);
@@ -196,21 +227,74 @@ describe("ChatSidebar", () => {
     }
   });
 
-  it("shows the level a model runs at and no globe where search is not built in", async () => {
+  it("shows 自动 for Gemini on the main site and its Google Search globe (第 68 条)", async () => {
     chatModelsState.data = [
-      { id: "openai:gemini-3.8-flash", name: "gemini-3.8-flash", provider: "openai", source: "xy2api", billing: "xy2api" },
+      {
+        id: "openai:gemini-3.8-flash",
+        name: "gemini-3.8-flash",
+        provider: "openai",
+        source: "xy2api",
+        billing: "xy2api",
+      },
     ];
     localStorage.setItem("xy:agent-model", "openai:gemini-3.8-flash");
     localStorage.setItem("xy:agent-effort", "max");
     try {
       render(
         <ToastProvider>
-          <ChatSidebar accessToken="token_abc" canvasId="canvas-1" open onToggle={() => {}} ws={mockWs} />
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
         </ToastProvider>,
       );
-      // Gemini stops at 高: 最高 runs as 高.
-      expect(await screen.findByRole("combobox", { name: "思考强度：高" })).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "联网搜索" })).toBeNull();
+      // The main site drops Gemini's level, so there is nothing to pick.
+      expect(
+        await screen.findByTitle("这个模型的思考强度由主站决定，不能调"),
+      ).toBeTruthy();
+      expect(screen.queryByRole("combobox", { name: /思考强度/ })).toBeNull();
+      const globe = await screen.findByRole("button", { name: "联网搜索" });
+      expect(globe.getAttribute("title")).toContain("Google 搜索");
+    } finally {
+      localStorage.removeItem("xy:agent-model");
+      localStorage.removeItem("xy:agent-effort");
+      chatModelsState.data = [];
+    }
+  });
+
+  it("runs a remembered level at the nearest one the model takes", async () => {
+    chatModelsState.data = [
+      {
+        id: "openai:grok-4.5",
+        name: "grok-4.5",
+        provider: "openai",
+        source: "xy2api",
+        billing: "xy2api",
+      },
+    ];
+    localStorage.setItem("xy:agent-model", "openai:grok-4.5");
+    localStorage.setItem("xy:agent-effort", "max");
+    try {
+      render(
+        <ToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </ToastProvider>,
+      );
+      // grok-4.5 stops at 高: 最高 runs as 高.
+      expect(
+        await screen.findByRole("combobox", { name: "思考强度：高" }),
+      ).toBeTruthy();
+      const globe = await screen.findByRole("button", { name: "联网搜索" });
+      expect(globe.getAttribute("title")).toContain("模型自带");
     } finally {
       localStorage.removeItem("xy:agent-model");
       localStorage.removeItem("xy:agent-effort");
@@ -267,13 +351,17 @@ describe("ChatSidebar", () => {
     await userEvent.type(input, "画一座灯塔{Enter}");
 
     const stop = await screen.findByRole("button", { name: "停止" });
-    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "发送" }),
+    ).not.toBeInTheDocument();
     await userEvent.click(stop);
     expect(mockWs.cancelRun).toHaveBeenCalledWith("run_123");
     expect(screen.getByRole("button", { name: "正在停止" })).toBeDisabled();
 
     await emit({ type: "run.canceled" });
-    expect(await screen.findByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "发送" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("已停止。")).toBeInTheDocument();
   });
 
@@ -321,10 +409,14 @@ describe("ChatSidebar", () => {
     await userEvent.type(input, "画一座灯塔{Enter}");
 
     expect(
-      await screen.findByText("还没连上服务器，这条消息没有发出。连上后再发一次。"),
+      await screen.findByText(
+        "还没连上服务器，这条消息没有发出。连上后再发一次。",
+      ),
     ).toBeInTheDocument();
     expect(input).toHaveValue("画一座灯塔");
-    expect(screen.queryByText("画一座灯塔", { selector: "p, span, div" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("画一座灯塔", { selector: "p, span, div" }),
+    ).not.toBeInTheDocument();
     expect(saveMessageMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
   });
@@ -340,7 +432,11 @@ describe("ChatSidebar", () => {
         expect.objectContaining({ role: "user", content: "你好" }),
       ),
     );
-    expect(updateSessionTitleMock).toHaveBeenCalledWith("token_abc", "session-real", "你好");
+    expect(updateSessionTitleMock).toHaveBeenCalledWith(
+      "token_abc",
+      "session-real",
+      "你好",
+    );
   });
 
   // The page sent a run, the connection dropped, and it came back.
@@ -355,9 +451,11 @@ describe("ChatSidebar", () => {
           listeners.splice(listeners.indexOf(listener), 1);
         };
       }),
-      resumeCanvas: vi.fn((_canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
-        resumeAck = onAck;
-      }),
+      resumeCanvas: vi.fn(
+        (_canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
+          resumeAck = onAck;
+        },
+      ),
     };
     const onStreamEvent = vi.fn();
     const ui = (ws: WebSocketHandle) => (
@@ -430,7 +528,9 @@ describe("ChatSidebar", () => {
     await reconnect(null);
     await emit({ type: "message.delta", messageId: "m-1", delta: "你好！" });
     await emit({ type: "run.completed" });
-    expect(await screen.findByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "发送" }),
+    ).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 3_500));
     expect(
       screen.queryByText(/连接断开期间这条回复没有完成/),

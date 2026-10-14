@@ -3,7 +3,9 @@ import type { AddressInfo } from "node:net";
 import { HumanMessage } from "@langchain/core/messages";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { mapProviderStatus } from "../features/chat-providers/errors.js";
 import {
@@ -13,13 +15,18 @@ import {
 } from "../features/xy2api/errors.js";
 import { createStreamingChatModel } from "./deep-agent.js";
 import {
+  type SearchRoute,
   WEB_SEARCH_TOOL,
   chatEffortKwargs,
   createChatOptionsMiddleware,
   lowerChatEffort,
   refusedChatOption,
 } from "./model-options.js";
-import { thinkingText, webSearchCalls } from "./stream-adapter.js";
+import {
+  thinkingText,
+  webSearchCalls,
+  webToolDisplay,
+} from "./stream-adapter.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -38,21 +45,56 @@ async function gateway() {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     if (request.url?.endsWith("/responses")) {
       const events = [
-        { type: "response.created", response: { id: "resp_1", model: body.model, output: [] } },
-        { type: "response.output_item.added", output_index: 0, item: { id: "msg_1", type: "message", role: "assistant", content: [] } },
-        { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, content_index: 0, delta: "好" },
+        {
+          type: "response.created",
+          response: { id: "resp_1", model: body.model, output: [] },
+        },
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            content: [],
+          },
+        },
+        {
+          type: "response.output_text.delta",
+          item_id: "msg_1",
+          output_index: 0,
+          content_index: 0,
+          delta: "好",
+        },
         {
           type: "response.completed",
           response: {
             id: "resp_1",
             model: body.model,
             status: "completed",
-            output: [{ id: "msg_1", type: "message", role: "assistant", content: [{ type: "output_text", text: "好", annotations: [] }] }],
-            usage: { input_tokens: 2000, input_tokens_details: { cached_tokens: 1536 }, output_tokens: 3, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 2003 },
+            output: [
+              {
+                id: "msg_1",
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "好", annotations: [] }],
+              },
+            ],
+            usage: {
+              input_tokens: 2000,
+              input_tokens_details: { cached_tokens: 1536 },
+              output_tokens: 3,
+              output_tokens_details: { reasoning_tokens: 0 },
+              total_tokens: 2003,
+            },
           },
         },
       ];
-      response.end(events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(""));
+      response.end(
+        events
+          .map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+          .join(""),
+      );
       return;
     }
     const chunk = {
@@ -60,7 +102,13 @@ async function gateway() {
       object: "chat.completion.chunk",
       created: 1,
       model: body.model,
-      choices: [{ index: 0, delta: { role: "assistant", content: "好" }, finish_reason: "stop" }],
+      choices: [
+        {
+          index: 0,
+          delta: { role: "assistant", content: "好" },
+          finish_reason: "stop",
+        },
+      ],
     };
     response.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`);
   });
@@ -84,10 +132,14 @@ async function gateway() {
 describe("effort and prompt cache on the wire (第 67 条)", () => {
   it("sends reasoning.effort with a summary to gpt-6 models over the Responses API", async () => {
     const g = await gateway();
-    const model = createStreamingChatModel("openai:gpt-6.1-sol", g.credentials, {
-      effort: "xhigh",
-      promptCacheKey: "xyimg-abc",
-    });
+    const model = createStreamingChatModel(
+      "openai:gpt-6.1-sol",
+      g.credentials,
+      {
+        effort: "xhigh",
+        promptCacheKey: "xyimg-abc",
+      },
+    );
     await model.invoke([new HumanMessage("hi")]);
     expect(g.bodies[0]?.path).toBe("/v1/responses");
     expect(g.bodies[0]?.body).toMatchObject({
@@ -123,7 +175,11 @@ describe("effort and prompt cache on the wire (第 67 条)", () => {
     const model = createStreamingChatModel("openai:grok-4.7", g.credentials, {
       effort: "high",
       webSearch: true,
-    }) as unknown as { bindTools: (tools: unknown[]) => { invoke: (m: unknown[]) => Promise<unknown> } };
+    }) as unknown as {
+      bindTools: (tools: unknown[]) => {
+        invoke: (m: unknown[]) => Promise<unknown>;
+      };
+    };
     await model.bindTools([WEB_SEARCH_TOOL]).invoke([new HumanMessage("hi")]);
     expect(g.bodies[0]?.path).toBe("/v1/responses");
     expect(g.bodies[0]?.body).toMatchObject({
@@ -131,7 +187,9 @@ describe("effort and prompt cache on the wire (第 67 条)", () => {
       tools: [{ type: "web_search" }],
     });
     // No summary field for Grok: xAI does not document it.
-    expect((g.bodies[0]?.body.reasoning as Record<string, unknown>).summary).toBeUndefined();
+    expect(
+      (g.bodies[0]?.body.reasoning as Record<string, unknown>).summary,
+    ).toBeUndefined();
   });
 
   it("sends nothing for 自动 off the Responses API, and nothing at all when off", () => {
@@ -143,19 +201,34 @@ describe("effort and prompt cache on the wire (第 67 条)", () => {
 const refusal = (status: number, message: string) =>
   Object.assign(new Error("Connection error."), {
     cause: new GatewayError({
-      ...mapGatewayError({ status, body: { error: { message } }, responseReceived: true }),
+      ...mapGatewayError({
+        status,
+        body: { error: { message } },
+        responseReceived: true,
+      }),
       diagnostics: gatewayDiagnostics({ status, body: { error: { message } } }),
     }),
   });
 
 describe("a model that refuses an option", () => {
   it("reads what the refusal is about", () => {
-    expect(refusedChatOption(refusal(400, "Unsupported tool type: web_search"))).toBe("web_search");
-    expect(refusedChatOption(refusal(400, "reasoning effort 'max' is not supported"))).toBe("effort");
+    expect(
+      refusedChatOption(refusal(400, "Unsupported tool type: web_search")),
+    ).toBe("web_search");
+    expect(
+      refusedChatOption(
+        refusal(400, "reasoning effort 'max' is not supported"),
+      ),
+    ).toBe("effort");
     expect(refusedChatOption(refusal(400, "bad image size"))).toBeUndefined();
     expect(refusedChatOption(refusal(503, "reasoning busy"))).toBeUndefined();
-    const provider = mapProviderStatus(400, "Unrecognized request argument supplied: reasoning_effort (key synthetic-private-key)");
-    expect(refusedChatOption(Object.assign(new Error("x"), { cause: provider }))).toBe("effort");
+    const provider = mapProviderStatus(
+      400,
+      "Unrecognized request argument supplied: reasoning_effort (key synthetic-private-key)",
+    );
+    expect(
+      refusedChatOption(Object.assign(new Error("x"), { cause: provider })),
+    ).toBe("effort");
     expect(JSON.stringify(provider)).not.toContain("synthetic-private-key");
   });
 
@@ -164,17 +237,38 @@ describe("a model that refuses an option", () => {
     expect(lowerChatEffort(main, "max")).toBe("xhigh");
     expect(lowerChatEffort(main, "low")).toBe("auto");
     expect(lowerChatEffort(main, "auto")).toBe("off");
+    const grok = { source: "xy2api" as const, model: "grok-4.5" };
+    expect(lowerChatEffort(grok, "high")).toBe("medium");
+    // 自动 only on the main site (第 68 条).
     const gemini = { source: "xy2api" as const, model: "gemini-3.8-flash" };
-    expect(lowerChatEffort(gemini, "high")).toBe("medium");
+    expect(lowerChatEffort(gemini, "high")).toBe("auto");
   });
 
-  function agent(failures: Error[], options: { webSearch: boolean; effort: "auto" | "max" | "high" }) {
+  const fakeSearchTools = () =>
+    ["search_web", "read_webpage"].map((name) =>
+      tool(async () => "{}", {
+        name,
+        description: name,
+        schema: z.object({ query: z.string() }),
+      }),
+    ) as never[];
+
+  function agent(
+    failures: Error[],
+    options: {
+      search: SearchRoute;
+      effort: "auto" | "max" | "high";
+      tools?: boolean;
+    },
+  ) {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const seenTools: unknown[][] = [];
     const rebuilt: string[] = [];
     let calls = 0;
     class Capturing extends FakeListChatModel {
-      override async _generate(...args: Parameters<FakeListChatModel["_generate"]>) {
+      override async _generate(
+        ...args: Parameters<FakeListChatModel["_generate"]>
+      ) {
         const failure = failures[calls++];
         if (failure) throw failure;
         return super._generate(...args);
@@ -189,13 +283,17 @@ describe("a model that refuses an option", () => {
       ref: { source: "xy2api", model: "gpt-6.1-sol" },
       label: "gpt-6.1-sol",
       effort: options.effort,
-      webSearch: options.webSearch,
-      rebuild: (effort, webSearch) => {
-        rebuilt.push(webSearch ? effort : `${effort}/no-search`);
+      search: options.search,
+      ...(options.tools === false ? {} : { searchTools: fakeSearchTools() }),
+      rebuild: (effort, hosted) => {
+        rebuilt.push(hosted ? effort : `${effort}/no-search`);
         return make() as never;
       },
     });
-    const deep = createDeepAgent({ model: make() as never, middleware: [middleware] });
+    const deep = createDeepAgent({
+      model: make() as never,
+      middleware: [middleware],
+    });
     return {
       seenTools,
       rebuilt,
@@ -206,37 +304,83 @@ describe("a model that refuses an option", () => {
 
   const hasSearch = (tools: unknown[] | undefined) =>
     (tools ?? []).some((t) => (t as { type?: unknown }).type === "web_search");
+  const names = (tools: unknown[] | undefined) =>
+    (tools ?? []).map((t) => (t as { name?: string }).name).filter(Boolean);
 
   it("offers the hosted web_search tool alongside the agent's own tools", async () => {
-    const a = agent([], { webSearch: true, effort: "auto" });
+    const a = agent([], { search: "hosted", effort: "auto" });
     await a.run();
     expect(hasSearch(a.seenTools[0])).toBe(true);
+    expect(names(a.seenTools[0])).not.toContain("search_web");
     expect((a.seenTools[0] ?? []).length).toBeGreaterThan(1);
   });
 
-  it("goes on without web search when the model refuses it", async () => {
+  it("offers the search tools to models without built-in search (第 68 条)", async () => {
+    const a = agent([], { search: "tools", effort: "auto" });
+    await a.run();
+    expect(hasSearch(a.seenTools[0])).toBe(false);
+    expect(names(a.seenTools[0])).toEqual(
+      expect.arrayContaining(["search_web", "read_webpage"]),
+    );
+  });
+
+  it("shows no search at all when 联网搜索 is off", async () => {
+    const a = agent([], { search: "off", effort: "auto", tools: false });
+    await a.run();
+    expect(hasSearch(a.seenTools[0])).toBe(false);
+    expect(names(a.seenTools[0])).not.toContain("search_web");
+  });
+
+  it("searches with the search tools when the model refuses its own search", async () => {
     const a = agent([refusal(400, "Tool type 'web_search' is not supported")], {
-      webSearch: true,
+      search: "hosted",
       effort: "auto",
     });
     const state = await a.run();
     expect(state.messages.at(-1)?.content).toBe("好的");
     expect(hasSearch(a.seenTools[0])).toBe(true);
     expect(hasSearch(a.seenTools.at(-1))).toBe(false);
+    expect(names(a.seenTools.at(-1))).toContain("search_web");
+  });
+
+  it("goes on without search when there is nothing to fall back to", async () => {
+    const a = agent([refusal(400, "Tool type 'web_search' is not supported")], {
+      search: "hosted",
+      effort: "auto",
+      tools: false,
+    });
+    await a.run();
+    expect(hasSearch(a.seenTools.at(-1))).toBe(false);
+    expect(names(a.seenTools.at(-1))).not.toContain("search_web");
   });
 
   it("goes back to the old API when a search request is refused without a reason", async () => {
-    const a = agent([refusal(404, "Not Found")], { webSearch: true, effort: "high" });
+    const a = agent([refusal(404, "Not Found")], {
+      search: "hosted",
+      effort: "high",
+    });
     const state = await a.run();
     expect(state.messages.at(-1)?.content).toBe("好的");
     expect(a.rebuilt).toEqual(["high/no-search"]);
     expect(hasSearch(a.seenTools.at(-1))).toBe(false);
+    expect(names(a.seenTools.at(-1))).toContain("search_web");
+  });
+
+  it("drops the search tools a provider refuses", async () => {
+    const a = agent([refusal(400, "unsupported tool: search_web")], {
+      search: "tools",
+      effort: "auto",
+    });
+    const state = await a.run();
+    expect(state.messages.at(-1)?.content).toBe("好的");
+    expect(names(a.seenTools[0])).toContain("search_web");
+    expect(names(a.seenTools.at(-1))).not.toContain("search_web");
   });
 
   it("steps the effort down when the model refuses it", async () => {
     const a = agent(
       [refusal(400, "reasoning effort 'max' is not supported for this model")],
-      { webSearch: false, effort: "max" },
+      { search: "off", effort: "max", tools: false },
     );
     const state = await a.run();
     expect(state.messages.at(-1)?.content).toBe("好的");
@@ -244,7 +388,11 @@ describe("a model that refuses an option", () => {
   });
 
   it("drops a level a provider refused without saying why", async () => {
-    const a = agent([refusal(400, "invalid parameter")], { webSearch: false, effort: "max" });
+    const a = agent([refusal(400, "invalid parameter")], {
+      search: "off",
+      effort: "max",
+      tools: false,
+    });
     await a.run();
     expect(a.rebuilt).toEqual(["auto/no-search"]);
   });
@@ -252,18 +400,38 @@ describe("a model that refuses an option", () => {
   it("never resends a moderation refusal without search or effort", async () => {
     const moderation = Object.assign(new Error("Connection error."), {
       cause: new GatewayError({
-        ...mapGatewayError({ status: 400, body: { error: { message: "Your request was rejected by the safety system.", type: "content_policy_violation" } }, responseReceived: true }),
-        diagnostics: gatewayDiagnostics({ status: 400, body: { error: { message: "Your request was rejected by the safety system." } } }),
+        ...mapGatewayError({
+          status: 400,
+          body: {
+            error: {
+              message: "Your request was rejected by the safety system.",
+              type: "content_policy_violation",
+            },
+          },
+          responseReceived: true,
+        }),
+        diagnostics: gatewayDiagnostics({
+          status: 400,
+          body: {
+            error: {
+              message: "Your request was rejected by the safety system.",
+            },
+          },
+        }),
       }),
     });
-    const a = agent([moderation], { webSearch: true, effort: "max" });
+    const a = agent([moderation], { search: "hosted", effort: "max" });
     await expect(a.run()).rejects.toBeTruthy();
     expect(a.calls()).toBe(1);
     expect(a.rebuilt).toEqual([]);
   });
 
   it("does not hide other refusals", async () => {
-    const a = agent([refusal(400, "invalid parameter")], { webSearch: false, effort: "auto" });
+    const a = agent([refusal(400, "invalid parameter")], {
+      search: "off",
+      effort: "auto",
+      tools: false,
+    });
     await expect(a.run()).rejects.toBeTruthy();
     expect(a.calls()).toBe(1);
   });
@@ -271,7 +439,9 @@ describe("a model that refuses an option", () => {
 
 describe("stream adapter helpers", () => {
   it("reads reasoning parts of both shapes", () => {
-    expect(thinkingText({ type: "reasoning", reasoning: "先看看画布" })).toBe("先看看画布");
+    expect(thinkingText({ type: "reasoning", reasoning: "先看看画布" })).toBe(
+      "先看看画布",
+    );
     expect(thinkingText({ type: "thinking", thinking: "想想" })).toBe("想想");
     expect(thinkingText({ type: "text", text: "答" })).toBeUndefined();
   });
@@ -280,14 +450,75 @@ describe("stream adapter helpers", () => {
     const calls = webSearchCalls({
       additional_kwargs: {
         tool_outputs: [
-          { id: "ws_1", type: "web_search_call", status: "completed", action: { type: "search", query: "2026 海报 趋势", sources: [{ type: "url", url: "https://example.com/a" }] } },
-          { id: "ws_2", type: "web_search_call", status: "completed", action: { type: "open_page", url: "https://example.com/b" } },
+          {
+            id: "ws_1",
+            type: "web_search_call",
+            status: "completed",
+            action: {
+              type: "search",
+              query: "2026 海报 趋势",
+              sources: [{ type: "url", url: "https://example.com/a" }],
+            },
+          },
+          {
+            id: "ws_2",
+            type: "web_search_call",
+            status: "completed",
+            action: { type: "open_page", url: "https://example.com/b" },
+          },
           { id: "ci_1", type: "code_interpreter_call" },
         ],
       },
     });
-    expect(calls.map((c) => c.summary)).toEqual(["搜索「2026 海报 趋势」", "打开网页 example.com"]);
-    expect(calls[0]?.output).toMatchObject({ query: "2026 海报 趋势", sources: [{ url: "https://example.com/a" }] });
+    expect(calls.map((c) => c.summary)).toEqual([
+      "搜索「2026 海报 趋势」",
+      "打开网页 example.com",
+    ]);
+    expect(calls[0]?.output).toMatchObject({
+      query: "2026 海报 趋势",
+      sources: [{ url: "https://example.com/a" }],
+    });
     expect(webSearchCalls({ additional_kwargs: {} })).toEqual([]);
+  });
+
+  it("keeps only the query and sources of a search tool result for the chat", () => {
+    const shown = webToolDisplay(
+      JSON.stringify({
+        summary: "搜索「春节海报」，找到 2 条",
+        query: "春节海报",
+        via: "yahoo-jp",
+        results: [
+          {
+            title: "春节海报设计",
+            url: "https://www.zcool.com.cn/a",
+            snippet: "很长的摘要".repeat(50),
+          },
+          { title: "模板", url: "https://www.canva.cn/b", snippet: "…" },
+        ],
+      }),
+    );
+    expect(shown).toEqual({
+      summary: "搜索「春节海报」，找到 2 条",
+      query: "春节海报",
+      via: "yahoo-jp",
+      sources: [
+        { url: "https://www.zcool.com.cn/a", title: "春节海报设计" },
+        { url: "https://www.canva.cn/b", title: "模板" },
+      ],
+    });
+    const page = webToolDisplay(
+      JSON.stringify({
+        summary: "读了 example.com",
+        url: "https://example.com/",
+        title: "Example",
+        text: "x".repeat(6000),
+      }),
+    );
+    expect(page).toEqual({
+      summary: "读了 example.com",
+      url: "https://example.com/",
+      title: "Example",
+    });
+    expect(webToolDisplay("not json")).toBeUndefined();
   });
 });

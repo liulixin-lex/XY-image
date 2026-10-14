@@ -4,6 +4,7 @@ import {
   chatEffortsFor,
   chatModelFamily,
   chatOptionsForModelId,
+  chatWebSearchMode,
   chatWebSearchSupported,
   resolveChatEffort,
 } from "./chat-options.js";
@@ -16,7 +17,7 @@ const custom = (model: string) => ({
   model,
 });
 
-describe("chat options (第 67 条)", () => {
+describe("chat options (第 67 / 68 条)", () => {
   it("knows the vendor of the main site's chat models", () => {
     expect(chatModelFamily("gpt-6.1-sol")).toBe("openai");
     expect(chatModelFamily("gpt-5.6-terra")).toBe("openai");
@@ -38,14 +39,29 @@ describe("chat options (第 67 条)", () => {
       "max",
     ]);
     expect(chatEffortsFor(main("claude-sonnet-5-5"))).toContain("max");
-    expect(chatEffortsFor(main("gemini-3.8-flash"))).toEqual([
+    // The main site drops Gemini's level on Chat Completions (第 68 条).
+    expect(chatEffortsFor(main("gemini-3.8-flash"))).toEqual(["auto"]);
+    expect(chatEffortsFor(custom("gemini-3.8-flash"))).toEqual([
       "auto",
       "low",
       "medium",
       "high",
     ]);
     expect(chatEffortsFor(main("grok-4.7"))).toContain("xhigh");
-    expect(chatEffortsFor(main("grok-4.5"))).not.toContain("xhigh");
+    expect(chatEffortsFor(main("grok-4.6-latest"))).toContain("xhigh");
+    expect(chatEffortsFor(main("grok-4.5"))).toEqual([
+      "auto",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(chatEffortsFor(main("grok-4.20-0309-reasoning"))).toContain("high");
+    // Levels the main site removes for these Grok models.
+    expect(chatEffortsFor(main("grok-composer-2.5-fast"))).toEqual(["auto"]);
+    expect(chatEffortsFor(main("grok-4.20-0309-non-reasoning"))).toEqual([
+      "auto",
+    ]);
+    expect(chatEffortsFor(main("grok-build-0.1"))).toEqual(["auto"]);
     expect(chatEffortsFor(custom("gpt-6.1-sol"))).toEqual([
       "auto",
       "low",
@@ -56,7 +72,8 @@ describe("chat options (第 67 条)", () => {
   });
 
   it("runs a level the model lacks at the nearest one below", () => {
-    expect(resolveChatEffort(main("gemini-3.8-flash"), "max")).toBe("high");
+    expect(resolveChatEffort(main("gemini-3.8-flash"), "max")).toBe("auto");
+    expect(resolveChatEffort(custom("gemini-3.8-flash"), "max")).toBe("high");
     expect(resolveChatEffort(main("grok-4.7"), "max")).toBe("xhigh");
     expect(resolveChatEffort(main("gpt-6.1-sol"), "xhigh")).toBe("xhigh");
     expect(resolveChatEffort(main("gpt-6.1-sol"), "auto")).toBe("auto");
@@ -64,18 +81,25 @@ describe("chat options (第 67 条)", () => {
     expect(resolveChatEffort(null, "high")).toBe("auto");
   });
 
-  it("gives built-in web search to OpenAI and Grok models on the main site only", () => {
-    expect(chatWebSearchSupported(main("gpt-6.1-sol"))).toBe(true);
-    expect(chatWebSearchSupported(main("grok-4.7"))).toBe(true);
-    expect(chatWebSearchSupported(main("gemini-3.8-flash"))).toBe(false);
-    expect(chatWebSearchSupported(main("claude-opus-4-7"))).toBe(false);
-    expect(chatWebSearchSupported(custom("gpt-6.1-sol"))).toBe(false);
+  it("gives every chat model a way to search the web", () => {
+    expect(chatWebSearchMode(main("gpt-6.1-sol"))).toBe("hosted");
+    expect(chatWebSearchMode(main("gpt-5.6-sol"))).toBe("hosted");
+    expect(chatWebSearchMode(main("grok-4.7"))).toBe("hosted");
+    expect(chatWebSearchMode(main("gemini-3.8-flash"))).toBe("gemini");
+    expect(chatWebSearchMode(main("claude-opus-4-7"))).toBe("free");
+    expect(chatWebSearchMode(main("deepseek-v4"))).toBe("free");
+    expect(chatWebSearchMode(custom("gpt-6.1-sol"))).toBe("free");
+    expect(chatWebSearchMode(custom("qwen3-max"))).toBe("free");
+    expect(chatWebSearchMode(null)).toBeNull();
+    expect(chatWebSearchSupported(custom("glm-5"))).toBe(true);
     expect(chatOptionsForModelId("openai:gpt-6-sol")).toMatchObject({
       webSearch: true,
+      webSearchMode: "hosted",
     });
     expect(chatOptionsForModelId(null)).toEqual({
       efforts: ["auto"],
       webSearch: false,
+      webSearchMode: null,
     });
   });
 
