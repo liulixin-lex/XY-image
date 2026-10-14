@@ -29,6 +29,17 @@
 //                        it the picture (a user message "…工具返回的图片…"
 //                        with images, 第 67 条 审图) it answers
 //                        "（模拟上游）看到了 N 张图。" and records `sawImages`
+//   [[mock:refusesearch]] in a chat message: a request without the server's
+//                        search_web tool (the hosted web_search tool, which
+//                        the lab xy2api drops on its way here) is refused:
+//                        400 "Tool type 'web_search' is not supported". Once
+//                        the server offers search_web instead (第 68 条), the
+//                        scripted model calls it, then answers
+//                        "（模拟上游）搜到了 N 条：<first url>".
+//   [[mock:searchtool]]  the same without the refusal: search_web when offered.
+//   Lab     GET /search?q=…&format=json: a SearXNG-shaped answer (two
+//           results) for the server's free web search
+//           (LOOMIC_WEB_SEARCH_SEARXNG_URL=http://mock-upstream:8000).
 //   Chat requests record what they asked for (第 67 条): `chatOptions` in
 //   /__mock/requests has reasoning / reasoning_effort, whether a
 //   prompt_cache_key came (never its value), stream_options and the hosted
@@ -332,6 +343,26 @@ const ARGUMENT_ERROR = /参数不符合要求/;
 // `toolOutputs` are the tool results since the last user message.
 function planReply({ lastRole, lastText: fullText, toolNames, toolOutputs = [] }) {
   const lastText = userWords(fullText);
+  // 第 68 条: the server's search_web tool.
+  const d = directives(fullText);
+  if ((d.refusesearch || d.searchtool) && toolNames.includes("search_web")) {
+    const found = toolOutputs
+      .map((t) => {
+        try {
+          return JSON.parse(t);
+        } catch {
+          return null;
+        }
+      })
+      .find((o) => o && Array.isArray(o.results));
+    if (lastRole === "tool" && found)
+      return {
+        kind: "text",
+        text: `（模拟上游）搜到了 ${found.results.length} 条：${found.results[0]?.url ?? "无"}`,
+      };
+    if (lastRole !== "tool")
+      return { kind: "tool", name: "search_web", args: { query: "mock 免费搜索" } };
+  }
   if (lastRole === "tool") {
     const argumentErrors = toolOutputs.filter((t) => ARGUMENT_ERROR.test(t)).length;
     const lastOutput = toolOutputs.at(-1) ?? "";
@@ -442,6 +473,14 @@ async function handleChatCompletions(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.function?.name ?? t?.name)
     .filter(Boolean);
+  ctx.toolNames = toolNames.filter((n) => n === "search_web" || n === "read_webpage");
+  if (
+    d.refusesearch &&
+    ((ctx.chatOptions.hostedTools ?? []).includes("web_search") || !toolNames.includes("search_web"))
+  ) {
+    ctx.refusedSearch = true;
+    return openaiError(res, 400, "Tool type 'web_search' is not supported for this model.", "invalid_request_error");
+  }
   const plan = reviewPlan({
     lastText,
     lastContent: lastUser?.content,
@@ -577,6 +616,14 @@ async function handleResponses(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.name ?? t?.function?.name)
     .filter(Boolean);
+  ctx.toolNames = toolNames.filter((n) => n === "search_web" || n === "read_webpage");
+  if (
+    d.refusesearch &&
+    ((ctx.chatOptions.hostedTools ?? []).includes("web_search") || !toolNames.includes("search_web"))
+  ) {
+    ctx.refusedSearch = true;
+    return openaiError(res, 400, "Tool type 'web_search' is not supported for this model.", "invalid_request_error");
+  }
   const lastUserItem = [...(Array.isArray(body.input) ? body.input : [])].reverse().find((i) => i?.role === "user");
   const plan =
     reviewPlan({ lastText, lastContent: lastUserItem?.content, lastRole, toolNames, ctx, originalText: lastText }) ??
@@ -866,6 +913,21 @@ const server = createServer(async (req, res) => {
     if (path === "/__mock/requests") {
       if (req.method === "DELETE") recent.length = 0;
       return sendJson(res, 200, { requests: recent });
+    }
+    // 第 68 条: SearXNG-shaped results for the server's free web search
+    // (no key: the server sends none to a SearXNG instance).
+    if (req.method === "GET" && path === "/search") {
+      const q = url.searchParams.get("q") ?? "";
+      ctx.searchQueryLength = q.length;
+      if (url.searchParams.get("format") !== "json")
+        return openaiError(res, 403, "mock: format must be json", "forbidden");
+      return sendJson(res, 200, {
+        query: q,
+        results: [
+          { title: `模拟结果一：${q.slice(0, 20)}`, url: "https://example.com/mock-search-1", content: "第一条模拟搜索结果的摘要。" },
+          { title: "模拟结果二", url: "https://example.org/mock-search-2", content: "第二条模拟搜索结果的摘要。" },
+        ],
+      });
     }
     if (!authorized(req, url)) {
       return path.startsWith("/v1beta")

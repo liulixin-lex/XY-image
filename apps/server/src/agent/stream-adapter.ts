@@ -10,10 +10,10 @@ import {
 } from "@langchain/core/messages";
 import { chatRunError } from "../features/chat-providers/run-error.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
+import { WEB_TOOL_NAMES } from "./tools/web-search.js";
 
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
-
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -316,9 +316,18 @@ export async function* adaptDeepAgentStream(
         // suppress its artifacts because the parent will re-emit them.
         const isNestedInSubAgent =
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
-        const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
-        const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
-        if ((extractedArtifacts?.length ?? 0) > 0 || toolName === "manipulate_canvas")
+        const extractedArtifacts = isNestedInSubAgent
+          ? undefined
+          : extractArtifacts(output);
+        // 第 68 条: search results and page text are for the model; the
+        // chat keeps the query and the sources.
+        const extractedOutput = WEB_TOOL_NAMES.has(toolName)
+          ? webToolDisplay(output)
+          : extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        if (
+          (extractedArtifacts?.length ?? 0) > 0 ||
+          toolName === "manipulate_canvas"
+        )
           answered = true;
         console.info(
           `[agent-tool] run ${options.runId} ${toolName} ${toolOutcome(extractedOutput)} in ${toolMs(toolStartedAt, toolCallId)}ms${extractedArtifacts?.length ? `, ${extractedArtifacts.length} artifact(s)` : ""}`,
@@ -422,7 +431,11 @@ export async function* adaptDeepAgentStream(
 function describeModelTurn(msg: AIMessage | AIMessageChunk): string {
   const meta = (msg.response_metadata ?? {}) as Record<string, unknown>;
   const finish =
-    meta.finish_reason ?? meta.stop_reason ?? meta.status ?? meta.finishReason ?? "?";
+    meta.finish_reason ??
+    meta.stop_reason ??
+    meta.status ??
+    meta.finishReason ??
+    "?";
   // Read loosely: the message union narrows usage_metadata to never here.
   const usage = (
     msg as unknown as {
@@ -436,7 +449,15 @@ function describeModelTurn(msg: AIMessage | AIMessageChunk): string {
   ).usage_metadata;
   const content = msg.content;
   const types = Array.isArray(content)
-    ? [...new Set(content.map((part) => (typeof part === "string" ? "string" : String((part as { type?: unknown }).type ?? "?"))))].join("+")
+    ? [
+        ...new Set(
+          content.map((part) =>
+            typeof part === "string"
+              ? "string"
+              : String((part as { type?: unknown }).type ?? "?"),
+          ),
+        ),
+      ].join("+")
     : typeof content;
   const text = extractChunkText(msg)?.length ?? 0;
   // 第 67 条: in / cached (prompt cache hits) / reasoning tokens, to see
@@ -486,16 +507,24 @@ export function webSearchCalls(chunk: unknown): WebSearchCall[] {
   for (const raw of outputs) {
     if (!raw || typeof raw !== "object") continue;
     const item = raw as Record<string, unknown>;
-    if (item.type !== "web_search_call" || typeof item.id !== "string") continue;
+    if (item.type !== "web_search_call" || typeof item.id !== "string")
+      continue;
     const action = (item.action ?? {}) as Record<string, unknown>;
     const kind = typeof action.type === "string" ? action.type : "search";
-    const query = typeof action.query === "string" ? action.query.slice(0, 200) : undefined;
-    const url = typeof action.url === "string" ? action.url.slice(0, 300) : undefined;
-    const pattern = typeof action.pattern === "string" ? action.pattern.slice(0, 120) : undefined;
+    const query =
+      typeof action.query === "string" ? action.query.slice(0, 200) : undefined;
+    const url =
+      typeof action.url === "string" ? action.url.slice(0, 300) : undefined;
+    const pattern =
+      typeof action.pattern === "string"
+        ? action.pattern.slice(0, 120)
+        : undefined;
     const sources = Array.isArray(action.sources)
       ? action.sources
           .flatMap((s) =>
-            s && typeof s === "object" && typeof (s as { url?: unknown }).url === "string"
+            s &&
+            typeof s === "object" &&
+            typeof (s as { url?: unknown }).url === "string"
               ? [{ url: String((s as { url: string }).url).slice(0, 300) }]
               : [],
           )
@@ -518,7 +547,11 @@ export function webSearchCalls(chunk: unknown): WebSearchCall[] {
       action: kind,
       status: typeof item.status === "string" ? item.status : "completed",
       input,
-      output: { ...input, status: item.status ?? "completed", ...(sources.length ? { sources } : {}) },
+      output: {
+        ...input,
+        status: item.status ?? "completed",
+        ...(sources.length ? { sources } : {}),
+      },
       summary,
     });
   }
@@ -572,7 +605,8 @@ function unwrapCommandOutput(
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
     const inner = JSON.parse(content);
-    if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+    if (inner && typeof inner === "object")
+      return inner as Record<string, unknown>;
   } catch {
     // fall through
   }
@@ -591,6 +625,63 @@ const ARTIFACT_KEYS = new Set([
   "placement",
 ]);
 const OUTPUT_SIZE_LIMIT = 10240; // 10KB
+
+/**
+ * What the chat keeps of a search_web / read_webpage result (第 68 条): the
+ * query, where the answer came from and the sources' titles and links, or
+ * the page's address and title. The text itself went to the model only.
+ */
+export function webToolDisplay(
+  output: unknown,
+): Record<string, unknown> | undefined {
+  const text = ToolMessageClass.isInstance(output)
+    ? extractChunkText(output)
+    : typeof output === "string"
+      ? output
+      : "";
+  const parsed = tryParseJson(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return undefined;
+  const value = parsed as Record<string, unknown>;
+  const links = [
+    ...(Array.isArray(value.sources) ? value.sources : []),
+    ...(Array.isArray(value.results) ? value.results : []),
+  ]
+    .flatMap((s) => {
+      const item = s as { url?: unknown; title?: unknown } | null;
+      return item && typeof item.url === "string"
+        ? [
+            {
+              url: item.url.slice(0, 500),
+              ...(typeof item.title === "string"
+                ? { title: item.title.slice(0, 120) }
+                : {}),
+            },
+          ]
+        : [];
+    })
+    .slice(0, 10);
+  const pick = (key: string, max: number) =>
+    typeof value[key] === "string"
+      ? { [key]: (value[key] as string).slice(0, max) }
+      : {};
+  return {
+    ...pick("summary", 200),
+    ...pick("query", 200),
+    ...pick("via", 40),
+    ...pick("url", 500),
+    ...pick("title", 200),
+    ...pick("error", 200),
+    ...(Array.isArray(value.searches)
+      ? {
+          searches: value.searches
+            .filter((q) => typeof q === "string")
+            .slice(0, 8),
+        }
+      : {}),
+    ...(links.length ? { sources: links } : {}),
+  };
+}
 
 function extractOutput(
   output: unknown,

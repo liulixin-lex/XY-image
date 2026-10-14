@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * 思考强度 and 联网搜索 for the design assistant (第 67 条), beside the chat
- * model picker. Only the levels the answering model takes are listed
+ * 思考强度 and 联网搜索 for the design assistant (第 67 / 68 条), beside the
+ * chat model picker. Only the levels the answering model takes are listed
  * (packages/shared chat-options.ts); a remembered level it lacks shows as the
- * one it will run at. The globe shows only for models with built-in search.
+ * one it will run at, and a model the main site sets itself shows 自动 only.
+ * The globe shows for every model; its title says how that model searches.
  */
 import {
   CHAT_EFFORT_HINT,
   CHAT_EFFORT_LABEL,
+  CHAT_WEB_SEARCH_HINT,
   chatOptionsForModelId,
   parseChatModelRef,
   resolveChatEffort,
@@ -22,7 +24,7 @@ import { useAccount } from "@/lib/account-context";
 import { preferredChatModelId } from "@/lib/chat-models";
 import { cn } from "@/lib/utils";
 
-import { type PickerOption, Picker } from "./ui/select";
+import { Picker, type PickerOption } from "./ui/select";
 
 /** The model that will answer: the picked one, else the Settings default. */
 export function useAnsweringModelId(): string | null {
@@ -34,7 +36,11 @@ export function useAnsweringModelId(): string | null {
 export function AgentChatOptions() {
   const modelId = useAnsweringModelId();
   const { effort, webSearch, setEffort, setWebSearch } = useChatOptions();
-  const { efforts, webSearch: searchable } = chatOptionsForModelId(modelId);
+  const {
+    efforts,
+    webSearch: searchable,
+    webSearchMode,
+  } = chatOptionsForModelId(modelId);
   const ref = modelId ? parseChatModelRef(modelId) : null;
   const shown = resolveChatEffort(ref, effort);
 
@@ -58,10 +64,26 @@ export function AgentChatOptions() {
           options={options}
           ariaLabel={`思考强度：${CHAT_EFFORT_LABEL[shown]}`}
           side="top"
-          icon={<BrainIcon className="size-3.5 shrink-0 text-fg-soft" strokeWidth={1.75} />}
+          icon={
+            <BrainIcon
+              className="size-3.5 shrink-0 text-fg-soft"
+              strokeWidth={1.75}
+            />
+          }
           className="h-8 min-w-0 max-w-[88px] border-transparent bg-transparent px-2 text-[12px] hover:bg-tint/[0.06]"
           popupClassName="w-[220px]"
         />
+      ) : modelId ? (
+        <span
+          title="这个模型的思考强度由主站决定，不能调"
+          className="flex h-8 shrink-0 items-center gap-1.5 px-2 text-[12px] text-fg-muted"
+        >
+          <BrainIcon
+            className="size-3.5 shrink-0 text-fg-soft"
+            strokeWidth={1.75}
+          />
+          {CHAT_EFFORT_LABEL.auto}
+        </span>
       ) : null}
       {searchable ? (
         <button
@@ -69,7 +91,11 @@ export function AgentChatOptions() {
           onClick={() => setWebSearch(!webSearch)}
           aria-pressed={webSearch}
           aria-label="联网搜索"
-          title={webSearch ? "联网搜索：开（需要时模型会自己搜）" : "联网搜索：关"}
+          title={
+            webSearch
+              ? `联网搜索：开（${webSearchMode ? CHAT_WEB_SEARCH_HINT[webSearchMode] : "需要时"}，模型自己决定什么时候搜）`
+              : "联网搜索：关"
+          }
           className={cn(
             "flex size-8 shrink-0 items-center justify-center rounded-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-acc",
             webSearch

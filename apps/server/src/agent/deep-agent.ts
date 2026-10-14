@@ -1,20 +1,20 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type {
   BaseCheckpointSaver,
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ChatOpenAI } from "@langchain/openai";
 import {
   type ChatEffort,
   type ChatModelRef,
-  chatWebSearchSupported,
+  chatWebSearchMode,
   parseChatModelRef,
   resolveChatEffort,
   usesResponsesApi,
 } from "@loomic/shared";
 import { createDeepAgent } from "deepagents";
-import { createMiddleware } from "langchain";
+import type { createMiddleware } from "langchain";
 import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
 import {
   GatewayError,
@@ -25,40 +25,46 @@ import type { UserSupabaseClient } from "../supabase/user.js";
 
 import { Agent as HttpAgent, fetch as httpFetch } from "undici";
 import type { ServerEnv } from "../config/env.js";
+import { sharedWebSearchService } from "../features/web-search/service.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
+import {
+  isContextOverflowText,
+  markContextOverflow,
+} from "../utils/context-overflow.js";
+import { describeErrorForLog } from "../utils/error-sanitizer.js";
+import { XY2API_USER_AGENT } from "../utils/user-agent.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
 import { createGluedToolCallMiddleware } from "./glued-tool-calls.js";
-import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
 import {
+  type SearchRoute,
   type SentEffort,
   chatEffortKwargs,
   createChatOptionsMiddleware,
 } from "./model-options.js";
+import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
+import { createProjectMemoryMiddleware } from "./project-memory.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
+import {
+  createReadToolRetryMiddleware,
+  createRunBudgetMiddleware,
+} from "./run-budget.js";
+import { separateToolCallIndexes } from "./tool-call-stream.js";
+import { createToolErrorMiddleware } from "./tool-errors.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
 } from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
-import { separateToolCallIndexes } from "./tool-call-stream.js";
-import { createToolErrorMiddleware } from "./tool-errors.js";
-import { type ReviewImageStore, createVisionReviewMiddleware } from "./vision.js";
-import { createProjectMemoryMiddleware } from "./project-memory.js";
+import { createWebTools } from "./tools/web-search.js";
 import {
-  createReadToolRetryMiddleware,
-  createRunBudgetMiddleware,
-} from "./run-budget.js";
-import {
-  isContextOverflowText,
-  markContextOverflow,
-} from "../utils/context-overflow.js";
+  type ReviewImageStore,
+  createVisionReviewMiddleware,
+} from "./vision.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
-import { XY2API_USER_AGENT } from "../utils/user-agent.js";
-import { describeErrorForLog } from "../utils/error-sanitizer.js";
 
 export type LoomicAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -150,7 +156,11 @@ export function createLoomicDeepAgent(options: {
   // 第 67 条: the chat options this model takes (chat-options.ts decides,
   // the chat panel shows the same), and a builder for the effort fallback.
   const ref: ChatModelRef | null = options.customChat
-    ? { source: "custom", providerId: "custom", model: options.customChat.model }
+    ? {
+        source: "custom",
+        providerId: "custom",
+        model: options.customChat.model,
+      }
     : typeof modelSpec === "string"
       ? parseChatModelRef(
           modelSpec.includes(":") ? modelSpec : `openai:${modelSpec}`,
@@ -158,9 +168,11 @@ export function createLoomicDeepAgent(options: {
       : null;
   const chatOptions = options.chatOptions ?? {};
   const effort = resolveChatEffort(ref, chatOptions.effort);
-  const webSearch = Boolean(chatOptions.webSearch) && chatWebSearchSupported(ref);
+  // 第 68 条: every model searches one way or another (chat-options.ts).
+  const searchMode = chatOptions.webSearch ? chatWebSearchMode(ref) : null;
+  const hostedSearch = searchMode === "hosted";
   const promptCacheKey = chatOptions.promptCacheKey;
-  const build = (sent: SentEffort, search = webSearch) =>
+  const build = (sent: SentEffort, hosted = hostedSearch) =>
     options.customChat
       ? createCustomChatModel({
           ...options.customChat,
@@ -169,14 +181,35 @@ export function createLoomicDeepAgent(options: {
         })
       : createStreamingChatModel(modelSpec as string, options.credentials, {
           effort: sent,
-          webSearch: search,
+          webSearch: hosted,
           ...(promptCacheKey ? { promptCacheKey } : {}),
         });
-  const builtHere = Boolean(options.customChat) || typeof modelSpec === "string";
-  const resolvedModel = builtHere ? build(effort) : (modelSpec as BaseLanguageModel);
+  const builtHere =
+    Boolean(options.customChat) || typeof modelSpec === "string";
+  const resolvedModel = builtHere
+    ? build(effort)
+    : (modelSpec as BaseLanguageModel);
+  // search_web / read_webpage: the search itself for "gemini" and "free",
+  // the fallback for a refused "hosted" one.
+  const searchTools =
+    builtHere && searchMode
+      ? createWebTools({
+          mode:
+            searchMode === "gemini" && options.credentials ? "gemini" : "free",
+          service: sharedWebSearchService(options.env),
+          ...(searchMode === "gemini" && options.credentials && ref
+            ? { gemini: { ...options.credentials, model: ref.model } }
+            : {}),
+        })
+      : [];
+  const searchRoute: SearchRoute = !searchMode
+    ? "off"
+    : hostedSearch
+      ? "hosted"
+      : "tools";
   if (builtHere && ref)
     console.info(
-      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} webSearch=${webSearch ? "on" : chatOptions.webSearch ? "unsupported" : "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
+      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} webSearch=${searchMode ?? "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
     );
   const optionsMiddleware: ReturnType<typeof createMiddleware>[] = builtHere
     ? [
@@ -184,9 +217,10 @@ export function createLoomicDeepAgent(options: {
           ref,
           label: ref?.model ?? "model",
           effort,
-          webSearch,
-          rebuild: (sent, search) =>
-            build(sent, search) as unknown as BaseChatModel,
+          search: searchRoute,
+          searchTools,
+          rebuild: (sent, hosted) =>
+            build(sent, hosted) as unknown as BaseChatModel,
         }),
       ]
     : [];
@@ -279,7 +313,11 @@ const chatDispatcher = new HttpAgent({
 export function createStreamingChatModel(
   specifier: string,
   credentials?: { apiKey: string; baseUrl: string },
-  chat: { effort?: SentEffort; webSearch?: boolean; promptCacheKey?: string } = {},
+  chat: {
+    effort?: SentEffort;
+    webSearch?: boolean;
+    promptCacheKey?: string;
+  } = {},
 ): BaseLanguageModel {
   if (!credentials) throw new Error("请先选择可用的对话 Key");
   const modelName = specifier.replace(/^openai:/, "");
@@ -344,11 +382,16 @@ export function createStreamingChatModel(
     }
   };
   // gpt-6* always use the Responses API. The hosted web_search tool exists
-  // only there, so a model with 联网搜索 on goes through it too (LangChain
-  // would switch on its own when it sees the tool; deciding here keeps the
-  // effort fields in the matching shape).
+  // only there, so a model with hosted 联网搜索 goes through it too
+  // (LangChain would switch on its own when it sees the tool; deciding here
+  // keeps the effort fields in the matching shape). The search_web function
+  // tools (第 68 条) work on either API.
   const responsesApi = usesResponsesApi(modelName) || Boolean(chat.webSearch);
-  const kwargs = chatEffortKwargs(modelName, chat.effort ?? "auto", responsesApi);
+  const kwargs = chatEffortKwargs(
+    modelName,
+    chat.effort ?? "auto",
+    responsesApi,
+  );
   return new ChatOpenAI({
     model: modelName,
     apiKey: "loomic-transport-credential",

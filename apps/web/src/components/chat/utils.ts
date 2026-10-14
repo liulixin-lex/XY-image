@@ -45,15 +45,43 @@ export type ToolDisplayConfig = {
 
 const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   think: { label: "\u601d\u8003\u4e2d", icon: "tool", showCard: false },
-  inspect_canvas: { label: "\u8bfb\u53d6\u753b\u5e03", icon: "eye", showCard: true },
-  manipulate_canvas: { label: "\u64cd\u4f5c\u753b\u5e03", icon: "brush", showCard: true },
-  generate_image: { label: "\u751f\u6210\u56fe\u7247", icon: "image", showCard: true },
-  generate_video: { label: "\u751f\u6210\u89c6\u9891", icon: "video", showCard: true },
-  screenshot_canvas: { label: "\u622a\u53d6\u753b\u5e03", icon: "eye", showCard: true },
+  inspect_canvas: {
+    label: "\u8bfb\u53d6\u753b\u5e03",
+    icon: "eye",
+    showCard: true,
+  },
+  manipulate_canvas: {
+    label: "\u64cd\u4f5c\u753b\u5e03",
+    icon: "brush",
+    showCard: true,
+  },
+  generate_image: {
+    label: "\u751f\u6210\u56fe\u7247",
+    icon: "image",
+    showCard: true,
+  },
+  generate_video: {
+    label: "\u751f\u6210\u89c6\u9891",
+    icon: "video",
+    showCard: true,
+  },
+  screenshot_canvas: {
+    label: "\u622a\u53d6\u753b\u5e03",
+    icon: "eye",
+    showCard: true,
+  },
   get_brand_kit: { label: "读取品牌套件", icon: "palette", showCard: true },
-  project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
+  project_search: {
+    label: "\u641c\u7d22\u9879\u76ee",
+    icon: "search",
+    showCard: true,
+  },
   // 第 67 条: the model's built-in web search (run at the main site).
   web_search: { label: "联网搜索", icon: "search", showCard: true },
+  // 第 68 条: the search tools for models without one (Gemini's Google
+  // Search called on its own, or the free search) and reading a page.
+  search_web: { label: "联网搜索", icon: "search", showCard: true },
+  read_webpage: { label: "打开网页", icon: "search", showCard: true },
   // 第 67 条 审图 and file editing.
   view_images: { label: "查看图片", icon: "eye", showCard: true },
   apply_patch: { label: "修改资料", icon: "tool", showCard: false },
@@ -82,9 +110,7 @@ export function getToolConfig(toolName: string): ToolDisplayConfig {
 
 /** Convert raw tool name to human-readable: "generate_image" -> "Generate Image" */
 export function formatToolName(name: string): string {
-  return name
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Words that read as acronyms or brand marks rather than title case. */
@@ -105,10 +131,14 @@ const MODEL_WORDS: Record<string, string> = {
  */
 export function formatModelDisplayName(model: string): string {
   const slug = model.split("/").pop() ?? model;
-  if (/^dall-e/i.test(slug)) return slug.replace(/^dall-e-?/i, "DALL·E ").trim();
+  if (/^dall-e/i.test(slug))
+    return slug.replace(/^dall-e-?/i, "DALL·E ").trim();
   return slug
     .split("-")
-    .map((w) => MODEL_WORDS[w.toLowerCase()] ?? w.charAt(0).toUpperCase() + w.slice(1))
+    .map(
+      (w) =>
+        MODEL_WORDS[w.toLowerCase()] ?? w.charAt(0).toUpperCase() + w.slice(1),
+    )
     .join(" ");
 }
 
@@ -191,14 +221,18 @@ export function describeToolResult(
       if (failed) return "没有截到画布";
       const width = count(output.width);
       const height = count(output.height);
-      return width && height ? `截取了画布（${width}×${height}）` : "截取了画布";
+      return width && height
+        ? `截取了画布（${width}×${height}）`
+        : "截取了画布";
     }
     case "manipulate_canvas": {
       if (failed) return "画布改动没有保存上";
       const applied = count(output.applied) ?? 0;
       const errors = Array.isArray(output.errors) ? output.errors.length : 0;
       if (!applied && errors) return `${errors} 处改动没有成功`;
-      return errors ? `改了 ${applied} 处，${errors} 处没有成功` : `改了 ${applied} 处`;
+      return errors
+        ? `改了 ${applied} 处，${errors} 处没有成功`
+        : `改了 ${applied} 处`;
     }
     case "view_images": {
       const shown = count(output.shown);
@@ -215,6 +249,16 @@ export function describeToolResult(
             : `搜索${typeof output.query === "string" ? `「${output.query}」` : "了网页"}`;
       return sources ? `${what}，看了 ${sources} 个来源` : what;
     }
+    case "search_web": {
+      if (typeof output.summary === "string") return output.summary;
+      return typeof output.query === "string"
+        ? `搜索「${output.query}」`
+        : null;
+    }
+    case "read_webpage": {
+      if (typeof output.summary === "string") return output.summary;
+      return "打开了一个网页";
+    }
     case "project_search": {
       const matches = count(output.matchCount);
       if (matches === null) return null;
@@ -225,10 +269,47 @@ export function describeToolResult(
   }
 }
 
+export type WebSource = { url: string; title?: string; host: string };
+
+/**
+ * Links of a search / page block (第 67 / 68 条), http(s) only: they come
+ * from search results and model output, so nothing else becomes a link.
+ */
+export function webSources(
+  output: Record<string, unknown> | undefined,
+): WebSource[] {
+  const raw = [
+    ...(Array.isArray(output?.sources) ? output.sources : []),
+    ...(typeof output?.url === "string"
+      ? [{ url: output.url, title: output.title }]
+      : []),
+  ];
+  const seen = new Set<string>();
+  return raw.flatMap((s) => {
+    const item = s as { url?: unknown; title?: unknown } | null;
+    if (!item || typeof item.url !== "string") return [];
+    try {
+      const url = new URL(item.url);
+      if (url.protocol !== "https:" && url.protocol !== "http:") return [];
+      if (seen.has(url.href)) return [];
+      seen.add(url.href);
+      return [
+        {
+          url: url.href,
+          host: url.host.replace(/^www\./, ""),
+          ...(typeof item.title === "string" && item.title.trim()
+            ? { title: item.title.trim() }
+            : {}),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /** Format first 3 entries of tool output as preview lines */
-export function formatOutputPreview(
-  output: Record<string, unknown>,
-): string[] {
+export function formatOutputPreview(output: Record<string, unknown>): string[] {
   const entries = Object.entries(output).slice(0, 3);
   return entries.map(([key, value]) => {
     const formattedKey = formatParamName(key);
@@ -236,8 +317,7 @@ export function formatOutputPreview(
     if (value === null || value === undefined) {
       formattedValue = "\u2014";
     } else if (typeof value === "string") {
-      formattedValue =
-        value.length > 80 ? `${value.slice(0, 77)}...` : value;
+      formattedValue = value.length > 80 ? `${value.slice(0, 77)}...` : value;
     } else if (typeof value === "boolean") {
       formattedValue = value ? "是" : "否";
     } else if (typeof value === "number") {

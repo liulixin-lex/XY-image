@@ -99,6 +99,17 @@ export type ServerEnv = {
    * features/jobs/auto-retry.ts.
    */
   imageAutoRetries?: number;
+  /**
+   * 第 68 条 联网搜索 for models without built-in search (features/web-search/
+   * service.ts). All optional: without them the free key-less sources are
+   * used. LOOMIC_WEB_SEARCH_SEARXNG_URL (a SearXNG instance with the JSON
+   * format on), LOOMIC_WEB_SEARCH_TAVILY_KEY, LOOMIC_WEB_SEARCH_BRAVE_KEY are
+   * tried first; LOOMIC_WEB_SEARCH_KEYLESS=off drops the key-less sources.
+   */
+  webSearchSearxngUrl?: string;
+  webSearchTavilyKey?: string;
+  webSearchBraveKey?: string;
+  webSearchKeyless?: "on" | "off";
   /** XY2API_ASYNC_IMAGE_USERS: when set, only these user ids (canary). */
   xy2apiAsyncImageUsers?: string[];
   /**
@@ -302,6 +313,22 @@ export function loadServerEnv(
     xy2apiBillingReconcile: source.XY2API_BILLING_RECONCILE !== "false",
     xy2apiAsyncImages: source.XY2API_ASYNC_IMAGES === "off" ? "off" : "on",
     imageAutoRetries: integer("LOOMIC_IMAGE_AUTO_RETRIES", 2, 5, 0),
+    ...(source.LOOMIC_WEB_SEARCH_SEARXNG_URL?.trim()
+      ? {
+          webSearchSearxngUrl: required(
+            "LOOMIC_WEB_SEARCH_SEARXNG_URL",
+            source.LOOMIC_WEB_SEARCH_SEARXNG_URL.trim(),
+            z.url(),
+          ).replace(/\/+$/, ""),
+        }
+      : {}),
+    ...(source.LOOMIC_WEB_SEARCH_TAVILY_KEY?.trim()
+      ? { webSearchTavilyKey: source.LOOMIC_WEB_SEARCH_TAVILY_KEY.trim() }
+      : {}),
+    ...(source.LOOMIC_WEB_SEARCH_BRAVE_KEY?.trim()
+      ? { webSearchBraveKey: source.LOOMIC_WEB_SEARCH_BRAVE_KEY.trim() }
+      : {}),
+    webSearchKeyless: source.LOOMIC_WEB_SEARCH_KEYLESS === "off" ? "off" : "on",
     xy2apiAsyncImageUsers: (source.XY2API_ASYNC_IMAGE_USERS ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -327,7 +354,10 @@ export function loadServerEnv(
     diskMonitor: source.DISK_MONITOR === "off" ? "off" : "on",
     diskMonitorPath: source.DISK_MONITOR_PATH || "/",
     diskAlertWarnPercent: percentSetting(source.DISK_ALERT_WARN_PERCENT, 80),
-    diskAlertCriticalPercent: percentSetting(source.DISK_ALERT_CRITICAL_PERCENT, 90),
+    diskAlertCriticalPercent: percentSetting(
+      source.DISK_ALERT_CRITICAL_PERCENT,
+      90,
+    ),
     opsAlertWebhookUrl: source.OPS_ALERT_WEBHOOK_URL || undefined,
     objectStorage: source.LOOMIC_OBJECT_STORAGE === "s3" ? "s3" : "local",
     ...overrides,
