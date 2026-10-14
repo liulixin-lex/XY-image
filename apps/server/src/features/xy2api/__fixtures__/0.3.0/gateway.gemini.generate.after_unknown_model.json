@@ -1,0 +1,65 @@
+{
+  "scenario": "gateway.gemini.generate.after_unknown_model",
+  "tier": "A",
+  "note": "immediately after gateway.gemini.generate.unknown_model",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "510399f8-0f7b-4493-95f3-fffb7b7ff6e0",
+      "x-request-id": "03c8b3bf-abdb-4a0d-b0fe-ad412dae427c"
+    },
+    "json": {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [
+              {
+                "inlineData": {
+                  "mimeType": "image/png",
+                  "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQCFiAFTEMLQkAPF1GASf8PnAAAAAASUVORK5CYII="
+                }
+              }
+            ]
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 30,
+        "candidatesTokenCount": 1290,
+        "totalTokenCount": 1320
+      },
+      "modelVersion": "gemini-3.1-flash-image",
+      "responseId": "e75c4337-c7d3-460f-b485-1669c8caea5a"
+    }
+  }
+}

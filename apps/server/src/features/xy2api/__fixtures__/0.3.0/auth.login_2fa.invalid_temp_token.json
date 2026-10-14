@@ -1,0 +1,24 @@
+{
+  "scenario": "auth.login_2fa.invalid_temp_token",
+  "tier": "B",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login/2fa",
+    "auth": "none",
+    "body": {
+      "temp_token": "fixture-temp_token-0009",
+      "totp_code": "000000"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "daf9ada2-0acf-4fba-9a00-d9e1bd186c29"
+    },
+    "json": {
+      "code": 400,
+      "message": "Invalid or expired 2FA session"
+    }
+  }
+}

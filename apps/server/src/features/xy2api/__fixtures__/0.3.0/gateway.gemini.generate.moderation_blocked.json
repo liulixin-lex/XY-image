@@ -1,0 +1,45 @@
+{
+  "scenario": "gateway.gemini.generate.moderation_blocked",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent",
+    "auth": "x-goog-api-key",
+    "body": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "fixture xylabblockedword"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "1K"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-client-request-id": "afb491e8-3e1f-4590-9f4e-a97a0c616db0",
+      "x-request-id": "7139381c-e745-4e48-ae0b-79bbf5522d1f"
+    },
+    "json": {
+      "error": {
+        "code": 403,
+        "message": "内容审计命中风险规则，请调整输入后重试",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "scenario": "gateway.images.upstream_empty",
+  "tier": "A",
+  "request": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "auth": "bearer",
+    "body": {
+      "model": "gpt-image-2",
+      "prompt": "fixture [[mock:empty]]"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-client-request-id": "69e4d27f-67e7-41a6-b83b-d2840c9b3872",
+      "x-request-id": "7649d8cf-235b-4f5f-ab22-d5d125982b93"
+    },
+    "json": {
+      "created": 1791988856,
+      "data": [],
+      "background": "opaque",
+      "output_format": "png",
+      "quality": "medium",
+      "size": "1024x1024",
+      "usage": {
+        "input_tokens": 40,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 40
+        },
+        "output_tokens": 1056,
+        "total_tokens": 1096
+      }
+    }
+  }
+}

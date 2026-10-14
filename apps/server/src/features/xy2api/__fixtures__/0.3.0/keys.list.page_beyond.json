@@ -1,0 +1,27 @@
+{
+  "scenario": "keys.list.page_beyond",
+  "tier": "B",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/keys?page=99&page_size=100",
+    "auth": "bearer"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "fe189abe-8db7-4ae5-a264-5d45340da4ae"
+    },
+    "json": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "items": [],
+        "total": 3,
+        "page": 99,
+        "page_size": 100,
+        "pages": 1
+      }
+    }
+  }
+}
