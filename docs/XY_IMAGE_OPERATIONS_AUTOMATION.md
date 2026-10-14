@@ -82,6 +82,26 @@ AWS_SECRET_ACCESS_KEY=实际访问密钥
   - `xy2apiRouteStatsUrl`：读到主站私网线路（HAProxy）的状态。
 - 异地备份（restic）没有配置，`offsiteConfirmed` 仍是 false，`operations.mjs backup` 不会运行。
 
+### 第二个站点 image2.gguuai.com（10-14 起，agent01）
+
+用户 10-14 要求在主站服务器（15.204.81.104，和 gguuai.com 同机）上再部署一套，域名 image2.gguuai.com，不能中断主站和 image.gguuai.com。两套的数据库、Storage、密钥、登录会话都不共享。做法见 [自建手册](XY_IMAGE_SELFHOST.md) 的「和主站装在同一台机器」。
+
+| 位置 | 内容 |
+| --- | --- |
+| `/var/lib/xy-image2/data.img` → `/opt/xy-image2` | 20 GB 数据盘（稀疏文件，loop 挂载），下面各目录都在这块盘上 |
+| `/opt/xy-image2/source`、`runtime`、`tools/node`、`backups`、`maintenance` | 同上表的用途；compose 项目 `xy-image2`，后端镜像 `xy-image2-backend:<短提交号>` |
+| `/var/www/xy-image2` | 静态站 |
+| `/etc/caddy/xy-image2.caddy` | 站点配置，主站 Caddyfile 末尾 `import` |
+| `/opt/xy-image2/DEPLOYMENT.md` | 交接说明、升级步骤、下线步骤、升级记录（只在服务器上） |
+
+| unit | 做什么 | 时间 |
+| --- | --- | --- |
+| `xy-image2-hot-backup.timer` / `.service` | 同上，`--dir /opt/xy-image2/runtime --root /opt/xy-image2/backups`，限一核 | 每天 19:10 UTC（北京时间 03:10）后 10 分钟内，避开主站 02:00 UTC 的 PITR |
+| `xy-image2-monitor.timer` / `.service` | `operations.mjs monitor /opt/xy-image2/operations.json`，内存可用低于 1 GiB 报警 | 每 2 分钟 |
+
+- 10-14 首次部署 v0.0.13：迁移 52/52，12 个服务 healthy。两个测试账号用真实 Chrome 过 Turnstile 登录；余额和 Key 和主站数据库逐项一致。只读冒烟通过，没有发起付费请求。热备份和恢复演练都通过。前后对比：主站 Caddy 进程和各容器都没有重启。
+- 升级流程和 image.gguuai.com 一样（别处构建镜像和前端），只是路径不同；主站机器上不构建。
+
 ## 失败与人工恢复
 
 - `.xy-backup.lock` 防止手动和定时本地备份重叠；`.xy-automation.lock` 防止两次上传/保留同时运行。进程正常失败会释放锁；崩溃留下的锁不自动删除。先查 owner.json 对应进程/主机及 `resume.json`，确认没有在运行的运维命令再处理。
