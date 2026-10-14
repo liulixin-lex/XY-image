@@ -24,6 +24,11 @@
 //   [[mock:websearch]]   in a chat message on /v1/responses with the hosted
 //                        web_search tool offered: the reply starts with a
 //                        finished web_search_call item (第 67 条 联网搜索)
+//   [[mock:screenshot]]  in a chat message: the scripted model calls
+//                        screenshot_canvas first; when the next request shows
+//                        it the picture (a user message "…工具返回的图片…"
+//                        with images, 第 67 条 审图) it answers
+//                        "（模拟上游）看到了 N 张图。" and records `sawImages`
 //   Chat requests record what they asked for (第 67 条): `chatOptions` in
 //   /__mock/requests has reasoning / reasoning_effort, whether a
 //   prompt_cache_key came (never its value), stream_options and the hosted
@@ -361,6 +366,40 @@ function usageFor(text) {
   };
 }
 
+/** Image parts of a message's content (chat completions or Responses). */
+function imagePartsOf(content) {
+  return (Array.isArray(content) ? content : []).filter(
+    (p) => p && (p.type === "image_url" || p.type === "input_image"),
+  );
+}
+
+/**
+ * 第 67 条 审图: a screenshot call first, then a reply that counts the
+ * pictures the server showed after the tool result. Null: not this case.
+ */
+function reviewPlan({ lastText, lastContent, lastRole, toolNames, ctx, originalText }) {
+  const shown = imagePartsOf(lastContent);
+  if (/工具返回的图片/.test(lastText) && shown.length) {
+    ctx.sawImages = shown.length;
+    ctx.imageKinds = shown.map((p) => {
+      const url = typeof p.image_url === "string" ? p.image_url : (p.image_url?.url ?? p.image_url ?? "");
+      return String(url).slice(0, 23);
+    });
+    return { kind: "text", text: `（模拟上游）看到了 ${shown.length} 张图。` };
+  }
+  if (
+    lastRole !== "tool" &&
+    directives(originalText).screenshot &&
+    toolNames.includes("screenshot_canvas")
+  )
+    return {
+      kind: "tool",
+      name: "screenshot_canvas",
+      args: { mode: "full", max_dimension: 512 },
+    };
+  return null;
+}
+
 function chatOptionsOf(body) {
   const hosted = (Array.isArray(body.tools) ? body.tools : [])
     .filter((t) => t && typeof t.type === "string" && t.type !== "function" && !t.name)
@@ -377,6 +416,8 @@ function chatOptionsOf(body) {
 async function handleChatCompletions(req, res, body, ctx) {
   ctx.chatOptions = chatOptionsOf(body);
   const messages = Array.isArray(body.messages) ? body.messages : [];
+  // The conversation's shape, no content: roles in order.
+  ctx.roles = messages.map((m) => m?.role ?? "?").join(",");
   const last = messages.at(-1) ?? {};
   const lastUser = [...messages].reverse().find((m) => m?.role === "user");
   const lastText = textOf(lastUser?.content);
@@ -401,7 +442,14 @@ async function handleChatCompletions(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.function?.name ?? t?.name)
     .filter(Boolean);
-  const plan = planReply({
+  const plan = reviewPlan({
+    lastText,
+    lastContent: lastUser?.content,
+    lastRole: last.role,
+    toolNames,
+    ctx,
+    originalText: lastText,
+  }) ?? planReply({
     lastRole: last.role,
     lastText,
     toolNames,
@@ -529,7 +577,10 @@ async function handleResponses(req, res, body, ctx) {
   const toolNames = (Array.isArray(body.tools) ? body.tools : [])
     .map((t) => t?.name ?? t?.function?.name)
     .filter(Boolean);
-  const plan = planReply({ lastRole, lastText, toolNames, toolOutputs });
+  const lastUserItem = [...(Array.isArray(body.input) ? body.input : [])].reverse().find((i) => i?.role === "user");
+  const plan =
+    reviewPlan({ lastText, lastContent: lastUserItem?.content, lastRole, toolNames, ctx, originalText: lastText }) ??
+    planReply({ lastRole, lastText, toolNames, toolOutputs });
   ctx.plan = plan.kind;
   const id = `resp_mock_${randomUUID().replaceAll("-", "")}`;
   const model = body.model ?? CHAT_MODELS[0];

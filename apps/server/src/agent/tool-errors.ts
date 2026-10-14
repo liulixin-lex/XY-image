@@ -29,6 +29,7 @@ import { ToolInputParsingException } from "@langchain/core/tools";
 import { isGraphBubbleUp } from "@langchain/langgraph";
 import { createMiddleware } from "langchain";
 
+import { causeChain } from "../utils/error-chain.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
 
 /** Tools whose call may have sent a paid request before it failed. */
@@ -44,12 +45,16 @@ const DETAIL_MAX = 800;
 export function toolInputError(
   error: unknown,
 ): ToolInputParsingException | null {
-  if (error instanceof ToolInputParsingException) return error;
-  const inner =
-    error && typeof error === "object" && "toolError" in error
-      ? (error as { toolError: unknown }).toolError
-      : null;
-  return inner instanceof ToolInputParsingException ? inner : null;
+  // Every wrapToolCall layer may wrap the error once more (cause), so the
+  // whole chain is searched (第 67 条: the read-tool retry layer hid it and
+  // an argument error read as "may have been sent").
+  for (const current of causeChain(error)) {
+    if (current instanceof ToolInputParsingException) return current;
+    const inner =
+      "toolError" in current ? (current as { toolError: unknown }).toolError : null;
+    if (inner instanceof ToolInputParsingException) return inner;
+  }
+  return null;
 }
 
 function isAbortLike(error: unknown): boolean {
@@ -65,10 +70,14 @@ export function mustPropagate(
   error: unknown,
   signal: AbortSignal | undefined,
 ): boolean {
+  // Searched through the cause chain: another wrapToolCall layer may have
+  // wrapped an interrupt or an abort.
+  const chain = [...causeChain(error)];
   return (
     isGraphBubbleUp(error as Error | undefined) ||
+    chain.some((e) => isGraphBubbleUp(e as Error)) ||
     Boolean(signal?.aborted) ||
-    isAbortLike(error)
+    chain.some(isAbortLike)
   );
 }
 
