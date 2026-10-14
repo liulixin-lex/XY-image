@@ -3,7 +3,7 @@
 //   1. verify-backup.mjs (manifest and checksums);
 //   2. a throwaway container from the backup's own database image, with no
 //      network, initialised like a fresh Supabase database;
-//   3. roles.sql, then pg_restore --clean --if-exists of postgres.dump;
+//   3. roles.sql, then pg_restore of postgres.dump into an empty database;
 //   4. row counts of the tables that matter, next to the live database's
 //      (live may be ahead: rows written after the backup);
 //   5. project-assets objects in the restored storage.objects next to the
@@ -18,6 +18,7 @@ import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -48,10 +49,28 @@ function run(command, args, { input, capture = true } = {}) {
     child.stderr.on("data", (chunk) => {
       if (err.length < 200_000) err += chunk;
     });
-    if (input) createReadStream(input).pipe(child.stdin);
+    const inputDone = input
+      ? pipeline(createReadStream(input), child.stdin).catch((error) => error)
+      : Promise.resolve(null);
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code, out, err }));
+    child.on("close", async (code) => {
+      const inputError = await inputDone;
+      // A failed restore may exit before consuming the dump. Preserve its
+      // exit status instead of crashing on the resulting broken pipe.
+      if (inputError && !(code !== 0 && ["EPIPE", "ERR_STREAM_PREMATURE_CLOSE"].includes(inputError.code))) {
+        reject(new Error("Could not stream backup input"));
+        return;
+      }
+      resolve({ code, out, err });
+    });
   });
+}
+
+function rowCount(result) {
+  const value = result.out.trim();
+  if (result.code !== 0 || !/^\d+$/.test(value)) return null;
+  const count = Number(value);
+  return Number.isSafeInteger(count) ? count : null;
 }
 
 async function main() {
@@ -88,13 +107,18 @@ async function main() {
   ]);
   if (started.code !== 0) throw new Error("Could not start the drill database");
   const exec = (args, options) => run("docker", ["exec", ...(options?.input ? ["-i"] : []), name, ...args], options);
-  const psql = (sql) => exec(["psql", "-U", "supabase_admin", "-d", "postgres", "-At", "-v", "ON_ERROR_STOP=1", "-c", sql]);
+  const drillDatabase = "xy_restore_drill";
+  const psql = (sql, database = drillDatabase) => exec(["psql", "-U", "supabase_admin", "-d", database, "-At", "-v", "ON_ERROR_STOP=1", "-c", sql]);
   try {
     // The image runs its init scripts, restarts once, then accepts logins.
+    // Its temporary server already has roles, so wait for PID 1 to exec
+    // Postgres (including the image's .postgres-wrapp process name) first.
     let ready = false;
     for (let attempt = 0; attempt < 90 && !ready; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      const probe = await psql("select count(*) from pg_roles where rolname = 'authenticator'");
+      const pid1 = await exec(["cat", "/proc/1/comm"]);
+      if (pid1.code !== 0 || !pid1.out.includes("postgres")) continue;
+      const probe = await psql("select count(*) from pg_roles where rolname = 'authenticator'", "postgres");
       ready = probe.code === 0 && probe.out.trim() === "1";
     }
     if (!ready) throw new Error("Drill database did not initialise in 3 minutes");
@@ -103,11 +127,18 @@ async function main() {
     // Roles the init already created report "already exists"; anything else is a finding.
     summary.rolesErrors = roles.err
       .split("\n")
-      .filter((line) => /ERROR/.test(line) && !/already exists/.test(line)).length;
+      .filter((line) => /\b(?:ERROR|FATAL|PANIC):/.test(line) && !/\bERROR:\s+role ".+" already exists\s*$/.test(line)).length;
+    summary.checks.roles = roles.code === 0 && summary.rolesErrors === 0;
+
+    // The initialised postgres database contains Supabase extensions and
+    // event triggers. Restoring into it causes dependency conflicts; keep
+    // its bootstrap objects separate from the database being verified.
+    const created = await psql("CREATE DATABASE xy_restore_drill WITH TEMPLATE template0", "postgres");
+    if (created.code !== 0) throw new Error("Could not create the empty drill database");
 
     const restoreStarted = Date.now();
     const restored = await exec(
-      ["pg_restore", "-U", "supabase_admin", "-d", "postgres", "--clean", "--if-exists", "--no-password"],
+      ["pg_restore", "-U", "supabase_admin", "-d", drillDatabase, "--clean", "--if-exists", "--no-password", "--exit-on-error"],
       { input: path.join(backup, "postgres.dump"), capture: false },
     );
     const errors = restored.err.split("\n").filter((line) => /error:/i.test(line));
@@ -118,6 +149,7 @@ async function main() {
       // Object names only, for the report; no data is in these lines.
       sampleErrors: errors.slice(0, 5).map((line) => line.slice(0, 200)),
     };
+    summary.checks.restore = restored.code === 0 && errors.length === 0;
 
     const counts = {};
     for (const table of TABLES) {
@@ -128,13 +160,13 @@ async function main() {
         "exec", "-T", "db", "psql", "-U", "postgres", "-d", "postgres", "-At", "-c", `select count(*) from ${table}`,
       ]);
       counts[table] = {
-        restored: drill.code === 0 ? Number(drill.out.trim()) : null,
-        live: live.code === 0 ? Number(live.out.trim()) : null,
+        restored: rowCount(drill),
+        live: rowCount(live),
       };
     }
     summary.counts = counts;
     const missing = Object.entries(counts).filter(
-      ([, c]) => c.restored === null || (c.live > 0 && c.restored === 0) || (c.live !== null && c.restored > c.live),
+      ([, c]) => c.restored === null || c.live === null || (c.live > 0 && c.restored === 0) || c.restored > c.live,
     );
     summary.checks.tables = missing.length === 0;
     if (missing.length) summary.tableProblems = missing.map(([table]) => table);
@@ -148,10 +180,11 @@ async function main() {
     // the bucket, not in storage.tar.gz: the archive holds at most the local
     // copies not yet pruned, so the file count proves nothing here.
     const bucket = compose.services?.storage?.environment?.STORAGE_BACKEND === "s3";
-    summary.storage = { backend: bucket ? "s3" : "local", objects: Number(objects.out.trim()), files };
+    const objectCount = rowCount(objects);
+    summary.storage = { backend: bucket ? "s3" : "local", objects: objectCount, files };
     // Each object is one file (its version) in the file backend; extra files
     // are objects uploaded after the dump (hot backups archive Storage last).
-    summary.checks.storage = bucket || files >= Number(objects.out.trim());
+    summary.checks.storage = objectCount !== null && listing.code === 0 && (bucket || files >= objectCount);
   } finally {
     if (!values.keep) await run("docker", ["rm", "-f", "-v", name]);
     else summary.container = name;
