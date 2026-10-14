@@ -41,6 +41,27 @@ describe("normalizeToolImageParams", () => {
   });
 });
 
+describe("normalizeToolImageParams output options (第 66 条)", () => {
+  it("reads jpg as jpeg and a known background, drops the rest", () => {
+    expect(
+      normalizeToolImageParams({ outputFormat: "JPG", background: "Transparent", quality: "XHigh" }),
+    ).toEqual({
+      resolution: "2K",
+      quality: "xhigh",
+      outputFormat: "jpeg",
+      background: "transparent",
+      adjusted: [],
+    });
+    expect(
+      normalizeToolImageParams({ outputFormat: "gif", background: "blurred" }),
+    ).toEqual({
+      resolution: "2K",
+      quality: "auto",
+      adjusted: ["format gif→default", "background blurred→auto"],
+    });
+  });
+});
+
 describe("generate_image tool", () => {
   it("takes an old quality name without failing the run, and sends a valid one", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});

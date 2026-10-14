@@ -4,9 +4,13 @@
  */
 import {
   type BackgroundJob,
+  IMAGE_BACKGROUNDS,
   IMAGE_EDIT_MODES,
+  IMAGE_OUTPUT_FORMATS,
+  type ImageBackground,
   type ImageEditMode,
   type ImageJobSource,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   isLegacyImageQuality,
@@ -41,6 +45,9 @@ export type ImageJobView = {
   /** 质量 asked for; null for jobs from before the setting existed. */
   quality: ImageQuality | null;
   aspectRatio: string | null;
+  /** 第 66 条: 背景 / 格式 asked for; null = the default. */
+  background: ImageBackground | null;
+  outputFormat: ImageOutputFormat | null;
   inputImages: string[];
   url: string | null;
   /**
@@ -96,6 +103,12 @@ export function toImageJobView(job: BackgroundJob): ImageJobView {
     resolution: params.resolution,
     quality: legacy ? null : params.quality,
     aspectRatio: str(payload.aspect_ratio),
+    background: (IMAGE_BACKGROUNDS as readonly unknown[]).includes(payload.background)
+      ? (payload.background as ImageBackground)
+      : null,
+    outputFormat: (IMAGE_OUTPUT_FORMATS as readonly unknown[]).includes(payload.output_format)
+      ? (payload.output_format as ImageOutputFormat)
+      : null,
     inputImages: Array.isArray(payload.input_images)
       ? payload.input_images.filter((v): v is string => typeof v === "string")
       : [],

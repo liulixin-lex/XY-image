@@ -2,6 +2,7 @@
 
 import {
   ArrowRightIcon,
+  ChevronDownIcon,
   LayoutTemplateIcon,
   MinusIcon,
   PlusIcon,
@@ -22,6 +23,8 @@ import {
 
 import {
   IMAGE_MODELS_PER_REQUEST_MAX,
+  IMAGE_MODERATIONS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_REQUEST_MAX,
   resolveImageParams,
 } from "@loomic/shared";
@@ -31,13 +34,25 @@ import { type StudioSubmitInput, type StudioSubmitResult } from "@/hooks/use-stu
 import { useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
 import {
+  BACKGROUND_HINT,
+  BACKGROUND_LABEL,
+  COMPRESSION_PRESETS,
+  type ImageBackground,
+  type ImageModeration,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
+  MODERATION_HINT,
+  MODERATION_LABEL,
+  OUTPUT_FORMAT_HINT,
+  OUTPUT_FORMAT_LABEL,
   QUALITIES,
-  QUALITY_HINT,
   QUALITY_LABEL,
   RESOLUTIONS,
   RESOLUTION_HINT,
+  defaultFormatLabel,
+  qualityHint,
+  qualityOptions,
   isAspectRatio,
   modelCapabilities,
   resolutionUnavailable,
@@ -147,6 +162,15 @@ export const Composer = forwardRef<
   const [resolution, setResolution] = useState<ImageResolution>("2K");
   const [quality, setQuality] = useState<ImageQuality>("auto");
   const [ratio, setRatio] = useState<string>("3:4");
+  // 第 66 条: OpenAI output options. null = the site's default format /
+  // compression. Format, compression and moderation are remembered like the
+  // other params; the background is not (a transparent background carried to
+  // the next visit would be easy to miss, like 数量 in FINDINGS G5).
+  const [outputFormat, setOutputFormat] = useState<ImageOutputFormat | null>(null);
+  const [outputCompression, setOutputCompression] = useState<number | null>(null);
+  const [background, setBackground] = useState<ImageBackground>("auto");
+  const [moderation, setModeration] = useState<ImageModeration>("auto");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [count, setCount] = useState(1);
   const [optimizing, setOptimizing] = useState(false);
   // The text before the last rewrite, for 撤销.
@@ -199,7 +223,16 @@ export const Composer = forwardRef<
         resolution?: unknown;
         quality?: unknown;
         ratio?: unknown;
+        format?: unknown;
+        compression?: unknown;
+        moderation?: unknown;
       };
+      if ((IMAGE_OUTPUT_FORMATS as readonly unknown[]).includes(saved.format))
+        setOutputFormat(saved.format as ImageOutputFormat);
+      if (typeof saved.compression === "number" && saved.compression >= 0 && saved.compression <= 100)
+        setOutputCompression(Math.round(saved.compression));
+      if ((IMAGE_MODERATIONS as readonly unknown[]).includes(saved.moderation))
+        setModeration(saved.moderation as ImageModeration);
       if (RESOLUTIONS.includes(saved.resolution as ImageResolution))
         setResolution(saved.resolution as ImageResolution);
       else if (saved.quality === "standard" || saved.quality === "hd")
@@ -226,11 +259,21 @@ export const Composer = forwardRef<
   useEffect(() => {
     if (!restored) return;
     try {
-      localStorage.setItem(PARAMS_KEY, JSON.stringify({ resolution, quality, ratio }));
+      localStorage.setItem(
+        PARAMS_KEY,
+        JSON.stringify({
+          resolution,
+          quality,
+          ratio,
+          format: outputFormat,
+          compression: outputCompression,
+          moderation,
+        }),
+      );
     } catch {
       // ignore
     }
-  }, [restored, resolution, quality, ratio]);
+  }, [restored, resolution, quality, ratio, outputFormat, outputCompression, moderation]);
 
   // Model: what the user picked here while valid; otherwise the saved
   // default (its key first, else the same model under another key), otherwise
@@ -294,8 +337,32 @@ export const Composer = forwardRef<
     resolution: sendResolution,
     quality: sendQuality,
     aspectRatio: sendRatio,
-  } = resolveImageParams(caps, { resolution, quality, aspectRatio: ratio });
+    outputFormat: sendFormat,
+    outputCompression: sendCompression,
+    background: sendBackground,
+    moderation: sendModeration,
+  } = resolveImageParams(caps, {
+    resolution,
+    quality,
+    aspectRatio: ratio,
+    outputFormat,
+    outputCompression,
+    background,
+    moderation,
+  });
   const topQuality = caps.qualities.at(-1);
+  // 第 66 条: the 更多参数 panel, for models that take any of its options.
+  const hasOutputOptions =
+    caps.outputFormats.length > 0 || caps.backgrounds.length > 0 || caps.moderations.length > 0;
+  const effectiveFormat = sendFormat ?? caps.outputDefaults?.format ?? "jpeg";
+  const outputSummary = [
+    sendFormat ? OUTPUT_FORMAT_LABEL[sendFormat] : null,
+    sendCompression !== null ? `压缩 ${sendCompression}` : null,
+    sendBackground !== "auto" ? `${BACKGROUND_LABEL[sendBackground]}背景` : null,
+    sendModeration !== "auto" ? `审核${MODERATION_LABEL[sendModeration]}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // References go to every selected model: the tightest limit applies.
   const refLimiter = selectedModels.reduce<ImageModelInfo | null>(
     (tightest, m) =>
@@ -459,8 +526,16 @@ export const Composer = forwardRef<
       prompt: sent,
       ...(sent !== trimmed ? { title: trimmed.slice(0, 200) } : {}),
       resolution: sendResolution,
-      quality: sendQuality,
+      // What the user picked, not the main model's value: with 多模型 each
+      // model moves it to its own nearest level (第 66 条), e.g. 最高 is max
+      // on GPT Image 2.5 and 高 on gpt-image-2.
+      quality,
       aspect_ratio: sendRatio,
+      // 第 66 条: OpenAI output options; models without them drop them.
+      ...(outputFormat ? { output_format: outputFormat } : {}),
+      ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
+      ...(background !== "auto" ? { background } : {}),
+      ...(moderation !== "auto" ? { moderation } : {}),
       ...(images.length ? { input_images: images } : {}),
     };
     const result = await onSubmit(
@@ -778,34 +853,116 @@ export const Composer = forwardRef<
           note={
             !caps.qualities.length
               ? "当前模型不可调，由模型决定"
-              : sendResolution === "4K" && sendQuality === "high"
-                ? // Production 4K 高 took 78–200 s (FINDINGS G7).
-                  "4K 配高质量常要 1～3 分钟，请耐心等"
-                : QUALITY_HINT[sendQuality]
+              : sendQuality !== quality && quality !== "auto" && topQuality
+                ? `当前模型最高 ${QUALITY_LABEL[topQuality]}，按 ${QUALITY_LABEL[sendQuality]} 出图`
+                : sendResolution === "4K" && (sendQuality === "xhigh" || sendQuality === "max")
+                  ? "4K 配极高、最高质量要等更久，常要几分钟"
+                  : sendResolution === "4K" && sendQuality === "high"
+                    ? // Production 4K 高 took 78–200 s (FINDINGS G7).
+                      "4K 配高质量常要 1～3 分钟，请耐心等"
+                    : qualityHint(sendQuality, caps)
           }
         >
+          {/* 第 66 条: only the levels this model has (GPT Image 2.5 adds
+              极高 / 最高); a level picked for another model shows as the
+              nearest one here and comes back when that model is picked. */}
           <Segmented
             ariaLabel="质量"
             value={sendQuality}
             onValueChange={(v) => setQuality(v as ImageQuality)}
-            options={QUALITIES.map((value) => {
-              const enabled = value === "auto" || caps.qualities.includes(value);
-              return {
-                value,
-                label: QUALITY_LABEL[value],
-                disabled: !enabled,
-                ...(enabled
-                  ? {}
-                  : {
-                      title: topQuality
-                        ? `当前模型最高 ${QUALITY_LABEL[topQuality]}`
-                        : "当前模型不可调",
-                    }),
-              };
-            })}
+            options={qualityOptions(caps).map((value) => ({
+              value,
+              label: QUALITY_LABEL[value],
+            }))}
             className="flex w-full"
           />
         </Field>
+
+        {hasOutputOptions ? (
+          <div className="rounded-[14px] border border-line">
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-controls="studio-output-options"
+              onClick={() => setMoreOpen((open) => !open)}
+              className="flex w-full items-center gap-3 rounded-[14px] px-3.5 py-3 text-left transition-colors hover:bg-tint/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc"
+            >
+              <span className="poster-label shrink-0 text-[15px] leading-none text-fg">更多参数</span>
+              <span className="min-w-0 flex-1 truncate text-right text-[12.5px] text-fg-muted">
+                {outputSummary || "格式、背景、审核"}
+              </span>
+              <ChevronDownIcon
+                className={cn("size-4 shrink-0 text-fg-muted transition-transform", moreOpen && "rotate-180")}
+              />
+            </button>
+            {moreOpen ? (
+              <div id="studio-output-options" className="flex flex-col gap-5 border-t border-line px-3.5 pt-4 pb-4">
+                {caps.outputFormats.length ? (
+                  <Field
+                    label="格式"
+                    note={
+                      sendFormat && sendFormat !== outputFormat
+                        ? "透明背景要 PNG 或 WebP，按 PNG 出图"
+                        : sendFormat
+                          ? OUTPUT_FORMAT_HINT[sendFormat]
+                          : `${defaultFormatLabel(caps)}，${OUTPUT_FORMAT_HINT[effectiveFormat]}`
+                    }
+                  >
+                    <Segmented
+                      ariaLabel="格式"
+                      value={sendFormat ?? "default"}
+                      onValueChange={(v) => setOutputFormat(v === "default" ? null : (v as ImageOutputFormat))}
+                      options={[
+                        { value: "default", label: "默认" },
+                        ...caps.outputFormats.map((value) => ({ value, label: OUTPUT_FORMAT_LABEL[value] })),
+                      ]}
+                      className="flex w-full"
+                    />
+                  </Field>
+                ) : null}
+                {caps.outputFormats.length && effectiveFormat !== "png" ? (
+                  <Field
+                    label="压缩"
+                    note={`数字越小文件越小，细节也丢得越多${caps.outputDefaults ? `；默认 ${caps.outputDefaults.compression}` : ""}`}
+                  >
+                    <Segmented
+                      ariaLabel="压缩"
+                      value={sendCompression === null ? "default" : String(sendCompression)}
+                      onValueChange={(v) => setOutputCompression(v === "default" ? null : Number(v))}
+                      options={[
+                        { value: "default", label: "默认" },
+                        ...COMPRESSION_PRESETS.map((value) => ({ value: String(value), label: String(value) })),
+                      ]}
+                      className="flex w-full"
+                    />
+                  </Field>
+                ) : null}
+                {caps.backgrounds.length ? (
+                  <Field label="背景" note={BACKGROUND_HINT[sendBackground]}>
+                    <Segmented
+                      ariaLabel="背景"
+                      value={sendBackground}
+                      onValueChange={(v) => setBackground(v as ImageBackground)}
+                      options={caps.backgrounds.map((value) => ({ value, label: BACKGROUND_LABEL[value] }))}
+                      className="flex w-full"
+                    />
+                  </Field>
+                ) : null}
+                {caps.moderations.length ? (
+                  <Field label="审核" note={MODERATION_HINT[sendModeration]}>
+                    <Segmented
+                      ariaLabel="审核"
+                      value={sendModeration}
+                      onValueChange={(v) => setModeration(v as ImageModeration)}
+                      options={caps.moderations.map((value) => ({ value, label: MODERATION_LABEL[value] }))}
+                      className="flex w-full"
+                    />
+                  </Field>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Phones: pinned to the bottom with its controls above the tab bar

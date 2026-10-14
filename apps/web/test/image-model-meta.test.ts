@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  defaultFormatLabel,
   describeImageParams,
   modelCapabilities,
   modelNote,
+  qualityHint,
+  qualityOptions,
   resolutionUnavailable,
 } from "@/lib/image-model-meta";
 
@@ -27,6 +30,12 @@ describe("image model parameters", () => {
       aspectRatios: ["1:1"],
       maxRatio: {},
       maxInputImages: 0,
+      // 第 66 条: an unknown model is offered none of the vendor options.
+      autoQuality: null,
+      backgrounds: [],
+      outputFormats: [],
+      moderations: [],
+      outputDefaults: null,
     });
     expect(
       modelCapabilities({
@@ -107,5 +116,50 @@ describe("image model parameters", () => {
     expect(modelNote("gpt-image-2.5-sunburst")).toBe("效果优先");
     expect(modelNote("gpt-image-2")).toBeNull();
     expect(modelNote("not-in-catalog")).toBeNull();
+  });
+
+  it("offers each model its own 质量 levels and says what 自动 means (第 66 条)", () => {
+    const caps = (id: string) =>
+      modelCapabilities({ id, displayName: id, description: "", provider: "xy2api" });
+    expect(qualityOptions(caps("gpt-image-2.5-sunburst"))).toEqual([
+      "auto",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(qualityOptions(caps("gpt-image-2"))).toEqual(["auto", "low", "medium", "high"]);
+    expect(qualityOptions(caps("grok-imagine-image"))).toEqual(["auto"]);
+    expect(qualityHint("auto", caps("nano-banana-2.1"))).toBe("由模型决定，相当于中");
+    expect(qualityHint("auto", caps("gpt-image-2"))).toBe("由模型按内容决定");
+    expect(qualityHint("max", caps("gpt-image-2.5-sunburst"))).toBe("细节最多，最慢");
+    // Fallback hints when the server does not send the new fields.
+    expect(caps("gpt-image-2.5-flare")).toMatchObject({
+      backgrounds: ["auto", "opaque", "transparent"],
+      outputFormats: ["jpeg", "png", "webp"],
+      moderations: ["auto", "low"],
+    });
+    expect(caps("gpt-image-2").backgrounds).toEqual([]);
+    expect(caps("nano-banana-pro").outputFormats).toEqual([]);
+  });
+
+  it("names the site's default format and shows the output choices in records", () => {
+    expect(defaultFormatLabel({ outputDefaults: null })).toBe("默认");
+    expect(defaultFormatLabel({ outputDefaults: { format: "jpeg", compression: 90 } })).toBe(
+      "默认 · JPEG 90",
+    );
+    expect(defaultFormatLabel({ outputDefaults: { format: "png", compression: 90 } })).toBe(
+      "默认 · PNG",
+    );
+    expect(
+      describeImageParams({
+        resolution: "2K",
+        quality: "max",
+        aspectRatio: "1:1",
+        background: "transparent",
+        outputFormat: "png",
+      }),
+    ).toBe("2K · 质量最高 · 1:1 · 透明背景 · PNG");
   });
 });

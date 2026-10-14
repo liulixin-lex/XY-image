@@ -137,6 +137,81 @@ describe("studio batch routes", () => {
     expect(payloads[0]).not.toHaveProperty("count");
   });
 
+  it("stores the output options the billing guard resolved, not the request's (第 66 条)", async () => {
+    const { app, jobService, billing } = await route();
+    billing.prepareImageJobs.mockImplementationOnce(async () => [
+      {
+        keyId: 7,
+        model: "gpt-image-2.5-sunburst",
+        resolution: "2K" as const,
+        quality: "max" as const,
+        aspect_ratio: "1:1",
+        // Transparent moved jpeg to png.
+        background: "transparent",
+        output_format: "png",
+        moderation: "low",
+        count: 1,
+      },
+      {
+        keyId: 8,
+        model: "grok-imagine-image-2.0",
+        resolution: "2K" as const,
+        quality: "medium" as const,
+        aspect_ratio: "1:1",
+        count: 1,
+      },
+    ] as never);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/jobs/image-generation/batch",
+      payload: {
+        prompt: "透明底的狐狸贴纸",
+        quality: "max",
+        background: "transparent",
+        output_format: "jpeg",
+        output_compression: 80,
+        moderation: "low",
+        targets: [
+          { model: "gpt-image-2.5-sunburst", key_id: 7, count: 1 },
+          { model: "grok-imagine-image-2.0", key_id: 8, count: 1 },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const [openaiJob, grokJob] = jobService.createJob.mock.calls.map(
+      ([, input]) => input.payload,
+    );
+    expect(openaiJob).toMatchObject({
+      quality: "max",
+      background: "transparent",
+      output_format: "png",
+      moderation: "low",
+    });
+    expect(openaiJob?.output_compression).toBeUndefined();
+    // Grok takes none of them: the request's own values are not kept.
+    expect(grokJob?.background).toBeUndefined();
+    expect(grokJob?.output_format).toBeUndefined();
+    expect(grokJob?.moderation).toBeUndefined();
+  });
+
+  it("refuses output options outside the vendors' values", async () => {
+    const { app } = await route();
+    for (const extra of [
+      { output_format: "gif" },
+      { output_compression: 120 },
+      { background: "blurred" },
+      { moderation: "off" },
+      { quality: "ultra-max" },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/jobs/image-generation/batch",
+        payload: { prompt: "x", count: 1, ...extra },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
   it("stores each picture's canvas slot and generator node (node canvas)", async () => {
     const { app, jobService } = await route();
     const canvas = "00000000-0000-4000-8000-0000000000cc";

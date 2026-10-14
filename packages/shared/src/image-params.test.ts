@@ -5,6 +5,7 @@ import {
   IMAGE_QUALITIES,
   type ImageCapabilities,
   aspectRatioValue,
+  closestQuality,
   fitsShape,
   normalizeImageParams,
   resolveImageParams,
@@ -34,9 +35,14 @@ describe("image params", () => {
         quality: "high",
       },
     );
-    expect(normalizeImageParams({ resolution: "8K", quality: "max" })).toEqual({
+    expect(normalizeImageParams({ resolution: "8K", quality: "extreme" })).toEqual({
       resolution: "2K",
       quality: "auto",
+    });
+    // GPT Image 2.5's top levels are real values (第 66 条).
+    expect(normalizeImageParams({ resolution: "4K", quality: "max" })).toEqual({
+      resolution: "4K",
+      quality: "max",
     });
     expect(normalizeImageParams({})).toEqual({
       resolution: "2K",
@@ -106,6 +112,10 @@ describe("image params", () => {
       resolution: "4K",
       quality: "high",
       aspectRatio: "4:5",
+      background: "auto",
+      outputFormat: null,
+      outputCompression: null,
+      moderation: "auto",
       adjusted: [],
     });
   });
@@ -117,11 +127,12 @@ describe("image params", () => {
         quality: "high",
         aspectRatio: "4:5",
       }),
-    ).toEqual({
+    ).toMatchObject({
       resolution: "2K",
-      quality: "auto",
+      // Grok stops at medium: 高 runs at its highest level, not at auto.
+      quality: "medium",
       aspectRatio: "3:4",
-      adjusted: ["aspect 4:5→3:4", "resolution 4K→2K", "quality high→auto"],
+      adjusted: ["aspect 4:5→3:4", "resolution 4K→2K", "quality high→medium"],
     });
   });
 
@@ -147,6 +158,10 @@ describe("image params", () => {
       resolution: "2K",
       quality: "auto",
       aspectRatio: "1:1",
+      background: "auto",
+      outputFormat: null,
+      outputCompression: null,
+      moderation: "auto",
       adjusted: [],
     });
     // A model whose sizes start above the default.
@@ -156,5 +171,75 @@ describe("image params", () => {
         { resolution: "2K" },
       ),
     ).toMatchObject({ resolution: "4K", adjusted: ["resolution 2K→4K"] });
+  });
+
+  it("moves 质量 to the nearest level the model has (第 66 条)", () => {
+    const sunburst = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
+    const gpt2 = ["auto", "low", "medium", "high"] as const;
+    const nano2 = ["auto", "low", "high"] as const;
+    expect(closestQuality(sunburst, "max")).toBe("max");
+    expect(closestQuality(gpt2, "max")).toBe("high");
+    expect(closestQuality(gpt2, "xhigh")).toBe("high");
+    expect(closestQuality(nano2, "medium")).toBe("low");
+    expect(closestQuality(["auto", "high"], "low")).toBe("high");
+    expect(closestQuality([], "high")).toBe("auto");
+    expect(closestQuality(gpt2, "auto")).toBe("auto");
+    expect(closestQuality(gpt2, undefined)).toBe("auto");
+  });
+
+  it("resolves the OpenAI output options (第 66 条)", () => {
+    const sunburst = {
+      ...openai,
+      qualities: ["auto", "low", "medium", "high", "xhigh", "max"] as const,
+      backgrounds: ["auto", "opaque", "transparent"] as const,
+      outputFormats: ["jpeg", "png", "webp"] as const,
+      moderations: ["auto", "low"] as const,
+    };
+    expect(
+      resolveImageParams(sunburst, {
+        quality: "xhigh",
+        outputFormat: "webp",
+        outputCompression: 72.4,
+        background: "opaque",
+        moderation: "low",
+      }),
+    ).toMatchObject({
+      quality: "xhigh",
+      outputFormat: "webp",
+      outputCompression: 72,
+      background: "opaque",
+      moderation: "low",
+      adjusted: [],
+    });
+    // Transparent needs png / webp: jpeg and the default become png.
+    expect(
+      resolveImageParams(sunburst, { background: "transparent", outputFormat: "jpeg" }),
+    ).toMatchObject({ background: "transparent", outputFormat: "png", outputCompression: null });
+    expect(
+      resolveImageParams(sunburst, { background: "transparent" }),
+    ).toMatchObject({ outputFormat: "png" });
+    expect(
+      resolveImageParams(sunburst, { background: "transparent", outputFormat: "webp" }),
+    ).toMatchObject({ outputFormat: "webp" });
+    // Compression only means something for jpeg / webp, and stays in 0–100.
+    expect(
+      resolveImageParams(sunburst, { outputFormat: "png", outputCompression: 50 }),
+    ).toMatchObject({ outputCompression: null });
+    expect(
+      resolveImageParams(sunburst, { outputFormat: "jpeg", outputCompression: 140 }),
+    ).toMatchObject({ outputCompression: 100 });
+    // A model without these options keeps the defaults and says so.
+    expect(
+      resolveImageParams(grok, {
+        background: "transparent",
+        outputFormat: "png",
+        moderation: "low",
+      }),
+    ).toMatchObject({
+      background: "auto",
+      outputFormat: null,
+      moderation: "auto",
+      adjusted: ["format png→default", "background transparent→auto", "moderation low→auto"],
+    });
   });
 });

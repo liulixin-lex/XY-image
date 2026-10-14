@@ -1,8 +1,14 @@
 import {
+  IMAGE_BACKGROUNDS,
+  IMAGE_MODERATIONS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
   LEGACY_IMAGE_PARAMS,
+  type ImageBackground,
   type ImageEdit,
+  type ImageModeration,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   OUTPAINT_ANCHORS,
@@ -69,6 +75,11 @@ export const imagePayloadSchema = z.preprocess(
       .optional(),
     input_images: z.array(z.string().max(15000000)).max(14).optional(),
     edit: imageEditPayloadSchema.optional(),
+    // 第 66 条, OpenAI only; absent on older jobs and other models.
+    background: z.enum(IMAGE_BACKGROUNDS).optional(),
+    output_format: z.enum(IMAGE_OUTPUT_FORMATS).optional(),
+    output_compression: z.number().int().min(0).max(100).optional(),
+    moderation: z.enum(IMAGE_MODERATIONS).optional(),
   }),
 );
 export type ImagePayload = z.output<typeof imagePayloadSchema>;
@@ -179,6 +190,10 @@ export class BillingGuard {
         resolution: requested.resolution,
         quality: requested.quality,
         aspectRatio: input.aspect_ratio,
+        background: input.background,
+        outputFormat: input.output_format,
+        outputCompression: input.output_compression,
+        moderation: input.moderation,
       });
       if (resolved.adjusted.length)
         console.info(
@@ -191,6 +206,7 @@ export class BillingGuard {
         resolution: resolved.resolution,
         quality: resolved.quality,
         aspect_ratio: resolved.aspectRatio,
+        ...outputOptions(resolved),
         count: options.sendsNow ? 1 : target.count,
       });
     }
@@ -244,6 +260,18 @@ type ImageJobInput = {
   aspect_ratio?: string | undefined;
   input_images?: string[] | undefined;
   edit?: ImageEdit | undefined;
+  background?: ImageBackground | undefined;
+  output_format?: ImageOutputFormat | undefined;
+  output_compression?: number | undefined;
+  moderation?: ImageModeration | undefined;
+};
+
+/** OpenAI output options for the stored payload: only what differs from the defaults. */
+type PreparedOutputOptions = {
+  background?: ImageBackground;
+  output_format?: ImageOutputFormat;
+  output_compression?: number;
+  moderation?: ImageModeration;
 };
 
 export type PreparedImageJob = {
@@ -252,7 +280,41 @@ export type PreparedImageJob = {
   resolution: ImageResolution;
   quality: ImageQuality;
   aspect_ratio: string;
-};
+} & PreparedOutputOptions;
+
+/**
+ * The output options to store for a prepared job, every key present: a
+ * request's own values are spread into the payload first, so the ones the
+ * model does not take must be cleared, not just left out.
+ */
+export function storedOutputOptions(prepared: PreparedOutputOptions) {
+  return {
+    background: prepared.background,
+    output_format: prepared.output_format,
+    output_compression: prepared.output_compression,
+    moderation: prepared.moderation,
+  };
+}
+
+/**
+ * The resolved output options worth storing: a payload keeps the shape older
+ * workers read, and the defaults (auto, the server's format) stay implicit.
+ */
+export function outputOptions(resolved: {
+  background: ImageBackground;
+  outputFormat: ImageOutputFormat | null;
+  outputCompression: number | null;
+  moderation: ImageModeration;
+}): PreparedOutputOptions {
+  return {
+    ...(resolved.background !== "auto" ? { background: resolved.background } : {}),
+    ...(resolved.outputFormat ? { output_format: resolved.outputFormat } : {}),
+    ...(resolved.outputCompression !== null
+      ? { output_compression: resolved.outputCompression }
+      : {}),
+    ...(resolved.moderation !== "auto" ? { moderation: resolved.moderation } : {}),
+  };
+}
 
 /**
  * 局部重绘 / 扩图: one source picture, and a model that can take it (see

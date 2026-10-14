@@ -34,7 +34,13 @@ import type {
   ViewerResponse,
   WorkspaceSkillListResponse,
 } from "@loomic/shared";
-import type { ImageQuality, ImageResolution } from "@loomic/shared";
+import type {
+  ImageBackground,
+  ImageModeration,
+  ImageOutputFormat,
+  ImageQuality,
+  ImageResolution,
+} from "@loomic/shared";
 
 import {
   type ChatModelList,
@@ -380,6 +386,14 @@ export type ImageModelInfo = {
   resolutions?: ImageResolution[];
   /** Empty when the model has no 质量 setting. */
   qualities?: ImageQuality[];
+  /** What 质量「自动」 amounts to, when the vendor documents it (第 66 条). */
+  autoQuality?: ImageQuality;
+  /** 第 66 条, OpenAI models: 背景 / 格式 / 审核 the model takes (empty: none). */
+  backgrounds?: ImageBackground[];
+  outputFormats?: ImageOutputFormat[];
+  moderations?: ImageModeration[];
+  /** The site's own format and compression, i.e. what 「默认」 sends. */
+  outputDefaults?: { format: ImageOutputFormat; compression: number };
   aspectRatios?: string[];
   /** Widest shape (long side ÷ short side) a size can make; no entry = any. */
   maxRatio?: Partial<Record<ImageResolution, number>>;
@@ -416,9 +430,18 @@ export async function fetchImageModels(
       headers: authHeaders(accessToken),
     });
     if (!response.ok) return handleErrorResponse(response);
-    return (await response.json()) as {
+    const data = (await response.json()) as {
       models: ImageModelInfo[];
       keys?: ImageKeyInfo[];
+      outputDefaults?: ImageModelInfo["outputDefaults"];
+    };
+    // The site default travels with each model, so pickers need no extra state.
+    const defaults = data.outputDefaults;
+    return {
+      models: defaults
+        ? data.models.map((model) => ({ ...model, outputDefaults: defaults }))
+        : data.models,
+      ...(data.keys ? { keys: data.keys } : {}),
     };
   });
 }
@@ -629,9 +652,14 @@ export type CreateImageJobInput = {
   key_id?: number;
   /** 画质: 1K / 2K / 4K. */
   resolution?: ImageResolution;
-  /** 质量: auto / low / medium / high. */
+  /** 质量: auto … max; the server moves it to what the model has. */
   quality?: ImageQuality;
   aspect_ratio?: string;
+  /** 第 66 条, OpenAI models only: 背景 / 格式 / 压缩 / 审核. */
+  background?: ImageBackground;
+  output_format?: ImageOutputFormat;
+  output_compression?: number;
+  moderation?: ImageModeration;
   input_images?: string[];
   project_id?: string;
   canvas_id?: string;

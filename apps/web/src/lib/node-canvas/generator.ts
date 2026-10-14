@@ -11,7 +11,13 @@
  */
 import {
   IMAGE_ASPECT_RATIOS,
+  IMAGE_BACKGROUNDS,
   IMAGE_BATCH_MAX,
+  IMAGE_MODERATIONS,
+  IMAGE_OUTPUT_FORMATS,
+  type ImageBackground,
+  type ImageModeration,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   normalizeImageParams,
@@ -44,6 +50,15 @@ export type GeneratorConfig = {
   aspectRatio: string;
   resolution: ImageResolution;
   quality: ImageQuality;
+  /**
+   * 第 66 条, OpenAI models: file format (null = the site's default),
+   * jpeg / webp compression (null = default), 背景 and 审核. Other models
+   * keep them but do not send them.
+   */
+  outputFormat: ImageOutputFormat | null;
+  outputCompression: number | null;
+  background: ImageBackground;
+  moderation: ImageModeration;
   count: number;
   /** The node's own description, after the text of connected prompt cards. */
   prompt: string;
@@ -59,9 +74,23 @@ export const GENERATOR_DEFAULTS: GeneratorConfig = {
   aspectRatio: "1:1",
   resolution: "2K",
   quality: "auto",
+  outputFormat: null,
+  outputCompression: null,
+  background: "auto",
+  moderation: "auto",
   count: 1,
   prompt: "",
 };
+
+function oneOf<T extends string>(list: readonly T[], value: unknown, fallback: T): T {
+  return (list as readonly unknown[]).includes(value) ? (value as T) : fallback;
+}
+
+function readCompression(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
+    ? Math.round(value)
+    : null;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -121,6 +150,12 @@ export function readGenerator(el: SceneElement): GeneratorConfig {
     aspectRatio,
     resolution,
     quality,
+    outputFormat: (IMAGE_OUTPUT_FORMATS as readonly unknown[]).includes(raw.outputFormat)
+      ? (raw.outputFormat as ImageOutputFormat)
+      : null,
+    outputCompression: readCompression(raw.outputCompression),
+    background: oneOf(IMAGE_BACKGROUNDS, raw.background, "auto"),
+    moderation: oneOf(IMAGE_MODERATIONS, raw.moderation, "auto"),
     count: clampCount(raw.count),
     prompt: typeof raw.prompt === "string" ? raw.prompt : "",
     ...(run ? { run } : {}),
@@ -172,6 +207,10 @@ export function migrateLegacyGenerator(el: SceneElement): SceneElement {
         : GENERATOR_DEFAULTS.aspectRatio,
     resolution,
     quality,
+    outputFormat: null,
+    outputCompression: null,
+    background: "auto",
+    moderation: "auto",
     count: 1,
     prompt: typeof legacy.prompt === "string" ? legacy.prompt : "",
   };

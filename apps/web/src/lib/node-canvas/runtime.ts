@@ -18,7 +18,13 @@
  * (链式：上游出图 → 下游参考图). Several generators can be run with one
  * click (`generateMany`), one batch each.
  */
-import type { ImageQuality, ImageResolution } from "@loomic/shared";
+import type {
+  ImageBackground,
+  ImageModeration,
+  ImageOutputFormat,
+  ImageQuality,
+  ImageResolution,
+} from "@loomic/shared";
 
 import type { IssueSpec } from "../generation-errors";
 import {
@@ -73,6 +79,11 @@ export type SendParams = {
   aspectRatio: string;
   resolution: ImageResolution;
   quality: ImageQuality;
+  /** 第 66 条: OpenAI output options as resolved for the model (defaults left out). */
+  outputFormat?: ImageOutputFormat | null;
+  outputCompression?: number | null;
+  background?: ImageBackground;
+  moderation?: ImageModeration;
 };
 
 export type RuntimeState = {
@@ -502,6 +513,16 @@ export class GeneratorRuntime {
       aspect_ratio: params.aspectRatio,
       resolution: params.resolution,
       quality: params.quality,
+      ...(params.outputFormat ? { output_format: params.outputFormat } : {}),
+      ...(params.outputCompression != null
+        ? { output_compression: params.outputCompression }
+        : {}),
+      ...(params.background && params.background !== "auto"
+        ? { background: params.background }
+        : {}),
+      ...(params.moderation && params.moderation !== "auto"
+        ? { moderation: params.moderation }
+        : {}),
       count: config.count,
       project_id: this.deps.projectId,
       canvas_id: this.store.canvasId,
@@ -518,6 +539,8 @@ export class GeneratorRuntime {
       resolution: params.resolution,
       quality: params.quality,
       aspectRatio: params.aspectRatio,
+      format: params.outputFormat ?? null,
+      background: params.background ?? "auto",
       references: references.length,
     });
 

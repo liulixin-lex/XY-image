@@ -266,6 +266,15 @@ export async function executeImageJob(
           ...(payload.aspect_ratio
             ? { aspectRatio: payload.aspect_ratio }
             : {}),
+          // 第 66 条: OpenAI output options as resolved when queued.
+          ...(payload.background ? { background: payload.background } : {}),
+          ...(payload.output_format
+            ? { outputFormat: payload.output_format }
+            : {}),
+          ...(payload.output_compression !== undefined
+            ? { outputCompression: payload.output_compression }
+            : {}),
+          ...(payload.moderation ? { moderation: payload.moderation } : {}),
           // Resuming sends nothing, so the references are not read again.
           ...(payload.input_images && !imageTask?.resume
             ? { inputImages: payload.input_images }

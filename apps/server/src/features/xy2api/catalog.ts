@@ -1,7 +1,13 @@
 import {
   IMAGE_ASPECT_RATIOS,
+  IMAGE_BACKGROUNDS,
+  IMAGE_MODERATIONS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
+  type ImageBackground,
+  type ImageModeration,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   type ResolvedImageParams,
@@ -18,7 +24,9 @@ import { z } from "zod";
  * product parameters into each vendor's own fields:
  *
  * - "openai-images": OpenAI Image API (images.generate / images.edit).
- *   画质 → pixel `size` (WxH), 质量 → `quality`.
+ *   画质 → pixel `size` (WxH), 质量 → `quality`, 格式 / 压缩 / 背景 / 审核 →
+ *   `output_format` / `output_compression` / `background` / `moderation`
+ *   (第 66 条; moderation on generations only, the edit endpoint has none).
  * - "gemini": Gemini generateContent. 画质 → `imageConfig.imageSize`,
  *   比例 → `imageConfig.aspectRatio`, 质量 → `thinkingConfig.thinkingLevel`
  *   on models that have one (via `vendorQuality`).
@@ -51,6 +59,9 @@ const PROTOCOL_DEFAULTS: Record<
     resolutions: ImageResolution[];
     qualities: ImageQuality[];
     aspectRatios: string[];
+    backgrounds: ImageBackground[];
+    outputFormats: ImageOutputFormat[];
+    moderations: ImageModeration[];
   }
 > = {
   "openai-images": {
@@ -58,6 +69,11 @@ const PROTOCOL_DEFAULTS: Record<
     resolutions: ["1K", "2K", "4K"],
     qualities: ["auto", "low", "medium", "high"],
     aspectRatios: [...IMAGE_ASPECT_RATIOS],
+    // Transparent backgrounds are per model (full support on GPT Image 2.5,
+    // preview on gpt-image-2): off unless the entry lists them.
+    backgrounds: [],
+    outputFormats: [...IMAGE_OUTPUT_FORMATS],
+    moderations: [...IMAGE_MODERATIONS],
   },
   // 1K is every Gemini image model's default size; 2K / 4K only on newer ones.
   gemini: {
@@ -65,13 +81,21 @@ const PROTOCOL_DEFAULTS: Record<
     resolutions: ["1K", "2K"],
     qualities: [],
     aspectRatios: [...IMAGE_ASPECT_RATIOS],
+    backgrounds: [],
+    outputFormats: [],
+    moderations: [],
   },
   // https://docs.x.ai/developers/model-capabilities/images/generation
   "xai-images": {
     vendor: "xai",
     resolutions: ["1K", "2K"],
+    // `quality` is grok-imagine-image-2.0 only; the other Grok models
+    // list none (catalog entries below).
     qualities: ["auto", "low", "medium"],
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
+    backgrounds: [],
+    outputFormats: [],
+    moderations: [],
   },
 };
 
@@ -106,6 +130,18 @@ export const imageModelSchema = z
     vendorQuality: z
       .partialRecord(z.enum(IMAGE_QUALITIES), z.string())
       .optional(),
+    /**
+     * The level 质量「自动」 amounts to when the vendor documents one (Nano
+     * Banana 2.1: medium, Nano Banana 2: minimal = low, Grok 2.0: low for
+     * generations). Only shown as a hint; auto still sends nothing.
+     */
+    autoQuality: z.enum(IMAGE_QUALITIES).optional(),
+    /** 背景 the model accepts; empty when it has no such setting. */
+    backgrounds: z.array(z.enum(IMAGE_BACKGROUNDS)).optional(),
+    /** Output formats the user may pick; empty = the server's default only. */
+    outputFormats: z.array(z.enum(IMAGE_OUTPUT_FORMATS)).optional(),
+    /** 审核 levels; empty when the model has no such setting. */
+    moderations: z.array(z.enum(IMAGE_MODERATIONS)).optional(),
     /**
      * openai-images only. "flexible": any WxH within the Image API limits
      * (gpt-image-2 and later). "fixed": only 1024x1024 / 1536x1024 /
@@ -147,6 +183,15 @@ export const imageModelSchema = z
       ),
       aspectRatios: model.aspectRatios ?? defaults.aspectRatios,
       vendorQuality: model.vendorQuality ?? {},
+      backgrounds: IMAGE_BACKGROUNDS.filter((value) =>
+        (model.backgrounds ?? defaults.backgrounds).includes(value),
+      ),
+      outputFormats: IMAGE_OUTPUT_FORMATS.filter((value) =>
+        (model.outputFormats ?? defaults.outputFormats).includes(value),
+      ),
+      moderations: IMAGE_MODERATIONS.filter((value) =>
+        (model.moderations ?? defaults.moderations).includes(value),
+      ),
       sizing: model.sizing ?? ("flexible" as const),
       maxRatio:
         model.maxRatio ??
@@ -185,6 +230,8 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     supportsEdit: true,
     maxInputImages: 10,
   },
+  // GPT Image 2.5 adds 质量 xhigh / max and fully supports transparent
+  // backgrounds (gpt-image-2: preview only, so not offered there).
   {
     id: "gpt-image-2.5-sunburst",
     displayName: "GPT Image 2.5 Sunburst",
@@ -193,6 +240,8 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     platforms: OPENAI_PLATFORMS,
     supportsEdit: true,
     maxInputImages: 10,
+    qualities: [...IMAGE_QUALITIES],
+    backgrounds: [...IMAGE_BACKGROUNDS],
   },
   {
     id: "gpt-image-2.5-flare",
@@ -202,6 +251,8 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     platforms: OPENAI_PLATFORMS,
     supportsEdit: true,
     maxInputImages: 10,
+    qualities: [...IMAGE_QUALITIES],
+    backgrounds: [...IMAGE_BACKGROUNDS],
   },
   {
     id: "nano-banana-2.1",
@@ -215,6 +266,7 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     resolutions: ["1K", "2K", "4K"],
     qualities: ["auto", "low", "medium", "high"],
     vendorQuality: { low: "minimal", medium: "medium", high: "high" },
+    autoQuality: "medium",
   },
   {
     id: "nano-banana-pro",
@@ -238,6 +290,8 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     // images, and a mask. xAI allows five sources; xy2api caps an edit at 3.
     supportsEdit: true,
     maxInputImages: 3,
+    // xAI: auto is low for generations, medium for edits.
+    autoQuality: "low",
   },
   // The Grok-image group lists these next to 2.0 (FINDINGS K1). Same
   // xai-images protocol; edits stay off until verified per model.
@@ -249,6 +303,8 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     platforms: ["grok", "composite"],
     supportsEdit: false,
     maxInputImages: 0,
+    // `quality` is documented for grok-imagine-image-2.0 only.
+    qualities: [],
   },
   {
     id: "grok-imagine-image",
@@ -258,6 +314,7 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     platforms: ["grok", "composite"],
     supportsEdit: false,
     maxInputImages: 0,
+    qualities: [],
   },
   {
     id: "gemini-3.1-flash-image",
@@ -271,6 +328,7 @@ export const DEFAULT_IMAGE_MODELS: ImageModelEntry[] = [
     resolutions: ["1K", "2K", "4K"],
     qualities: ["auto", "low", "high"],
     vendorQuality: { low: "minimal", high: "high" },
+    autoQuality: "low",
   },
 ];
 
@@ -375,7 +433,8 @@ export function resolveImageParams(
   model: Pick<
     ImageModel,
     "resolutions" | "qualities" | "aspectRatios" | "maxRatio"
-  >,
+  > &
+    Partial<Pick<ImageModel, "backgrounds" | "outputFormats" | "moderations">>,
   requested: Parameters<typeof resolveSharedImageParams>[1],
 ): ResolvedImageParams {
   return resolveSharedImageParams(model, requested);

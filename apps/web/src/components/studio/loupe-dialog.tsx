@@ -20,7 +20,12 @@ import {
   jobStatusLabel,
   undersized,
 } from "@/lib/image-jobs";
-import { QUALITY_LABEL, describeImageParams } from "@/lib/image-model-meta";
+import {
+  BACKGROUND_LABEL,
+  OUTPUT_FORMAT_LABEL,
+  QUALITY_LABEL,
+  describeImageParams,
+} from "@/lib/image-model-meta";
 // Straight from shared: a re-export through lib/mask-edit is reported as
 // missing by the production build on the server (webpack import check).
 import { IMAGE_EDIT_LABEL, type ImageEditMode } from "@loomic/shared";
@@ -142,6 +147,19 @@ export function LoupeDialog({
                     <>
                       <dt className="text-fg-muted">质量</dt>
                       <dd className="text-fg">{QUALITY_LABEL[job.quality]}</dd>
+                    </>
+                  ) : null}
+                  {job.outputFormat || job.background ? (
+                    <>
+                      <dt className="text-fg-muted">输出</dt>
+                      <dd className="text-fg">
+                        {[
+                          job.outputFormat ? OUTPUT_FORMAT_LABEL[job.outputFormat] : null,
+                          job.background ? `背景${BACKGROUND_LABEL[job.background]}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </dd>
                     </>
                   ) : null}
                   {job.edit ? (

@@ -4,8 +4,23 @@ import { imageEditSchema } from "./image-edit.js";
 import {
   IMAGE_QUALITIES,
   LEGACY_IMAGE_QUALITIES,
+  imageBackgroundSchema,
+  imageModerationSchema,
+  imageOutputCompressionSchema,
+  imageOutputFormatSchema,
   imageResolutionSchema,
 } from "./image-params.js";
+
+/**
+ * OpenAI output options (第 66 条). Optional everywhere: models without them,
+ * and older clients, leave them out and get the defaults.
+ */
+const imageOutputOptions = {
+  background: imageBackgroundSchema.optional(),
+  output_format: imageOutputFormatSchema.optional(),
+  output_compression: imageOutputCompressionSchema.optional(),
+  moderation: imageModerationSchema.optional(),
+};
 
 // --- Enums ---
 
@@ -32,8 +47,9 @@ export const imageGenerationPayloadSchema = z.object({
   model: z.string().optional(),
   aspect_ratio: z.string().optional(),
   resolution: imageResolutionSchema.optional(),
-  /** New jobs store auto / low / medium / high; older ones standard / hd / ultra (= 1K / 2K / 4K). */
+  /** New jobs store auto … max; older ones standard / hd / ultra (= 1K / 2K / 4K). */
   quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
+  ...imageOutputOptions,
 });
 export type ImageGenerationPayload = z.infer<
   typeof imageGenerationPayloadSchema
@@ -178,10 +194,13 @@ export const createImageJobRequestSchema = z.object({
   /** 画质: 1K / 2K / 4K. The server clamps to what the model supports. */
   resolution: imageResolutionSchema.optional(),
   /**
-   * 质量: auto / low / medium / high. The legacy values standard / hd / ultra
-   * (which meant 1K / 2K / 4K) are still accepted from older clients.
+   * 质量: auto / low / medium / high / xhigh / max. The server clamps to what
+   * the model supports. The legacy values standard / hd / ultra (which meant
+   * 1K / 2K / 4K) are still accepted from older clients.
    */
   quality: z.enum([...IMAGE_QUALITIES, ...LEGACY_IMAGE_QUALITIES]).optional(),
+  /** 格式 / 压缩 / 背景 / 审核 (OpenAI models only; others ignore them). */
+  ...imageOutputOptions,
   /** Node canvas (needs `canvas_id`): the generator node the pictures come from. */
   canvas_source_id: canvasElementIdSchema.optional(),
   /** Node canvas (needs `canvas_id`): one spot per picture, in batch order. */

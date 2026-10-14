@@ -37,6 +37,7 @@ import {
 import {
   type BillingGuard,
   imagePayloadSchema,
+  storedOutputOptions,
 } from "../features/xy2api/billing-guard.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 import { isZodError } from "../utils/zod-error.js";
@@ -65,6 +66,7 @@ export async function registerJobRoutes(
           resolution: prepared.resolution,
           quality: prepared.quality,
           aspect_ratio: prepared.aspect_ratio,
+          ...storedOutputOptions(prepared),
         });
         return options.jobService.createJob(user, {
           workspaceId: viewer.workspace.id,
@@ -130,6 +132,7 @@ export async function registerJobRoutes(
             resolution: target.resolution,
             quality: target.quality,
             aspect_ratio: target.aspect_ratio,
+            ...storedOutputOptions(target),
           });
           return Array.from({ length: target.count }, () => ({
             keyId: target.keyId,

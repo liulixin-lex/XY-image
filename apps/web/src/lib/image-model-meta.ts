@@ -11,10 +11,16 @@
  */
 import {
   IMAGE_ASPECT_RATIOS,
+  IMAGE_BACKGROUNDS,
+  IMAGE_MODERATIONS,
+  IMAGE_OUTPUT_FORMATS,
   IMAGE_QUALITIES,
   IMAGE_RESOLUTIONS,
   type ImageAspectRatio,
+  type ImageBackground,
   type ImageCapabilities,
+  type ImageModeration,
+  type ImageOutputFormat,
   type ImageQuality,
   type ImageResolution,
   fitsShape,
@@ -22,7 +28,13 @@ import {
 
 import type { ImageModelInfo } from "./server-api";
 
-export type { ImageQuality, ImageResolution };
+export type {
+  ImageBackground,
+  ImageModeration,
+  ImageOutputFormat,
+  ImageQuality,
+  ImageResolution,
+};
 
 /** The shared ImageCapabilities, filled in for the pickers. */
 export type ImageModelCapabilities = {
@@ -33,9 +45,29 @@ export type ImageModelCapabilities = {
   maxRatio: NonNullable<ImageCapabilities["maxRatio"]>;
   /** 0 when the model takes no reference images. */
   maxInputImages: number;
+  /** 第 66 条: what 「自动」 amounts to, when the vendor documents it. */
+  autoQuality: ImageQuality | null;
+  /** 第 66 条, OpenAI models: 背景 / 格式 / 审核 (empty: not offered). */
+  backgrounds: ImageBackground[];
+  outputFormats: ImageOutputFormat[];
+  moderations: ImageModeration[];
+  /** What 格式「默认」 sends (the site's setting), when the server says. */
+  outputDefaults: { format: ImageOutputFormat; compression: number } | null;
 };
 
-export type ImageModelMeta = Omit<ImageModelCapabilities, "maxRatio"> & {
+/** Options newer than the fallback list; absent means not offered. */
+type NewerCapabilities =
+  | "autoQuality"
+  | "backgrounds"
+  | "outputFormats"
+  | "moderations"
+  | "outputDefaults";
+
+export type ImageModelMeta = Omit<
+  ImageModelCapabilities,
+  "maxRatio" | NewerCapabilities
+> &
+  Partial<Pick<ImageModelCapabilities, NewerCapabilities>> & {
   maxRatio?: ImageModelCapabilities["maxRatio"];
   id: string;
   aliases: string[];
@@ -53,6 +85,12 @@ export type ImageModelMeta = Omit<ImageModelCapabilities, "maxRatio"> & {
 
 const ALL_RATIOS: string[] = [...IMAGE_ASPECT_RATIOS];
 const ALL_QUALITIES: ImageQuality[] = [...IMAGE_QUALITIES];
+/** OpenAI's levels before GPT Image 2.5 added xhigh / max. */
+const BASE_QUALITIES: ImageQuality[] = ["auto", "low", "medium", "high"];
+const OPENAI_OUTPUT = {
+  outputFormats: [...IMAGE_OUTPUT_FORMATS],
+  moderations: [...IMAGE_MODERATIONS],
+} satisfies Partial<ImageModelCapabilities>;
 const ALL_RESOLUTIONS: ImageResolution[] = [...IMAGE_RESOLUTIONS];
 /**
  * OpenAI's image sizes at 1K (long edge 1024) cannot be wider than about
@@ -71,10 +109,11 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     maker: "OpenAI",
     description: "生成与多图编辑",
     resolutions: ALL_RESOLUTIONS,
-    qualities: ALL_QUALITIES,
+    qualities: BASE_QUALITIES,
     aspectRatios: ALL_RATIOS,
     maxRatio: OPENAI_MAX_RATIO,
     maxInputImages: 10,
+    ...OPENAI_OUTPUT,
   },
   {
     id: "gpt-image-2.5-sunburst",
@@ -88,6 +127,8 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     aspectRatios: ALL_RATIOS,
     maxRatio: OPENAI_MAX_RATIO,
     maxInputImages: 10,
+    ...OPENAI_OUTPUT,
+    backgrounds: [...IMAGE_BACKGROUNDS],
   },
   {
     id: "gpt-image-2.5-flare",
@@ -101,6 +142,8 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     aspectRatios: ALL_RATIOS,
     maxRatio: OPENAI_MAX_RATIO,
     maxInputImages: 10,
+    ...OPENAI_OUTPUT,
+    backgrounds: [...IMAGE_BACKGROUNDS],
   },
   {
     id: "nano-banana-2.1",
@@ -109,7 +152,8 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     maker: "Google",
     description: "生成与多图编辑",
     resolutions: ALL_RESOLUTIONS,
-    qualities: ALL_QUALITIES,
+    qualities: BASE_QUALITIES,
+    autoQuality: "medium",
     aspectRatios: ALL_RATIOS,
     maxInputImages: 14,
   },
@@ -132,6 +176,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     description: "生成与多图编辑",
     resolutions: ["1K", "2K"],
     qualities: ["auto", "low", "medium"],
+    autoQuality: "low",
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
     // Fallback for servers that do not send capabilities (they predate Grok
     // edits). Current servers send maxInputImages: 3, which wins.
@@ -145,7 +190,8 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     description: "画质优先，出图稍慢",
     note: "画质优先",
     resolutions: ["1K", "2K"],
-    qualities: ["auto", "low", "medium"],
+    // xAI documents `quality` for grok-imagine-image-2.0 only (第 66 条).
+    qualities: [],
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
     maxInputImages: 0,
   },
@@ -156,7 +202,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     maker: "xAI",
     description: "图像生成",
     resolutions: ["1K", "2K"],
-    qualities: ["auto", "low", "medium"],
+    qualities: [],
     aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "21:9"],
     maxInputImages: 0,
   },
@@ -168,6 +214,7 @@ export const KNOWN_IMAGE_MODELS: ImageModelMeta[] = [
     description: "Gemini 3.1 Flash 生成与多图编辑",
     resolutions: ALL_RESOLUTIONS,
     qualities: ["auto", "low", "high"],
+    autoQuality: "low",
     aspectRatios: ALL_RATIOS,
     maxInputImages: 14,
   },
@@ -206,6 +253,13 @@ export function modelCapabilities(
       model?.supportsEdit === false
         ? 0
         : (model?.maxInputImages ?? meta?.maxInputImages ?? 14),
+    autoQuality: model?.autoQuality ?? meta?.autoQuality ?? null,
+    // Unknown models get none of these: they are vendor fields, and a
+    // model that does not take them would fail rather than ignore them.
+    backgrounds: model?.backgrounds ?? meta?.backgrounds ?? [],
+    outputFormats: model?.outputFormats ?? meta?.outputFormats ?? [],
+    moderations: model?.moderations ?? meta?.moderations ?? [],
+    outputDefaults: model?.outputDefaults ?? null,
   };
 }
 
@@ -263,6 +317,8 @@ export const QUALITY_LABEL: Record<ImageQuality, string> = {
   low: "低",
   medium: "中",
   high: "高",
+  xhigh: "极高",
+  max: "最高",
 };
 
 /** One line under 质量 for the selected level. */
@@ -270,8 +326,82 @@ export const QUALITY_HINT: Record<ImageQuality, string> = {
   auto: "由模型按内容决定",
   low: "最快，适合草稿",
   medium: "速度和细节兼顾",
-  high: "细节最多，最慢",
+  high: "细节更多，较慢",
+  xhigh: "比高更细，更慢",
+  max: "细节最多，最慢",
 };
+
+/**
+ * The note under 质量. 「自动」 says what it amounts to when the vendor
+ * documents it (Nano Banana 2.1: 中; Grok 2.0: 低), else the plain hint.
+ */
+export function qualityHint(
+  quality: ImageQuality,
+  caps: Pick<ImageModelCapabilities, "autoQuality">,
+): string {
+  if (quality === "auto" && caps.autoQuality && caps.autoQuality !== "auto")
+    return `由模型决定，相当于${QUALITY_LABEL[caps.autoQuality]}`;
+  return QUALITY_HINT[quality];
+}
+
+/** The 质量 levels a picker shows: 自动 plus what the model has. */
+export function qualityOptions(
+  caps: Pick<ImageModelCapabilities, "qualities">,
+): ImageQuality[] {
+  return IMAGE_QUALITIES.filter(
+    (value) => value === "auto" || caps.qualities.includes(value),
+  );
+}
+
+// ── 第 66 条: OpenAI output options ─────────────────────────────────────
+
+export const OUTPUT_FORMAT_LABEL: Record<ImageOutputFormat, string> = {
+  jpeg: "JPEG",
+  png: "PNG",
+  webp: "WebP",
+};
+
+export const OUTPUT_FORMAT_HINT: Record<ImageOutputFormat, string> = {
+  jpeg: "文件小，适合照片",
+  png: "无损，可以保留透明",
+  webp: "文件小，适合网页，可以保留透明",
+};
+
+export const BACKGROUND_LABEL: Record<ImageBackground, string> = {
+  auto: "自动",
+  opaque: "不透明",
+  transparent: "透明",
+};
+
+export const BACKGROUND_HINT: Record<ImageBackground, string> = {
+  auto: "由模型决定",
+  opaque: "画面铺满，不留透明",
+  transparent: "去掉背景，适合标志、贴纸和抠图；存成 PNG 或 WebP",
+};
+
+export const MODERATION_LABEL: Record<ImageModeration, string> = {
+  auto: "标准",
+  low: "宽松",
+};
+
+export const MODERATION_HINT: Record<ImageModeration, string> = {
+  auto: "OpenAI 默认的内容审核",
+  low: "审核放宽一些，仍要遵守 OpenAI 的使用政策",
+};
+
+/** 压缩 presets for jpeg / webp (100 = least compressed). */
+export const COMPRESSION_PRESETS = [100, 85, 70, 50] as const;
+
+/** 「默认 · JPEG 90」: what the site sends when the user picks nothing. */
+export function defaultFormatLabel(
+  caps: Pick<ImageModelCapabilities, "outputDefaults">,
+): string {
+  const d = caps.outputDefaults;
+  if (!d) return "默认";
+  return d.format === "png"
+    ? `默认 · ${OUTPUT_FORMAT_LABEL[d.format]}`
+    : `默认 · ${OUTPUT_FORMAT_LABEL[d.format]} ${d.compression}`;
+}
 
 export const ASPECT_RATIOS = IMAGE_ASPECT_RATIOS;
 export type AspectRatio = ImageAspectRatio;
@@ -291,6 +421,9 @@ export function describeImageParams(params: {
   resolution: ImageResolution;
   quality: ImageQuality | null;
   aspectRatio?: string | null;
+  /** 第 66 条: only what differs from the defaults is shown. */
+  background?: ImageBackground | null;
+  outputFormat?: ImageOutputFormat | null;
 }): string {
   return [
     params.resolution,
@@ -298,6 +431,8 @@ export function describeImageParams(params: {
       ? `质量${QUALITY_LABEL[params.quality]}`
       : null,
     params.aspectRatio ?? null,
+    params.background === "transparent" ? "透明背景" : null,
+    params.outputFormat ? OUTPUT_FORMAT_LABEL[params.outputFormat] : null,
   ]
     .filter(Boolean)
     .join(" · ");

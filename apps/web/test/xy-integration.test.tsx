@@ -304,9 +304,17 @@ describe("image job views", () => {
       quality: "high",
     });
     expect(read({ quality: "standard" })).toMatchObject({ resolution: "1K", quality: null });
-    expect(read({ resolution: "8K", quality: "max" })).toMatchObject({
+    expect(read({ resolution: "8K", quality: "extreme" })).toMatchObject({
       resolution: "2K",
       quality: "auto",
+    });
+    // 第 66 条: max is a real level; background / format are read when valid.
+    expect(
+      read({ resolution: "4K", quality: "max", background: "transparent", output_format: "webp" }),
+    ).toMatchObject({ quality: "max", background: "transparent", outputFormat: "webp" });
+    expect(read({ background: "blurred", output_format: "gif" })).toMatchObject({
+      background: null,
+      outputFormat: null,
     });
   });
 });
