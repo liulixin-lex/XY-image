@@ -168,6 +168,8 @@ export type JobService = {
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    /** Set to undo this attempt's count (a throttle wait is not a send). */
+    attemptCount?: number,
   ): Promise<boolean>;
   /** Puts an existing job on its queue after `delaySeconds` (sync route storage retry). */
   scheduleRedelivery(jobId: string, delaySeconds: number): Promise<void>;
@@ -630,7 +632,7 @@ export function createJobService(options: {
       checkStoreError(error);
     },
 
-    async requeueForRetry(jobId, errorCode, errorMessage) {
+    async requeueForRetry(jobId, errorCode, errorMessage, attemptCount) {
       const { data, error } = await options
         .getAdminClient()
         .from("background_jobs")
@@ -639,6 +641,9 @@ export function createJobService(options: {
           billing_status: "none",
           error_code: errorCode,
           error_message: errorMessage,
+          ...(attemptCount !== undefined
+            ? { attempt_count: Math.max(0, attemptCount) }
+            : {}),
           xy2api_request_id: null,
           xy2api_task_id: null,
           xy2api_task_submitted_at: null,

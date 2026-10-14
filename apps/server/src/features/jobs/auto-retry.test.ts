@@ -39,6 +39,15 @@ describe("autoRetryDecision", () => {
     const unsent = { code: "xy2api_unavailable" as const, billing: "not_charged" as const, retryable: true };
     expect(autoRetryDecision({ failure: unsent, sends: 1, maxRetries: 2, createdAt, now })).toBeDefined();
   });
+  it("waits out the main site's task limit without spending a send", () => {
+    const throttled = { ...mapGatewayError({ status: 429, body: {}, responseReceived: true }), throttleSeconds: 5 };
+    const decision = autoRetryDecision({ failure: throttled, sends: 7, maxRetries: 2, createdAt, now, random: () => 0 });
+    expect(decision).toMatchObject({ delaySeconds: 5, throttled: true, nextSend: 7 });
+    expect(decision?.message).toMatch(/自动发送/);
+    const old = new Date(now - AUTO_RETRY_MAX_AGE_MS - 1).toISOString();
+    expect(autoRetryDecision({ failure: throttled, sends: 1, maxRetries: 2, createdAt: old, now })).toBeUndefined();
+  });
+
   it("lets old jobs and a disabled setting fail", () => {
     const old = new Date(now - AUTO_RETRY_MAX_AGE_MS - 1).toISOString();
     expect(autoRetryDecision({ failure: busy, sends: 1, maxRetries: 2, createdAt: old, now })).toBeUndefined();

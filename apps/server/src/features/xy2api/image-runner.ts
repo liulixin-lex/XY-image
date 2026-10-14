@@ -22,6 +22,7 @@ import {
   deliveryRetrySeconds,
 } from "./pending-delivery.js";
 import {
+  deleteImageTask,
   AsyncImageUnavailableError,
   ImageTaskParkedError,
   type ImageTaskMode,
@@ -228,6 +229,9 @@ export async function executeImageJob(
           model.protocol,
         )
       ? {
+          // 第 67 条: one key per send of this job, so a lost 202 is asked
+          // for again safely and an auto-retry is a new generation.
+          idempotencyKey: `xyimg.${jobId}.${Number(row.attempt_count) || 1}`,
           onAccepted: async (handle) => {
             leaseRenewed = Date.now();
             checkStoreError(
@@ -420,14 +424,28 @@ export async function executeImageJob(
       height: generated.height,
       bytes,
     };
+    // 第 67 条: once the picture is ours (stored, or held for another
+    // storage attempt), the main site's copy of an async task goes.
+    const dropTask = () => {
+      const taskId = mode?.handle?.taskId;
+      if (taskId)
+        void deleteImageTask(taskId, {
+          apiKey: credential.apiKey,
+          baseUrl: options.env.xy2apiBaseUrl,
+        });
+    };
     try {
-      return await deliver(admin, image);
+      const delivered = await deliver(admin, image);
+      dropTask();
+      return delivered;
     } catch (error) {
       const reason = describeErrorForLog(error);
       console.error(
         `[image-runner] job ${jobId} storage write failed: ${reason}`,
       );
-      throw await holdForRetry(jobId, image, reason, options.deliveries);
+      const held = await holdForRetry(jobId, image, reason, options.deliveries);
+      if (held instanceof DeliveryPendingError) dropTask();
+      throw held;
     }
   } finally {
     clearInterval(timer);

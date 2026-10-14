@@ -186,6 +186,14 @@ order by created_at desc;
 - **租约**：正在查的进程每 15 秒更新 `xy2api_task_polled_at`；超过 60 秒没更新，其他进程才能接手。生图并发名额（dispatch gate）按租约计入还在查的异步任务。
 - **张数和并发（第 57 条起）**：默认不限。`LOOMIC_MAX_PENDING_IMAGE_JOBS`（每人排队加生成中的张数）和 `LOOMIC_MAX_CONCURRENT_JOBS`（每人同时发给主站的张数）默认 0 = 不限，自建站点可以设正数恢复限制；不限时 dispatch gate 仍负责把任务原子地从 queued 改成 running（防止刚取消的任务被发出），只是不计数。一个 Worker 同时处理 `WORKER_IMAGE_CONCURRENCY`（默认 32）张，所有用户合计；容器内存 3 GB。一次请求最多 500 张、50 个模型，只是防误输的结构上限。注意：不限张数时，一个用户一次排几百张会占满 Worker，其他用户的图要排在后面（先到先得）。
 - **关掉**：`XY2API_ASYNC_IMAGES=off` 后重建 API 和 Worker。已经提交的任务仍会查到结束（接着查不看开关）。
+- **主站 xy2api 0.3.0（异步 v2，第 67 条）**：本站先问一次 `GET /v1/images/async/capabilities`（每个主站缓存 10 分钟，0.2.x 回 404 就照旧），v2 时多做这些：
+  - **防重复提交**：提交带 `Idempotency-Key: xyimg.<任务ID>.<第几次发送>`。提交发出去却没收到 202（连接重置、超时）时，用同一个 Key 再提交，主站返回原来那个任务（`200` + `Idempotent-Replayed: true`），不会生成第二张，也不再记成待核对。`409 idempotency_in_progress` 时按 `Retry-After` 等一下再问。自动重试的下一次发送换新 Key，是一次新的生成。
+  - **长轮询**：查询带 `?wait=25`，主站把请求挂住，任务一结束立刻返回；以前每 3～10 秒查一次，现在一般一两次就查到结果。
+  - **任务里的计费结论**：失败的任务带 `billing.status`（主站自己的用量账本）。`not_charged` 当作普通拒绝处理（实例重启中断的 `task_interrupted` 会被 Worker 自动重发）；`pending` 再查最多 6 次（约 30 秒）等它落账；`charged` 或一直 `pending` 才记待核对，由自动核对按请求 ID 结清。
+  - **单个 Key 的任务上限**：主站对每个 Key 同时运行的异步任务有上限（用户并发 × 2，至少 2），超了提交回 `429 too_many_tasks`（任务没建，什么都没发）。Worker 把这种情况当作“等一等”：按 `Retry-After`（加随机）放回队列，不算一次发送，只受 20 分钟的任务年龄限制；卡片显示「主站正在处理的任务较多，约 N 秒后自动发送」。日志 `held back by the main site's task limit`。
+  - **用完即删**：图片存进本站（或因存储故障暂存）后，`DELETE /v1/images/tasks/<任务号>` 删掉主站对象存储里的那份，不再等桶的生命周期规则。失败只记日志。
+  - 日志：`[image-task] main site async version 2 (idempotency on, long poll 30s, delete on, billing on)`、`submit replayed`、`not charged (main site ledger)`、`deleted at the main site`。
+  - 实验室（10-14 起 lab xy2api 也是 0.3.0）的演练：`async.sh`（全部 5 项）、`throttle.sh`（14 张慢图同时提交，超过上限的被压后重发，14 张都成功、各记一次用量）、`interrupt.sh`（任务运行中杀掉主站，主站账本记未扣费，Worker 换新 Key 重发成功）。
 
 日志关键字：`[image-task]`（`accepted: task … request …`、`completed after …s (N polls)`、`failed after`、`poll N failed (N in a row)`、`resuming task`、`not stored on the job`）、`parked for the next worker`、`async image tasks unavailable`、`[task-resumer]`（`queued for the worker` 是有任务被接回，`sweep failed` 是数据库不可用）。
 
