@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-14，v0.0.12）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：结尾的示例图墙所有宽度都显示；「从一张示例开始」改为可拖动的示例球，「三种开始方式」改为吸顶的卡片轮换，窗口里的小样会演示操作过程；这些场景从 768px 宽起启用。实验环境全量回归 29 项通过；正式站只读冒烟、落地页检查（含 983px 宽和键盘）通过。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-14，v0.0.13）：正式站 [image.gguuai.com](https://image.gguuai.com) 已部署，接真实主站 gguuai.com。** 本版：「三种开始方式」按页翻，模板窗口「品牌套件」不再被裁；25 张示例提示词重写；技能市场新增 10 个技能、可按用途筛选；生图模板增加到 69 个（17 类），可以设风格、要求、比例和画质，可存「我的模板」。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -45,7 +45,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
 pnpm --filter @loomic/server test # 748 项
-pnpm --filter @loomic/web test    # 296 项
+pnpm --filter @loomic/web test    # 302 项
 pnpm --filter @loomic/shared test # 60 项
 pnpm test:workspace               # 10 项
 pnpm test:selfhost                # 37 项通过，2 项跳过（真实 nginx，在 CI 里跑）
