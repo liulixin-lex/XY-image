@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createReviewImageStore, toModelImage } from "./vision.js";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { findChatProviderError } from "../features/chat-providers/errors.js";
@@ -1047,6 +1048,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : { credentials: chatSelection.credentials }),
             ...(persistence ? { store: persistence.store } : {}),
             ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
+            // 第 67 条 审图: pictures this run's tools hand to the model,
+            // read with the user's own storage client (vision.ts).
+            ...(run.accessToken && options.createUserClient
+              ? {
+                  reviewImages: createReviewImageStore({
+                    readObject: async (bucket, path) => {
+                      const client = options.createUserClient?.(
+                        run.accessToken ?? "",
+                      ) as UserSupabaseClient | undefined;
+                      const { data, error } =
+                        (await client?.storage.from(bucket).download(path)) ??
+                        { data: null, error: null };
+                      if (error || !data) return null;
+                      return Buffer.from(await data.arrayBuffer());
+                    },
+                  }),
+                }
+              : {}),
             // 第 67 条: 思考强度 and 联网搜索 from the chat panel; one prompt
             // cache key per conversation thread (hashed: the thread id never
             // leaves this server).
@@ -1140,9 +1159,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   // { type: "image", source_type: "base64" } format is NOT
                   // recognized by @langchain/google-genai and gets serialized
                   // as raw text, blowing past the token limit.
+                  // 第 67 条: the model sees a 1536 px JPEG (a 4K PNG was
+                  // ~10 MB of base64 on every call of the conversation);
+                  // tools still get the original (attachmentRefMap below).
+                  const seen = await toModelImage(reference.bytes).catch(
+                    () => null,
+                  );
                   return {
                     type: "image_url" as const,
-                    image_url: `data:${mime};base64,${b64}`,
+                    image_url: seen?.dataUrl ?? `data:${mime};base64,${b64}`,
                   };
                 } catch {
                   return {

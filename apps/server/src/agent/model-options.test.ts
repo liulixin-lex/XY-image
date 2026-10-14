@@ -249,6 +249,19 @@ describe("a model that refuses an option", () => {
     expect(a.rebuilt).toEqual(["auto/no-search"]);
   });
 
+  it("never resends a moderation refusal without search or effort", async () => {
+    const moderation = Object.assign(new Error("Connection error."), {
+      cause: new GatewayError({
+        ...mapGatewayError({ status: 400, body: { error: { message: "Your request was rejected by the safety system.", type: "content_policy_violation" } }, responseReceived: true }),
+        diagnostics: gatewayDiagnostics({ status: 400, body: { error: { message: "Your request was rejected by the safety system." } } }),
+      }),
+    });
+    const a = agent([moderation], { webSearch: true, effort: "max" });
+    await expect(a.run()).rejects.toBeTruthy();
+    expect(a.calls()).toBe(1);
+    expect(a.rebuilt).toEqual([]);
+  });
+
   it("does not hide other refusals", async () => {
     const a = agent([refusal(400, "invalid parameter")], { webSearch: false, effort: "auto" });
     await expect(a.run()).rejects.toBeTruthy();

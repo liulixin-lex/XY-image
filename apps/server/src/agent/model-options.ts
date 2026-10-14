@@ -68,7 +68,8 @@ export function refusedChatOption(
   );
   const provider = gateway ? undefined : findChatProviderError(error);
   if (provider)
-    return provider.upstreamStatus === 400 || provider.upstreamStatus === 422
+    return (provider.upstreamStatus === 400 || provider.upstreamStatus === 422) &&
+      provider.refusedOption !== "image"
       ? provider.refusedOption
       : undefined;
   const status = gateway?.failure.diagnostics?.status;
@@ -80,7 +81,13 @@ export function refusedChatOption(
   return undefined;
 }
 
-/** An HTTP 400/422 (or the given statuses) from the main site or a provider. */
+/**
+ * An HTTP 400/422 (or the given statuses) that rejected the request itself
+ * (invalid parameters, an endpoint or model the group does not serve) from
+ * the main site or a provider. Moderation, balance, key and rate refusals
+ * never count: sending them again without an option changes nothing (the
+ * lab's [[mock:safety]] reply was sent twice before this check).
+ */
 function rejectedRequest(
   error: unknown,
   statuses: readonly number[] = [400, 422],
@@ -89,10 +96,21 @@ function rejectedRequest(
     error,
     (c): c is GatewayError => c instanceof GatewayError,
   );
-  const status = gateway
-    ? gateway.failure.diagnostics?.status
-    : findChatProviderError(error)?.upstreamStatus;
-  return status !== undefined && statuses.includes(status);
+  if (gateway) {
+    const status = gateway.failure.diagnostics?.status;
+    return (
+      ["invalid_input", "model_not_accessible"].includes(gateway.failure.code) &&
+      status !== undefined &&
+      statuses.includes(status)
+    );
+  }
+  const provider = findChatProviderError(error);
+  return (
+    provider !== undefined &&
+    ["provider_unavailable", "provider_model_not_found"].includes(provider.code) &&
+    provider.upstreamStatus !== undefined &&
+    statuses.includes(provider.upstreamStatus)
+  );
 }
 
 /**

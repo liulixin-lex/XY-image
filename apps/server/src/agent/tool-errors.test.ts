@@ -15,6 +15,7 @@ import { tool } from "langchain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { loomicAgentMiddleware } from "./deep-agent.js";
 import { adaptDeepAgentStream, toolFailureText } from "./stream-adapter.js";
 import {
   createToolErrorMiddleware,
@@ -121,6 +122,24 @@ describe("tool errors in a deep agent run", () => {
     expect(
       model.seen[1]?.some((m) => String(m.content).includes("参数不符合要求")),
     ).toBe(true);
+  });
+
+  it("still reads argument errors as such under the full Loomic middleware stack (第 67 条)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const model = new ScriptedChatModel([
+      call("strict_tool", { quality: "standard" }, "call_1"),
+      call("strict_tool", { quality: "auto" }, "call_2"),
+    ]);
+    const result = await createDeepAgent({
+      model,
+      tools: [strictTool, brokenTool, abortingTool],
+      middleware: loomicAgentMiddleware(),
+    }).invoke({ messages: [new HumanMessage("画一张")] });
+    const first = result.messages.find(
+      (m: BaseMessage) => ToolMessage.isInstance(m) && m.tool_call_id === "call_1",
+    );
+    expect(String(first?.content)).toContain("参数不符合要求");
+    expect(String(result.messages.at(-1)?.content)).toBe("完成");
   });
 
   it("still ends the run when a tool was stopped", async () => {
