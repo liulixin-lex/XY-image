@@ -7,6 +7,7 @@
  * server refuses them anyway (403).
  */
 import type {
+  AdminSearchResponse,
   AdminStorageResponse,
   DiskSample,
   OpsAlert,
@@ -18,7 +19,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { useCountUp } from "@/hooks/use-count-up";
 import { useAccount } from "@/lib/account-context";
-import { fetchAdminStorage } from "@/lib/admin-api";
+import { fetchAdminSearch, fetchAdminStorage } from "@/lib/admin-api";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -96,7 +97,7 @@ export default function AdminPage() {
     <div className="pb-16">
       <PageHeader
         title="管理"
-        description="磁盘、存储占用和告警。"
+        description="磁盘、存储占用、告警和联网搜索。"
       />
       <div className="mx-auto max-w-[1600px] gutter-x">
         {account.loading && !account.data ? null : !isAdmin ? (
@@ -122,6 +123,7 @@ export default function AdminPage() {
             onRefresh={() => void load()}
           />
         )}
+        {isAdmin ? <SearchSources token={session?.access_token ?? null} /> : null}
       </div>
     </div>
   );
@@ -251,6 +253,100 @@ function Storage({
         )}
       </section>
     </div>
+  );
+}
+
+const SOURCE_NAME: Record<string, string> = {
+  anysearch: "AnySearch",
+  searxng: "SearXNG",
+  tavily: "Tavily",
+  brave: "Brave",
+  "yahoo-jp": "Yahoo! JAPAN",
+  duckduckgo: "DuckDuckGo",
+  wikipedia: "维基百科",
+};
+
+const REFUSAL: Record<string, string> = {
+  rate: "限流",
+  quota: "额度用完",
+  auth: "密钥无效",
+  blocked: "被拦截",
+  error: "连接失败",
+};
+
+function clock(iso: string) {
+  return new Date(iso).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * 管理 › 联网搜索 (第 70 条): the free web search's sources as the API sees
+ * them, so a used-up AnySearch quota or a refused key is visible. Loads on
+ * its own: a failure here never hides the storage card.
+ */
+function SearchSources({ token }: { token: string | null }) {
+  const [data, setData] = useState<AdminSearchResponse | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    fetchAdminSearch(token)
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((error) => {
+        console.warn("[admin] search sources unavailable", error);
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+  return (
+    <section className="glass mt-4 rounded-[18px] p-6" aria-labelledby="search-title">
+      <h2 id="search-title" className="poster-label text-[17px] text-fg">
+        联网搜索
+      </h2>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-fg-muted">
+        没有自带搜索的模型用这些来源，按顺序试，前一个没结果或用不了就换下一个。
+        {data?.geminiFallback ? "全都没有结果时，改用用户主站 Key 上 Gemini 的 Google 搜索。" : ""}
+      </p>
+      {failed ? (
+        <p className="mt-3 text-[13.5px] text-fg-soft">搜索来源的状态暂时读不到。</p>
+      ) : !data ? (
+        <div className="mt-3 h-24 animate-breathe rounded-[12px]" />
+      ) : data.sources.length === 0 ? (
+        <p className="mt-3 text-[13.5px] text-fg-soft">没有配置搜索来源。</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line">
+          {data.sources.map((src) => (
+            <li key={src.name} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5 text-[13px]">
+              <span className="w-32 shrink-0 font-medium text-fg">{SOURCE_NAME[src.name] ?? src.name}</span>
+              <span
+                className={
+                  src.state === "ok"
+                    ? "text-fg-soft"
+                    : src.lastRefusal?.kind === "auth" || src.lastRefusal?.kind === "quota" || src.state === "budget"
+                      ? "text-alert"
+                      : "text-warn"
+                }
+              >
+                {src.state === "ok"
+                  ? "可用"
+                  : src.state === "budget"
+                    ? "今天的额度已用完，0 点（UTC）恢复"
+                    : `暂停到 ${src.restUntil ? clock(src.restUntil) : "稍后"}（${REFUSAL[src.lastRefusal?.kind ?? "error"] ?? "出错"}）`}
+              </span>
+              {src.today ? (
+                <span className="tabular-nums text-fg-muted">
+                  今天 {src.today.used} / {src.today.budget} 次
+                </span>
+              ) : null}
+              {src.lastOkAt ? <span className="ml-auto text-[12px] text-fg-muted">最近成功 {clock(src.lastOkAt)}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

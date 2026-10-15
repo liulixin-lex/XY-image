@@ -47,13 +47,38 @@ export type SearchProvider = {
   /** Uses an API key or the operator's own instance. */
   keyed: boolean;
   search(request: SearchRequest): Promise<SearchResult[]>;
+  /**
+   * 第 70 条: requests a day this source may take (a plan quota, e.g.
+   * AnySearch's free plan); the service stops using it for the rest of the
+   * UTC day once that many went out, and counts extract calls too.
+   */
+  dailyBudget?: number;
+  /** Reads one page through the source (AnySearch extract). */
+  extract?(request: {
+    url: string;
+    fetch: SearchFetch;
+    signal?: AbortSignal;
+  }): Promise<{ title: string; text: string }>;
 };
+
+/**
+ * Why a source refused us (第 70 条), which decides how long it rests:
+ * - "rate": too many requests just now (a "retry after N seconds" is kept);
+ * - "quota": the plan's requests are used up (rests for hours, see
+ *   service.ts), e.g. AnySearch's 1000 a day;
+ * - "auth": the key is wrong or revoked (an operator has to fix it);
+ * - "blocked": a challenge page or a refusal without a reason.
+ */
+export type SearchRefusal = "rate" | "quota" | "auth" | "blocked";
 
 /** The source refused us (challenge page, rate limit, bad key). */
 export class SearchBlockedError extends Error {
   constructor(
     readonly provider: string,
     readonly reason: string,
+    readonly kind: SearchRefusal = "blocked",
+    /** How long the source asked us to wait, when it said. */
+    readonly restMs?: number,
   ) {
     super(`${provider} refused the search (${reason})`);
     this.name = "SearchBlockedError";
@@ -220,11 +245,37 @@ export function searxngProvider(baseUrl: string): SearchProvider {
  */
 export const ANYSEARCH_BASE_URL = "https://api.anysearch.com";
 
-function anysearchRefused(status: number, message: string) {
-  return (
-    [401, 402, 403, 429].includes(status) ||
-    /rate limit|quota|unauthor|invalid (api )?key|forbidden/i.test(message)
-  );
+/**
+ * What an AnySearch refusal means (第 70 条). Its docs only spell out
+ * "Rate limited, retry after N seconds."; a used-up plan is recognised by
+ * HTTP 402 or the usual quota words (English or Chinese).
+ */
+export function anysearchRefusal(
+  status: number,
+  message: string,
+): { kind: SearchRefusal; restMs?: number } | null {
+  const after = /retry after (\d+)\s*s/i.exec(message);
+  if (after)
+    return {
+      kind: "rate",
+      restMs: Math.min(3_600_000, Math.max(30_000, Number(after[1]) * 1000)),
+    };
+  if (
+    status === 402 ||
+    /quota|credit|exceed|insufficient|balance|daily limit|limit reached|usage limit|额度|余额|次数|用完|超出/i.test(
+      message,
+    )
+  )
+    return { kind: "quota" };
+  if (
+    status === 401 ||
+    status === 403 ||
+    /unauthor|invalid (api )?key|forbidden|api key/i.test(message)
+  )
+    return { kind: "auth" };
+  if (status === 429 || /rate limit|too many/i.test(message))
+    return { kind: "rate" };
+  return null;
 }
 
 function anysearchEnvelope(res: { status: number; text: string }): Record<
@@ -246,10 +297,13 @@ function anysearchEnvelope(res: { status: number; text: string }): Record<
     !body ||
     (body.code !== undefined && body.code !== 0)
   ) {
-    if (anysearchRefused(res.status, message))
+    const refusal = anysearchRefusal(res.status, message);
+    if (refusal)
       throw new SearchBlockedError(
         "anysearch",
         `HTTP ${res.status}${message ? ` ${message}` : ""}`,
+        refusal.kind,
+        refusal.restMs,
       );
     throw new Error(
       `anysearch answered HTTP ${res.status}${message ? `: ${message}` : ""}`,
@@ -325,13 +379,20 @@ export function parseAnysearch(text: string): SearchResult[] {
   });
 }
 
+/** AnySearch's free plan: 1000 requests a day (第 69 条). */
+export const ANYSEARCH_DAILY_DEFAULT = 1000;
+
 export function anysearchProvider(
   apiKey: string,
   baseUrl = ANYSEARCH_BASE_URL,
+  dailyBudget = ANYSEARCH_DAILY_DEFAULT,
 ): SearchProvider {
   return {
     name: "anysearch",
     keyed: true,
+    dailyBudget,
+    extract: ({ url, fetch, signal }) =>
+      anysearchExtract(apiKey, url, fetch, signal, baseUrl),
     async search({ query, count, fetch, signal }) {
       const chinese = CJK.test(query);
       const res = await fetch(`${baseUrl}/v1/search`, {

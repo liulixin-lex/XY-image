@@ -1,7 +1,12 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ContextOverflowError } from "@langchain/core/errors";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  type ToolMessage,
+} from "@langchain/core/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mapProviderStatus } from "../features/chat-providers/errors.js";
@@ -14,10 +19,10 @@ import {
   projectMemorySection,
 } from "./project-memory.js";
 import {
-  RUN_BUDGET_TEXT,
+  LOOP_GUARD_TEXT,
+  createLoopGuardMiddleware,
   createReadToolRetryMiddleware,
-  createRunBudgetMiddleware,
-} from "./run-budget.js";
+} from "./run-guards.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -76,16 +81,21 @@ describe("project memory (第 67 条)", () => {
 });
 
 describe("run guard rails", () => {
-  it("stops a run that loops with a line the user can act on", async () => {
+  it("refuses the same tool call a third time in a row (第 70 条, no call budget)", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const mw = createRunBudgetMiddleware(2) as unknown as Hooks;
-    const handler = vi.fn(async () => new AIMessage({ content: "", tool_calls: [{ id: "t", name: "inspect_canvas", args: {} }] }));
-    await mw.wrapModelCall?.({}, handler);
-    await mw.wrapModelCall?.({}, handler);
-    const third = (await mw.wrapModelCall?.({}, handler)) as AIMessage;
+    const mw = createLoopGuardMiddleware() as unknown as Hooks;
+    const handler = vi.fn(async () => "ran");
+    const call = (args: Record<string, unknown>) =>
+      mw.wrapToolCall?.({ toolCall: { id: "t", name: "inspect_canvas", args } }, handler);
+    expect(await call({ a: 1, b: 2 })).toBe("ran");
+    // The same arguments in another key order are the same call.
+    expect(await call({ b: 2, a: 1 })).toBe("ran");
+    const third = (await call({ a: 1, b: 2 })) as ToolMessage;
     expect(handler).toHaveBeenCalledTimes(2);
-    expect(third.content).toBe(RUN_BUDGET_TEXT);
-    expect(third.tool_calls ?? []).toHaveLength(0);
+    expect(String(third.content)).toBe(LOOP_GUARD_TEXT);
+    // Anything in between starts the count again.
+    expect(await call({ a: 2 })).toBe("ran");
+    expect(await call({ a: 1, b: 2 })).toBe("ran");
   });
 
   it("tries a read-only tool again after a dropped connection, never a paid one", async () => {

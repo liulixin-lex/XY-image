@@ -21,6 +21,7 @@ const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
  *   /memories/         → StoreBackend (PostgresStore, per-project)
  *   /skills/           → FilesystemBackend (shared, read-only system skills)
  *   /workspace-skills/ → StoreBackend (user-installed workspace skills, optional)
+ *   /history/          → StoreBackend (summarised turns, 第 70 条)
  *   default            → StateBackend (ephemeral virtual files)
  */
 export function createProductionBackendFactory(
@@ -53,6 +54,11 @@ export function createProductionBackendFactory(
       }),
       "/workspace/": new StoreBackend(stateAndStore, {
         namespace: ["projects", canvasId, "workspace"],
+      }),
+      // 第 70 条: turns the context window summarised (context-window.ts),
+      // one file per conversation, readable with read_file.
+      "/history/": new StoreBackend(stateAndStore, {
+        namespace: ["projects", canvasId, "history"],
       }),
       "/skills/": skillsBackend,
     };

@@ -21,6 +21,7 @@ export function ChatPanelHeader({
   onNewChat,
   onDeleteSession,
   onCollapse,
+  extra,
 }: {
   sessions: ChatSessionSummary[];
   activeSessionId: string | null;
@@ -30,6 +31,8 @@ export function ChatPanelHeader({
   onNewChat: () => void;
   onDeleteSession: (sessionId: string) => void;
   onCollapse: () => void;
+  /** 第 70 条: the conversation's context meter, before the collapse button. */
+  extra?: React.ReactNode;
 }) {
   return (
     <div className="flex min-h-14 items-center justify-between gap-2 border-b border-line pr-2 pl-4">
@@ -47,6 +50,8 @@ export function ChatPanelHeader({
           />
         )}
       </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+      {extra}
       <button
         type="button"
         onClick={onCollapse}
@@ -60,6 +65,7 @@ export function ChatPanelHeader({
           strokeWidth={1.75}
         />
       </button>
+      </div>
     </div>
   );
 }

@@ -4,17 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mutateCanvas } from "../features/canvas/canvas-mutation.js";
 import { createLoomicDeepAgent } from "./deep-agent.js";
+import { defaultExecutionEffort, executionEffortFor } from "@loomic/shared";
 import {
   createChatOptionsMiddleware,
-  executionEffort,
   followsToolResult,
   planningEffort,
+  withoutReasoning,
 } from "./model-options.js";
-import {
-  RUN_WRAP_UP_NOTE,
-  createRunBudgetMiddleware,
-  createToolDietMiddleware,
-} from "./run-budget.js";
+import { RUN_RECURSION_LIMIT, createToolDietMiddleware } from "./run-guards.js";
 import { SKILLS_INLINE_BUDGET, skillsSection } from "./skills-prompt.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -26,25 +23,26 @@ const custom = (model: string) => ({
   model,
 });
 
-describe("思考强度 that does not run away (第 69 条)", () => {
-  it("thinks at 中 for 自动 when reading the request, at 低 after tool results", () => {
+describe("思考强度 that does not run away (第 69 / 70 条)", () => {
+  it("thinks at 中 for 自动 when reading the request", () => {
     expect(planningEffort(main("gpt-6.1-sol"), "auto")).toBe("medium");
-    expect(executionEffort(main("gpt-6.1-sol"), "medium", "auto")).toBe("low");
+    expect(planningEffort(main("gpt-6.1-sol"), "max")).toBe("max");
     // Gemini on the main site and personal providers keep sending nothing.
     expect(planningEffort(main("gemini-3.8-flash"), "auto")).toBe("auto");
     expect(planningEffort(custom("deepseek-v4"), "auto")).toBe("auto");
-    expect(executionEffort(custom("deepseek-v4"), "auto", "auto")).toBe("auto");
   });
 
-  it("uses a chosen level for the first call and at most 中 afterwards", () => {
-    expect(planningEffort(main("gpt-6.1-sol"), "max")).toBe("max");
-    expect(executionEffort(main("gpt-6.1-sol"), "max", "max")).toBe("medium");
-    expect(executionEffort(main("gpt-6.1-sol"), "high", "high")).toBe("medium");
-    expect(executionEffort(main("gpt-6.1-sol"), "low", "low")).toBe("low");
-    expect(executionEffort(main("gpt-6.1-sol"), "medium", "medium")).toBe(
-      "medium",
-    );
-    expect(executionEffort(custom("x"), "high", "high")).toBe("medium");
+  it("runs the steps after a tool result at 低 unless the user set the execution level", () => {
+    expect(defaultExecutionEffort(main("gpt-6.1-sol"))).toBe("low");
+    expect(defaultExecutionEffort(custom("deepseek-v4"))).toBe("low");
+    // Models without levels stay at 自动.
+    expect(defaultExecutionEffort(main("gemini-3.8-flash"))).toBe("auto");
+    expect(defaultExecutionEffort(main("grok-code-fast"))).toBe("auto");
+    expect(executionEffortFor(main("gpt-6.1-sol"), "high")).toBe("high");
+    // A saved level the model does not take falls back to its default.
+    expect(executionEffortFor(main("gemini-3.8-flash"), "high")).toBe("auto");
+    expect(executionEffortFor(custom("x"), "max")).toBe("low");
+    expect(executionEffortFor(main("gpt-6.1-sol"), null)).toBe("low");
   });
 
   it("knows a call that follows a tool result", () => {
@@ -61,85 +59,100 @@ describe("思考强度 that does not run away (第 69 条)", () => {
     ).toBe(true);
   });
 
-  it("switches to the capped model only for calls after a tool result", async () => {
+  const target = (
+    name: string,
+    effort: "low" | "medium" | "high" | "auto",
+    built: string[],
+  ) => ({
+    ref: main(name),
+    label: name,
+    effort,
+    search: "off" as const,
+    rebuild: (sent: string, hosted: boolean) => {
+      built.push(`${name}:${sent}${hosted ? "" : "/no-search"}`);
+      return new FakeListChatModel({ responses: [name] }) as never;
+    },
+  });
+  const wrap = (middleware: unknown) => (messages: unknown[], handler: unknown) =>
+    (
+      middleware as {
+        wrapModelCall: (r: unknown, h: unknown) => Promise<unknown>;
+      }
+    ).wrapModelCall({ messages, tools: [], model: "agent-model" }, handler);
+  const afterTool = (id: string) => [
+    new HumanMessage("海报"),
+    new ToolMessage({ content: "done", tool_call_id: id }),
+  ];
+
+  it("runs the chat model at its execution level after a tool result", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const built: string[] = [];
-    const middleware = createChatOptionsMiddleware({
-      ref: main("gpt-6.1-sol"),
-      label: "gpt-6.1-sol",
-      effort: "high",
-      chosen: "high",
-      search: "off",
-      rebuild: (effort, hosted) => {
-        built.push(`${effort}${hosted ? "" : "/no-search"}`);
-        return new FakeListChatModel({ responses: ["x"] }) as never;
-      },
-    });
+    const call = wrap(
+      createChatOptionsMiddleware({
+        planning: target("gpt-6.1-sol", "high", built),
+        execution: { ...target("gpt-6.1-sol", "low", built), separate: false },
+      }),
+    );
     const seen: unknown[] = [];
     const handler = vi.fn(async (request: { model?: unknown }) => {
       seen.push(request.model);
       return new AIMessage("ok");
     });
-    const call = (messages: unknown[]) =>
-      (
-        middleware as unknown as {
-          wrapModelCall: (r: unknown, h: unknown) => Promise<unknown>;
-        }
-      ).wrapModelCall({ messages, tools: [], model: "agent-model" }, handler);
-    await call([new HumanMessage("海报")]);
-    await call([
-      new HumanMessage("海报"),
-      new ToolMessage({ content: "done", tool_call_id: "a" }),
-    ]);
-    await call([
-      new HumanMessage("海报"),
-      new ToolMessage({ content: "done", tool_call_id: "b" }),
-    ]);
+    await call([new HumanMessage("海报")], handler);
+    await call(afterTool("a"), handler);
+    await call(afterTool("b"), handler);
     expect(seen[0]).toBe("agent-model");
     expect(seen[1]).not.toBe("agent-model");
     expect(seen[2]).toBe(seen[1]); // built once, reused
-    expect(built).toEqual(["medium/no-search"]);
+    expect(built).toEqual(["gpt-6.1-sol:low/no-search"]);
+  });
+
+  it("hands the steps to the execution model, without the other model's reasoning", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const built: string[] = [];
+    const call = wrap(
+      createChatOptionsMiddleware({
+        planning: target("gpt-6.1-sol", "medium", built),
+        execution: { ...target("gpt-5.4-mini", "low", built), separate: true },
+      }),
+    );
+    const requests: Array<{ model?: unknown; messages: unknown[] }> = [];
+    const handler = vi.fn(async (request: { model?: unknown; messages: unknown[] }) => {
+      requests.push(request);
+      return new AIMessage("ok");
+    });
+    const thought = new AIMessage({
+      content: [
+        { type: "reasoning", reasoning: "先想想" },
+        { type: "text", text: "我来搭" },
+      ],
+      additional_kwargs: { reasoning: { id: "rs_1", encrypted_content: "x" } },
+      tool_calls: [{ id: "a", name: "canvas_workflow", args: {} }],
+    });
+    await call([new HumanMessage("海报")], handler);
+    await call(
+      [new HumanMessage("海报"), thought, new ToolMessage({ content: "done", tool_call_id: "a" })],
+      handler,
+    );
+    expect(requests[0]?.model).toBe("agent-model");
+    expect(built).toEqual(["gpt-5.4-mini:low/no-search"]);
+    const sent = requests[1]?.messages[1] as AIMessage;
+    expect(JSON.stringify(sent.content)).not.toContain("reasoning");
+    expect(sent.additional_kwargs.reasoning).toBeUndefined();
+    expect(sent.tool_calls?.[0]?.name).toBe("canvas_workflow");
+  });
+
+  it("keeps messages without reasoning as they are", () => {
+    const plain = [new HumanMessage("a"), new AIMessage("b")];
+    const out = withoutReasoning(plain);
+    expect(out[0]).toBe(plain[0]);
+    expect(out[1]).toBe(plain[1]);
   });
 });
 
-describe("steps and tools of a run (第 69 条)", () => {
-  it("asks the model to wrap up without tools near the budget, then stops", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const middleware = createRunBudgetMiddleware(4, 3) as unknown as {
-      wrapModelCall: (r: unknown, h: unknown) => Promise<unknown>;
-    };
-    const requests: Array<{
-      tools: unknown[];
-      systemMessage: { content: unknown };
-    }> = [];
-    const handler = async (request: {
-      tools: unknown[];
-      systemMessage: { content: unknown };
-    }) => {
-      requests.push(request);
-      return new AIMessage("ok");
-    };
-    const { SystemMessage } = await import("@langchain/core/messages");
-    const request = {
-      tools: [{ name: "t" }],
-      systemMessage: new SystemMessage("base"),
-      messages: [],
-    };
-    await middleware.wrapModelCall(request, handler);
-    await middleware.wrapModelCall(request, handler);
-    await middleware.wrapModelCall(request, handler);
-    await middleware.wrapModelCall(request, handler);
-    const stopped = (await middleware.wrapModelCall(
-      request,
-      handler,
-    )) as AIMessage;
-    expect(requests[1]?.tools).toHaveLength(1);
-    expect(requests[2]?.tools).toEqual([]);
-    expect(JSON.stringify(requests[2]?.systemMessage.content)).toContain(
-      RUN_WRAP_UP_NOTE.slice(0, 20),
-    );
-    expect(requests).toHaveLength(4);
-    expect(String(stopped.content)).toContain("步骤太多");
+describe("steps and tools of a run (第 69 / 70 条)", () => {
+  it("has no budget of model calls, only LangGraph's safety limit (第 70 条)", () => {
+    expect(RUN_RECURSION_LIMIT).toBeGreaterThanOrEqual(10_000);
   });
 
   it("hides ls, glob and grep from the model", async () => {

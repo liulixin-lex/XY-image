@@ -49,7 +49,10 @@
 //   Chat requests record what they asked for (第 67 条): `chatOptions` in
 //   /__mock/requests has reasoning / reasoning_effort, whether a
 //   prompt_cache_key came (never its value), stream_options and the hosted
-//   tool types offered.
+//   tool types offered. 第 70 条: `picks` lists the 「+」 menu blocks the
+//   user's message carried (human_tool_choice, human_targets, …), and
+//   `summary` marks the context window's summary call, which gets a fixed
+//   （模拟摘要） reply.
 //   [[mock:badtool]]     in a chat message: the scripted model first calls
 //                        generate_image with an argument the tool's schema
 //                        rejects (placementX: "left"), reads the error the
@@ -348,6 +351,9 @@ const ARGUMENT_ERROR = /参数不符合要求/;
 // the user asks for an image and the tool is offered, otherwise plain text.
 // `toolOutputs` are the tool results since the last user message.
 function planReply({ lastRole, lastText: fullText, toolNames, toolOutputs = [] }) {
+  // 第 70 条: the context window's summary call (agent/context-window.ts).
+  if (fullText.startsWith(SUMMARY_PROMPT_HEAD))
+    return { kind: "text", text: "（模拟摘要）用户在 lab 里测试上下文压缩，前面的长文是测试材料。" };
   const lastText = userWords(fullText);
   const d = directives(fullText);
   // 第 69 条: build and run a node workflow.
@@ -467,6 +473,13 @@ function reviewPlan({ lastText, lastContent, lastRole, toolNames, ctx, originalT
   return null;
 }
 
+const SUMMARY_PROMPT_HEAD = "你在为一个 AI 设计助手压缩对话历史";
+/** 第 70 条 指定: which pick blocks the user's message carried. */
+const PICK_TAGS = ["human_tool_choice", "human_targets", "human_brand_kit_choice", "human_skill_mentions"];
+function picksOf(text) {
+  return PICK_TAGS.filter((tag) => text.includes(`<${tag}`));
+}
+
 function chatOptionsOf(body) {
   const hosted = (Array.isArray(body.tools) ? body.tools : [])
     .filter((t) => t && typeof t.type === "string" && t.type !== "function" && !t.name)
@@ -490,6 +503,8 @@ async function handleChatCompletions(req, res, body, ctx) {
   const lastText = textOf(lastUser?.content);
   const d = directives(lastText);
   ctx.directives = d;
+  ctx.picks = picksOf(lastText);
+  ctx.summary = lastText.startsWith(SUMMARY_PROMPT_HEAD);
   if (d.delay) await sleep(Number(d.delay));
   if (d.status)
     return openaiError(
@@ -637,6 +652,8 @@ async function handleResponses(req, res, body, ctx) {
   const { lastRole, lastText, toolOutputs } = responsesInputText(body.input);
   const d = directives(lastText);
   ctx.directives = d;
+  ctx.picks = picksOf(lastText);
+  ctx.summary = lastText.startsWith(SUMMARY_PROMPT_HEAD);
   if (d.delay) await sleep(Number(d.delay));
   if (d.status)
     return openaiError(

@@ -67,6 +67,12 @@ export function createDevelopmentBackend(
       "/skills/": skillsBackend,
     };
 
+    // 第 70 条: summarised turns (context-window.ts), as in production.
+    if (options?.canvasId && stateAndStore.store)
+      routes["/history/"] = new StoreBackend(stateAndStore, {
+        namespace: ["projects", options.canvasId, "history"],
+      });
+
     // In dev mode, workspace skills are served from the Store when available.
     if (options?.hasWorkspaceSkills && options.canvasId && stateAndStore.store) {
       routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {

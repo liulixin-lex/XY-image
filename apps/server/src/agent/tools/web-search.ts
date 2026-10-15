@@ -26,7 +26,8 @@ import { describeErrorForLog } from "../../utils/error-sanitizer.js";
  * - mode "gemini": the query goes to Gemini's own Google Search in a
  *   separate call (features/web-search/gemini-grounded.ts); if that fails
  *   or does not ground, the free search below answers instead.
- * - mode "free": the free search (features/web-search/service.ts).
+ * - mode "free": the free search (features/web-search/service.ts), then
+ *   (第 70 条) Gemini's Google Search on the user's key when it is empty.
  *
  * Both return JSON the model reads and the chat shows as a 联网搜索 block
  * (stream-adapter.ts webToolDisplay keeps only the query and sources). A
@@ -60,6 +61,13 @@ export type WebToolsOptions = {
     url: string,
     signal?: AbortSignal,
   ) => Promise<{ title: string; text: string }>;
+  /**
+   * 第 70 条: the last resort of mode "free". When every free source came
+   * back empty (AnySearch's quota used up, the key-less engines refusing our
+   * address), Gemini's Google Search on the user's main-site key answers,
+   * billed like a short chat. Not set: nothing found is reported as such.
+   */
+  fallback?: { baseUrl: string; apiKey: string; model: string };
 };
 
 /** Direct-read failures a page-reading service may still get past. */
@@ -163,6 +171,37 @@ export function createWebTools(options: WebToolsOptions): StructuredTool[] {
           sources: [],
           note: "这个回答没有网页来源，可能过时。告诉用户这是未经核实的信息。",
         });
+      if (!outcome.results.length && !grounded && options.fallback) {
+        try {
+          const last = await geminiSearch({
+            ...options.fallback,
+            query,
+            ...(signal ? { signal } : {}),
+          });
+          console.info(
+            `[web-search] q(len=${query.length}) → free sources empty (${outcome.skipped.join("; ") || "none"}); gemini fallback ${last.grounded ? `${last.sources.length} source(s)` : "not grounded"}`,
+          );
+          if (last.grounded || last.answer)
+            return json({
+              summary: last.grounded
+                ? `搜索「${query.slice(0, 40)}」，看了 ${last.sources.length} 个来源`
+                : `搜索「${query.slice(0, 40)}」没有找到网页来源`,
+              query,
+              via: "gemini",
+              answer: last.answer,
+              ...(last.grounded ? { searches: last.queries } : {}),
+              sources: last.sources,
+              note: last.grounded
+                ? "免费搜索来源这会儿用不了，这次用的是 Gemini 的 Google 搜索，可以直接引用这些来源。"
+                : "这个回答没有网页来源，可能过时。告诉用户这是未经核实的信息。",
+            });
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          console.warn(
+            `[web-search] gemini fallback failed (${describeErrorForLog(error)})`,
+          );
+        }
+      }
       if (!outcome.results.length)
         return json({
           summary: `搜索「${query.slice(0, 40)}」没有结果`,

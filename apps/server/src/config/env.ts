@@ -109,6 +109,18 @@ export type ServerEnv = {
   webSearchSearxngUrl?: string;
   /** 第 69 条: LOOMIC_WEB_SEARCH_ANYSEARCH_KEY, tried right after SearXNG. */
   webSearchAnysearchKey?: string;
+  /**
+   * 第 70 条: LOOMIC_WEB_SEARCH_ANYSEARCH_DAILY, requests a day AnySearch may
+   * take (searches and page reads; default 1000, the free plan). Past it,
+   * and while AnySearch says the quota is used up, the next sources answer.
+   */
+  webSearchAnysearchDaily?: number;
+  /**
+   * 第 70 条: LOOMIC_WEB_SEARCH_GEMINI_FALLBACK (default "on"): when every
+   * free source comes back empty, search_web asks Gemini's Google Search on
+   * the user's own main-site key (billed like a short chat).
+   */
+  webSearchGeminiFallback?: "on" | "off";
   webSearchTavilyKey?: string;
   webSearchBraveKey?: string;
   webSearchKeyless?: "on" | "off";
@@ -334,6 +346,13 @@ export function loadServerEnv(
       ? { webSearchBraveKey: source.LOOMIC_WEB_SEARCH_BRAVE_KEY.trim() }
       : {}),
     webSearchKeyless: source.LOOMIC_WEB_SEARCH_KEYLESS === "off" ? "off" : "on",
+    webSearchAnysearchDaily: integer(
+      "LOOMIC_WEB_SEARCH_ANYSEARCH_DAILY",
+      1000,
+      10_000_000,
+    ),
+    webSearchGeminiFallback:
+      source.LOOMIC_WEB_SEARCH_GEMINI_FALLBACK === "off" ? "off" : "on",
     xy2apiAsyncImageUsers: (source.XY2API_ASYNC_IMAGE_USERS ?? "")
       .split(",")
       .map((value) => value.trim())

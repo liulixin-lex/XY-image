@@ -1,4 +1,4 @@
-import { AIMessage } from "@langchain/core/messages";
+import { ToolMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
@@ -6,54 +6,63 @@ import { describeErrorForLog } from "../utils/error-sanitizer.js";
 /**
  * 第 67 条 tool calling: guard rails around the agent loop.
  *
- * - A per-run budget of model calls. A confused model can loop on the same
- *   tool for ever (deepagents sets recursionLimit 10 000); past the budget
- *   the run stops with a line the user can act on instead of spinning.
+ * - 第 70 条: no budget of model calls any more (it was 60, then 30): a run
+ *   is held by its context window instead (context-window.ts), and a model
+ *   that repeats the very same tool call is stopped by the loop guard below.
+ *   The graph's recursion limit is RUN_RECURSION_LIMIT, as in deepagents.
  * - Read-only tools are tried again on a passing failure (a dropped database
  *   connection), never the ones that write or cost money.
- * - Context overflow: see utils/context-overflow.ts.
+ * - Context overflow: see utils/context-overflow.ts and context-window.ts.
  */
 
 /**
- * Model calls one run may make. Typical runs take 3–8; 第 69 条 halved it
- * (60 → 30): a design request that needs more steps than that is going in
- * circles, and workflows are built and run in one call each.
+ * LangGraph supersteps one run may take: a safety net only (a model call
+ * plus its tools is two to four). Without it LangGraph's default of 25 ends
+ * a run after about eight tool rounds (v0.0.15 had that, since 第 69 条 built
+ * the agent with createAgent instead of createDeepAgent).
  */
-export const RUN_MODEL_CALL_BUDGET = 30;
+export const RUN_RECURSION_LIMIT = 10_000;
+
+/** The same call (tool + arguments) this many times in a row is refused. */
+export const LOOP_REPEAT_LIMIT = 3;
+
+export const LOOP_GUARD_TEXT =
+  "这个调用和前两次完全一样（同一个工具、同样的参数），结果不会变，这次没有执行。不要再重复它：换个做法，或者直接把现在的情况告诉用户。";
+
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => [k, stable(v)]),
+    );
+  return value;
+}
+
 /**
- * From this call on the model gets no tools and a note to wrap up, so a long
- * run ends with a real answer about what was done, not with the budget line.
+ * Refuses a tool call identical to the ones right before it (from the
+ * LOOP_REPEAT_LIMIT-th on). Any other call in between resets the count, so
+ * "look, change, look again" is fine. One guard per agent, i.e. per run.
  */
-export const RUN_WRAP_UP_AT = 25;
-
-export const RUN_BUDGET_TEXT =
-  "这一轮的步骤太多了，我先停在这里。已经完成的改动都保留着；你可以告诉我接下来先做哪一步，我接着来。";
-
-export const RUN_WRAP_UP_NOTE =
-  "（系统提示：这一轮已经执行了很多步。现在不要再调用任何工具，直接用已有的结果简短回复用户：做了什么、结果在哪、还差什么。）";
-
-export function createRunBudgetMiddleware(
-  limit = RUN_MODEL_CALL_BUDGET,
-  wrapUpAt = RUN_WRAP_UP_AT,
-) {
-  let calls = 0;
+export function createLoopGuardMiddleware(limit = LOOP_REPEAT_LIMIT) {
+  let last = "";
+  let repeats = 0;
   return createMiddleware({
-    name: "LoomicRunBudget",
-    wrapModelCall: async (request, handler) => {
-      calls += 1;
-      if (calls > limit) {
-        console.warn(`[agent-model] run stopped after ${limit} model calls`);
-        return new AIMessage({ content: RUN_BUDGET_TEXT });
-      }
-      if (calls >= wrapUpAt) {
-        if (calls === wrapUpAt)
-          console.warn(
-            `[agent-model] ${calls} model calls: asking the model to wrap up without tools`,
-          );
-        return handler({
-          ...request,
-          tools: [],
-          systemMessage: request.systemMessage.concat(RUN_WRAP_UP_NOTE),
+    name: "LoomicLoopGuard",
+    wrapToolCall: async (request, handler) => {
+      const call = request.toolCall;
+      const signature = `${call.name}:${JSON.stringify(stable(call.args ?? {}))}`;
+      repeats = signature === last ? repeats + 1 : 1;
+      last = signature;
+      if (repeats >= limit) {
+        console.warn(
+          `[agent-tools] ${call.name} called ${repeats} times in a row with the same arguments; not run`,
+        );
+        return new ToolMessage({
+          content: LOOP_GUARD_TEXT,
+          tool_call_id: call.id ?? "",
+          name: call.name,
         });
       }
       return handler(request);

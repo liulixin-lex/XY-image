@@ -1047,3 +1047,35 @@ export async function importSkillFromUrl(
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as SkillDetailResponse;
 }
+
+// --- 第 70 条 上下文: the chat panel's meter and 压缩 ---
+
+export type SessionContext = {
+  usedTokens: number;
+  windowTokens: number;
+  compacted: boolean;
+};
+
+export async function fetchSessionContext(
+  accessToken: string,
+  sessionId: string,
+): Promise<SessionContext> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/sessions/${encodeURIComponent(sessionId)}/context`,
+    { headers: authHeaders(accessToken), cache: "no-store" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SessionContext;
+}
+
+export async function compactSessionContext(
+  accessToken: string,
+  sessionId: string,
+): Promise<SessionContext & { before?: number }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/sessions/${encodeURIComponent(sessionId)}/compact`,
+    { method: "POST", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as SessionContext & { before?: number };
+}

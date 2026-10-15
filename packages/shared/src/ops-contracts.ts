@@ -57,3 +57,31 @@ export const adminAlertsResponseSchema = z.object({
   open: z.array(opsAlertSchema),
 });
 export type AdminAlertsResponse = z.infer<typeof adminAlertsResponseSchema>;
+
+// 管理 › 联网搜索 (第 70 条): the free web search's sources as the API process
+// sees them (apps/server/src/features/web-search/service.ts). No keys, no
+// queries.
+export const searchSourceStatusSchema = z.object({
+  name: z.string(),
+  keyed: z.boolean(),
+  state: z.enum(["ok", "resting", "budget"]),
+  restUntil: z.string().optional(),
+  today: z.object({ used: z.number(), budget: z.number() }).optional(),
+  lastRefusal: z
+    .object({
+      kind: z.enum(["rate", "quota", "auth", "blocked", "error"]),
+      reason: z.string(),
+      at: z.string(),
+    })
+    .optional(),
+  lastOkAt: z.string().optional(),
+});
+export type SearchSourceStatus = z.infer<typeof searchSourceStatusSchema>;
+
+export const adminSearchResponseSchema = z.object({
+  sources: z.array(searchSourceStatusSchema),
+  /** search_web asks Gemini's Google Search when every source is empty. */
+  geminiFallback: z.boolean(),
+});
+export type AdminSearchResponse = z.infer<typeof adminSearchResponseSchema>;
+

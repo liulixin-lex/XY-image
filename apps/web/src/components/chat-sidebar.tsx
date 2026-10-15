@@ -31,7 +31,13 @@ import {
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAccount, useImageModels } from "../lib/account-context";
 import { fetchBrandKit } from "../lib/brand-kit-api";
-import { fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
+import {
+  type SessionContext,
+  compactSessionContext,
+  fetchSessionContext,
+  fetchWorkspaceSkills,
+  saveMessage,
+} from "../lib/server-api";
 import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -42,6 +48,8 @@ import {
   type MessageMentionPickerItem,
 } from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
+import { ContextMeter } from "./chat/context-meter";
+import { type CanvasNodeItem, PickMenu, mentionKey } from "./chat/pick-menu";
 import { readChatOptions } from "../hooks/use-chat-options";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
@@ -68,6 +76,8 @@ type ChatSidebarProps = {
   initialSessionId?: string | undefined;
   onSessionChange?: (sessionId: string) => void;
   onRequestCanvasImages?: () => CanvasImageItem[];
+  /** 第 70 条 指定 › 目标: the canvas's nodes, read when the 「+」 menu opens. */
+  onRequestCanvasNodes?: () => CanvasNodeItem[];
   currentBrandKitId?: string | null;
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
@@ -107,6 +117,7 @@ export function ChatSidebar({
   initialSessionId,
   onSessionChange,
   onRequestCanvasImages,
+  onRequestCanvasNodes,
   currentBrandKitId,
   ws,
   selectedCanvasElements,
@@ -146,6 +157,9 @@ export function ChatSidebar({
   // ── Mention & attachment state ──
   const [atQuery, setAtQuery] = useState<string | null>(null);
   const [messageMentions, setMessageMentions] = useState<MessageMention[]>([]);
+  // 第 70 条 上下文: the active conversation's meter, and 压缩 in progress.
+  const [contextUsage, setContextUsage] = useState<SessionContext | null>(null);
+  const [compacting, setCompacting] = useState(false);
   const [brandKitMentionItems, setBrandKitMentionItems] = useState<
     BrandKitMentionItem[]
   >([]);
@@ -184,6 +198,21 @@ export function ChatSidebar({
   const prevConnectedRef = useRef(false);
 
   const { toast: showToast } = useToast();
+
+  // 第 70 条 上下文: the meter of the conversation on screen.
+  const onContextEvent = useCallback(
+    (event: Extract<StreamEvent, { type: "context.updated" }>) => {
+      setContextUsage((prev) => ({
+        usedTokens: event.usedTokens,
+        windowTokens: event.windowTokens,
+        compacted: Boolean(prev?.compacted) || event.compacted,
+      }));
+      if (event.compacted)
+        showToast("对话较长，较早的部分已自动压缩成摘要", "info");
+    },
+    [showToast],
+  );
+
 
   const {
     attachments: imageAttachments,
@@ -464,6 +493,13 @@ export function ChatSidebar({
             slug: mention.slug,
           };
         }
+        // 第 70 条 指定: targets, a whole brand kit, tools.
+        if (
+          mention.mentionType === "canvas-node" ||
+          mention.mentionType === "brand-kit" ||
+          mention.mentionType === "tool"
+        )
+          return { type: "mention", ...mention } as ContentBlock;
         return {
           type: "mention",
           mentionType: "brand-kit-asset",
@@ -559,6 +595,7 @@ export function ChatSidebar({
 
           // Apply event to messages (single source of truth — shared with reconnect)
           applyStreamEvent(event, assistantId, currentSessionId);
+          if (event.type === "context.updated") onContextEvent(event);
 
           // Forward event to parent for fallback job polling (timed-out generation recovery)
           onStreamEvent?.(event);
@@ -745,6 +782,7 @@ export function ChatSidebar({
       streaming,
       canvasId,
       applyStreamEvent,
+      onContextEvent,
       updateSessionMessages,
       onImageGenerated,
       onCanvasSync,
@@ -845,6 +883,66 @@ export function ChatSidebar({
       ),
     );
   }, []);
+
+  // 第 70 条 指定: the 「+」 menu adds or removes a pick; one brand kit at a
+  // time (a later one replaces the earlier).
+  const handleTogglePick = useCallback((mention: MessageMention) => {
+    setMessageMentions((prev) => {
+      const key = mentionKey(mention);
+      if (prev.some((item) => mentionKey(item) === key))
+        return prev.filter((item) => mentionKey(item) !== key);
+      const rest =
+        mention.mentionType === "brand-kit"
+          ? prev.filter((item) => item.mentionType !== "brand-kit")
+          : prev;
+      return [...rest, mention];
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!activeSessionId || !accessToken) {
+      setContextUsage(null);
+      return;
+    }
+    let cancelled = false;
+    fetchSessionContext(accessToken, activeSessionId)
+      .then((usage) => {
+        if (!cancelled) setContextUsage(usage);
+      })
+      .catch((error) => {
+        console.warn("[chat-sidebar] context usage unavailable", error);
+        if (!cancelled) setContextUsage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, accessToken]);
+
+  const handleCompact = useCallback(async () => {
+    const sessionId = activeSessionIdRef.current;
+    if (!sessionId || compacting) return;
+    setCompacting(true);
+    try {
+      const result = await compactSessionContext(accessTokenRef.current, sessionId);
+      setContextUsage({
+        usedTokens: result.usedTokens,
+        windowTokens: result.windowTokens,
+        compacted: result.compacted || Boolean(contextUsage?.compacted),
+      });
+      showToast(
+        result.compacted ? "已压缩，较早的对话换成了摘要" : "对话还很短，不用压缩",
+        "success",
+      );
+    } catch (error) {
+      console.warn("[chat-sidebar] compaction failed", error);
+      showToast(
+        error instanceof Error && error.message ? error.message : "压缩没有完成，稍后再试",
+        "error",
+      );
+    } finally {
+      setCompacting(false);
+    }
+  }, [activeSessionIdRef, accessTokenRef, compacting, contextUsage, showToast]);
 
   // ── Auto-send initial prompt ──
   useEffect(() => {
@@ -972,6 +1070,7 @@ export function ChatSidebar({
 
             applyStreamEvent(evt, assistantId, sessionId);
             onStreamEvent?.(evt);
+            if (evt.type === "context.updated") onContextEvent(evt);
 
             // Fire canvas insertion callbacks for artifacts arriving after reconnect.
             // Skip if the backend already inserted the element (elementId in output).
@@ -1018,6 +1117,7 @@ export function ChatSidebar({
     canvasId,
     sessionsLoading,
     applyStreamEvent,
+    onContextEvent,
     onStreamEvent,
     onImageGenerated,
     onCanvasSync,
@@ -1064,6 +1164,16 @@ export function ChatSidebar({
         onNewChat={handleNewChat}
         onDeleteSession={handleDeleteSession}
         onCollapse={onToggle}
+        extra={
+          activeSessionId ? (
+            <ContextMeter
+              usage={contextUsage}
+              onCompact={() => void handleCompact()}
+              compacting={compacting}
+              running={streaming}
+            />
+          ) : null
+        }
       />
 
       {/* Connection banner: a dropped connection, or a slow first connect */}
@@ -1132,6 +1242,17 @@ export function ChatSidebar({
           mentions={messageMentions}
           onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
+          pickMenu={({ addImages }) => (
+            <PickMenu
+              accessToken={accessToken}
+              picked={messageMentions}
+              onToggle={handleTogglePick}
+              skills={skillMentionItems}
+              disabled={streaming}
+              {...(addImages ? { onAddImages: addImages } : {})}
+              {...(onRequestCanvasNodes ? { requestNodes: onRequestCanvasNodes } : {})}
+            />
+          )}
         />
       </div>
     </>

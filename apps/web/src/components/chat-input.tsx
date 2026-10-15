@@ -30,6 +30,20 @@ type ChatInputProps = {
   mentions?: MessageMention[];
   onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
+  /**
+   * 第 70 条: the 「+」 menu (添加图片 and 指定). It takes the picture button's
+   * place, so the toolbar keeps room for the model name; `addImages` opens
+   * the file picker.
+   */
+  pickMenu?: (actions: { addImages?: () => void }) => React.ReactNode;
+};
+
+/** What a chip above the input says it is (第 70 条 指定 included). */
+const MENTION_KIND: Partial<Record<MessageMention["mentionType"], string>> = {
+  "canvas-node": "目标",
+  skill: "技能",
+  "brand-kit": "品牌套件",
+  tool: "工具",
 };
 
 export type ChatInputHandle = {
@@ -54,6 +68,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   mentions,
   onRemoveMention,
   selectedCanvasElements,
+  pickMenu,
 }, ref) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -239,10 +254,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 type="button"
                 onClick={() => onRemoveMention(mention)}
                 className="inline-flex items-center gap-1 rounded-[8px] bg-panel px-2 py-1 text-[11.5px] text-fg shadow-subtle transition-colors hover:bg-acc-soft focus-visible:outline-2 focus-visible:outline-acc"
-                title="移除引用"
-                aria-label={`移除引用 ${mention.label}`}
+                title={MENTION_KIND[mention.mentionType] ? "取消指定" : "移除引用"}
+                aria-label={`${MENTION_KIND[mention.mentionType] ? "取消指定" : "移除引用"} ${mention.label}`}
               >
-                <span className="text-acc-text">@</span>
+                <span className="text-acc-text">{MENTION_KIND[mention.mentionType] ?? "@"}</span>
                 <span className="max-w-[180px] truncate">{mention.label}</span>
                 <XIcon className="size-3 text-fg-muted" />
               </button>
@@ -274,17 +289,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   className="hidden"
                   onChange={handleFileChange}
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
-                  title="添加图片"
-                  aria-label="添加图片"
-                >
-                  <ImagePlusIcon className="size-4" strokeWidth={1.75} />
-                </button>
+                {pickMenu ? null : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
+                    title="添加图片"
+                    aria-label="添加图片"
+                  >
+                    <ImagePlusIcon className="size-4" strokeWidth={1.75} />
+                  </button>
+                )}
               </>
             )}
+            {pickMenu?.(onAddFiles ? { addImages: () => fileInputRef.current?.click() } : {})}
             <AgentModelSelector compact />
             <AgentChatOptions />
             <div className="relative">

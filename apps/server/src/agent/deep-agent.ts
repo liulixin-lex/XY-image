@@ -9,6 +9,7 @@ import {
   type ChatEffort,
   type ChatModelRef,
   chatWebSearchMode,
+  defaultExecutionEffort,
   parseChatModelRef,
   resolveChatEffort,
   usesResponsesApi,
@@ -16,7 +17,6 @@ import {
 import {
   createFilesystemMiddleware,
   createPatchToolCallsMiddleware,
-  createSummarizationMiddleware,
 } from "deepagents";
 import { createAgent, type createMiddleware } from "langchain";
 import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
@@ -29,9 +29,7 @@ import type { UserSupabaseClient } from "../supabase/user.js";
 
 import { Agent as HttpAgent, fetch as httpFetch } from "undici";
 import type { ServerEnv } from "../config/env.js";
-import { anysearchExtract } from "../features/web-search/providers.js";
 import { sharedWebSearchService } from "../features/web-search/service.js";
-import { defaultSearchFetch } from "../features/web-search/service.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
 import {
   isContextOverflowText,
@@ -44,23 +42,24 @@ import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import { createContextWindowMiddleware } from "./context-window.js";
 import { createGluedToolCallMiddleware } from "./glued-tool-calls.js";
 import {
   type SearchRoute,
   type SentEffort,
   chatEffortKwargs,
   createChatOptionsMiddleware,
-  executionEffort,
   planningEffort,
 } from "./model-options.js";
 import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
 import { createProjectMemoryMiddleware } from "./project-memory.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import {
+  RUN_RECURSION_LIMIT,
+  createLoopGuardMiddleware,
   createReadToolRetryMiddleware,
-  createRunBudgetMiddleware,
   createToolDietMiddleware,
-} from "./run-budget.js";
+} from "./run-guards.js";
 import { skillsSection } from "./skills-prompt.js";
 import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
@@ -83,7 +82,9 @@ import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 export type LoomicAgent = Pick<
   ReturnType<typeof createAgent>,
   "stream" | "streamEvents"
->;
+> &
+  // The compiled graph: state of a thread, for 压缩 (runtime.compactSession).
+  Partial<Pick<ReturnType<typeof createAgent>, "graph">>;
 
 export type LoomicAgentFactory = (options: {
   backendResult?: AgentBackendResult;
@@ -106,9 +107,34 @@ export type LoomicAgentFactory = (options: {
   reviewImages?: ReviewImageStore;
   /** 第 69 条: running 生成 nodes from the chat (tools/canvas-workflow.ts). */
   workflow?: WorkflowDeps;
+  /** 第 70 条: the model and level after a tool result (runtime.ts). */
+  execution?: ExecutionOptions;
+  /** 第 70 条: search_web's last resort (tools/web-search.ts fallback). */
+  searchFallback?: { baseUrl: string; apiKey: string; model: string };
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
+
+/**
+ * 第 70 条 执行步骤: what the calls after a tool result use (设置 › 模型 ›
+ * 执行步骤模型, resolved in runtime.ts). `model` missing: the chat model.
+ * `effort` missing: 低 where the model takes it (defaultExecutionEffort).
+ */
+export type ExecutionOptions = {
+  model?:
+    | {
+        source: "xy2api";
+        /** openai:<model> */
+        ref: string;
+        credentials: { apiKey: string; baseUrl: string };
+      }
+    | {
+        source: "custom";
+        customChat: Parameters<typeof createCustomChatModel>[0];
+        providerId: string;
+      };
+  effort?: ChatEffort;
+};
 
 export type WorkflowDeps = {
   submitBatch: SubmitWorkflowBatchFn;
@@ -140,11 +166,12 @@ export function loomicAgentMiddleware(
     createGluedToolCallMiddleware(),
     // 第 69 条: no ls / glob / grep in front of the model.
     createToolDietMiddleware(),
+    // 第 70 条: the same tool call a third time in a row is not run (there
+    // is no budget of model calls any more, see run-guards.ts).
+    createLoopGuardMiddleware(),
     createToolErrorMiddleware(),
     // Inside the tool-errors one: read-only tools get a second try first.
     createReadToolRetryMiddleware(),
-    // 第 67 / 69 条: wrap up at RUN_WRAP_UP_AT, stop at RUN_MODEL_CALL_BUDGET.
-    createRunBudgetMiddleware(),
     // Project memory and other system-prompt context (project-memory.ts).
     ...context,
     createModelRetryMiddleware(),
@@ -171,6 +198,8 @@ export function createLoomicDeepAgent(options: {
   chatOptions?: ChatRunOptions;
   reviewImages?: ReviewImageStore;
   workflow?: WorkflowDeps;
+  execution?: ExecutionOptions;
+  searchFallback?: { baseUrl: string; apiKey: string; model: string };
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): LoomicAgent {
@@ -194,7 +223,8 @@ export function createLoomicDeepAgent(options: {
   const chatOptions = options.chatOptions ?? {};
   const chosenEffort = resolveChatEffort(ref, chatOptions.effort);
   // 第 69 条: the first call of a turn thinks at the chosen level (自动 = 中
-  // where the model takes it); later steps are capped (model-options.ts).
+  // where the model takes it); 第 70 条: the calls after a tool result use
+  // the execution model and level (below).
   const effort = planningEffort(ref, chosenEffort);
   // 第 68 条: every model searches one way or another (chat-options.ts).
   const searchMode = chatOptions.webSearch ? chatWebSearchMode(ref) : null;
@@ -219,26 +249,33 @@ export function createLoomicDeepAgent(options: {
     : (modelSpec as BaseLanguageModel);
   // search_web / read_webpage: the search itself for "gemini" and "free",
   // the fallback for a refused "hosted" one.
+  const searchService = sharedWebSearchService(options.env);
   const searchTools =
     builtHere && searchMode
       ? createWebTools({
           mode:
             searchMode === "gemini" && options.credentials ? "gemini" : "free",
-          service: sharedWebSearchService(options.env),
+          service: searchService,
           ...(searchMode === "gemini" && options.credentials && ref
             ? { gemini: { ...options.credentials, model: ref.model } }
             : {}),
-          // 第 69 条: pages that refuse us are read through AnySearch.
-          ...(options.env.webSearchAnysearchKey
+          // 第 69 / 70 条: pages that refuse us are read through AnySearch,
+          // within its rests and daily budget (service.ts).
+          ...(searchService.extract
             ? {
                 extract: (url: string, signal?: AbortSignal) =>
-                  anysearchExtract(
-                    options.env.webSearchAnysearchKey as string,
-                    url,
-                    defaultSearchFetch,
-                    signal,
-                  ),
+                  (
+                    searchService.extract as NonNullable<
+                      typeof searchService.extract
+                    >
+                  )(url, signal),
               }
+            : {}),
+          // 第 70 条: when every free source is empty (AnySearch's quota
+          // used up), Gemini's Google Search on the user's key.
+          ...(options.searchFallback &&
+          options.env.webSearchGeminiFallback !== "off"
+            ? { fallback: options.searchFallback }
             : {}),
         })
       : [];
@@ -247,21 +284,74 @@ export function createLoomicDeepAgent(options: {
     : hostedSearch
       ? "hosted"
       : "tools";
+  // 第 70 条 执行步骤: another model (设置 › 模型 › 执行步骤模型) or the
+  // chat model, at the saved level or 低.
+  const exec = options.execution ?? {};
+  const execModel = builtHere ? exec.model : undefined;
+  const execRef: ChatModelRef | null = execModel
+    ? execModel.source === "custom"
+      ? {
+          source: "custom",
+          providerId: execModel.providerId,
+          model: execModel.customChat.model,
+        }
+      : parseChatModelRef(execModel.ref)
+    : ref;
+  const execEffort = resolveChatEffort(
+    execRef,
+    exec.effort ?? defaultExecutionEffort(execRef),
+  );
+  const execSearchMode = chatOptions.webSearch
+    ? chatWebSearchMode(execRef)
+    : null;
+  const execRoute: SearchRoute = !execSearchMode
+    ? "off"
+    : execSearchMode === "hosted"
+      ? "hosted"
+      : "tools";
+  const buildExec = (sent: SentEffort, hosted: boolean) =>
+    !execModel
+      ? build(sent, hosted)
+      : execModel.source === "custom"
+        ? createCustomChatModel({
+            ...execModel.customChat,
+            effort: sent,
+            ...(promptCacheKey ? { promptCacheKey } : {}),
+          })
+        : createStreamingChatModel(execModel.ref, execModel.credentials, {
+            effort: sent,
+            webSearch: hosted,
+            ...(promptCacheKey ? { promptCacheKey } : {}),
+          });
+  // The context window's summaries are an execution step too.
+  const summaryModel = builtHere
+    ? (buildExec(execEffort, false) as unknown as BaseChatModel)
+    : (resolvedModel as BaseChatModel);
   if (builtHere && ref)
     console.info(
-      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} (after tools ${executionEffort(ref, effort, chosenEffort)}) webSearch=${searchMode ?? "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
+      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort}; after tools ${execModel ? `${execRef?.source === "custom" ? "custom:" : ""}${execRef?.model ?? "?"}` : "same model"} effort=${execEffort} webSearch=${searchMode ?? "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
     );
   const optionsMiddleware: ReturnType<typeof createMiddleware>[] = builtHere
     ? [
         createChatOptionsMiddleware({
-          ref,
-          label: ref?.model ?? "model",
-          effort,
-          chosen: chosenEffort,
-          search: searchRoute,
+          planning: {
+            ref,
+            label: ref?.model ?? "model",
+            effort,
+            search: searchRoute,
+            rebuild: (sent, hosted) =>
+              build(sent, hosted) as unknown as BaseChatModel,
+          },
+          execution: {
+            ref: execRef,
+            label: execRef?.model ?? ref?.model ?? "model",
+            effort: execEffort,
+            search: execModel ? execRoute : searchRoute,
+            separate: Boolean(execModel),
+            rebuild: (sent, hosted) =>
+              buildExec(sent, hosted) as unknown as BaseChatModel,
+          },
           searchTools,
-          rebuild: (sent, hosted) =>
-            build(sent, hosted) as unknown as BaseChatModel,
         }),
       ]
     : [];
@@ -305,9 +395,12 @@ export function createLoomicDeepAgent(options: {
         backend: backendResult.factory,
         systemPrompt: FILES_PROMPT,
       }),
-      createSummarizationMiddleware({
-        model: resolvedModel as BaseChatModel,
+      // 第 70 条: a 100k-token window, summarised at 80 % (context-window.ts).
+      createContextWindowMiddleware({
+        model: summaryModel,
         backend: backendResult.factory,
+        ...(options.store ? { store: options.store } : {}),
+        label: ref?.model ?? "run",
       }),
       createPatchToolCallsMiddleware(),
       ...loomicAgentMiddleware(optionsMiddleware, [
@@ -332,7 +425,7 @@ export function createLoomicDeepAgent(options: {
       ...(options.reviewImages ? { reviewImages: options.reviewImages } : {}),
       ...(options.workflow ? { workflow: options.workflow } : {}),
     }),
-  }) as unknown as LoomicAgent;
+  }).withConfig({ recursionLimit: RUN_RECURSION_LIMIT }) as unknown as LoomicAgent;
 }
 
 /** What the file tools are for (replaces deepagents' coding-agent prompt). */
@@ -457,4 +550,63 @@ export function createDefaultModelSpecifier(
   return env.agentModel.includes(":")
     ? env.agentModel
     : `openai:${env.agentModel}`;
+}
+
+/**
+ * 第 70 条: the model that writes conversation summaries outside a run (the
+ * 压缩 button, runtime.compactSession): the execution model at its level,
+ * without hosted search, exactly as createLoomicDeepAgent builds it for the
+ * context window inside a run.
+ */
+export function createSummaryModel(options: {
+  /** The chat model id (openai:<model>); ignored with customChat. */
+  modelSpec: string;
+  credentials?: { apiKey: string; baseUrl: string };
+  customChat?: Parameters<typeof createCustomChatModel>[0];
+  execution?: ExecutionOptions;
+}): BaseChatModel {
+  const exec = options.execution ?? {};
+  if (exec.model?.source === "custom") {
+    const ref: ChatModelRef = {
+      source: "custom",
+      providerId: exec.model.providerId,
+      model: exec.model.customChat.model,
+    };
+    return createCustomChatModel({
+      ...exec.model.customChat,
+      effort: resolveChatEffort(
+        ref,
+        exec.effort ?? defaultExecutionEffort(ref),
+      ),
+    }) as unknown as BaseChatModel;
+  }
+  if (exec.model?.source === "xy2api") {
+    const ref = parseChatModelRef(exec.model.ref);
+    return createStreamingChatModel(exec.model.ref, exec.model.credentials, {
+      effort: resolveChatEffort(
+        ref,
+        exec.effort ?? defaultExecutionEffort(ref),
+      ),
+      webSearch: false,
+    }) as unknown as BaseChatModel;
+  }
+  const ref: ChatModelRef | null = options.customChat
+    ? { source: "custom", providerId: "custom", model: options.customChat.model }
+    : parseChatModelRef(
+        options.modelSpec.includes(":")
+          ? options.modelSpec
+          : `openai:${options.modelSpec}`,
+      );
+  const effort = resolveChatEffort(
+    ref,
+    exec.effort ?? defaultExecutionEffort(ref),
+  );
+  return (
+    options.customChat
+      ? createCustomChatModel({ ...options.customChat, effort })
+      : createStreamingChatModel(options.modelSpec, options.credentials, {
+          effort,
+          webSearch: false,
+        })
+  ) as unknown as BaseChatModel;
 }

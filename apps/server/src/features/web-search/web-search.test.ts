@@ -16,6 +16,7 @@ import {
   parseAnysearch,
   parseDuckDuckGo,
   parseWikipedia,
+  anysearchRefusal,
   parseYahooJapan,
   repairMojibake,
 } from "./providers.js";
@@ -23,6 +24,7 @@ import { ReadPageError, checkPageUrl, readWebPage } from "./read-page.js";
 import {
   BLOCK_REST_MS,
   CACHE_TTL_MS,
+  QUOTA_REST_MS,
   createWebSearchService,
   webSearchProviders,
 } from "./service.js";
@@ -348,6 +350,90 @@ describe("free web search chain", () => {
     });
   });
 
+  it("tells a rate limit, a used-up quota and a bad key apart (第 70 条)", () => {
+    expect(anysearchRefusal(429, "Rate limited, retry after 45 seconds.")).toEqual({
+      kind: "rate",
+      restMs: 45_000,
+    });
+    expect(anysearchRefusal(429, "Too many requests")).toEqual({ kind: "rate" });
+    expect(anysearchRefusal(402, "")).toEqual({ kind: "quota" });
+    expect(anysearchRefusal(429, "Daily limit reached for this key")).toEqual({
+      kind: "quota",
+    });
+    expect(anysearchRefusal(403, "今日调用次数已用完")).toEqual({ kind: "quota" });
+    expect(anysearchRefusal(401, "Invalid API key")).toEqual({ kind: "auth" });
+    expect(anysearchRefusal(500, "internal error")).toBeNull();
+  });
+
+  it("rests a used-up source for hours, longer each time, and the others answer", async () => {
+    quiet();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let quota = true;
+    const anysearch = provider(
+      "anysearch",
+      async () => {
+        if (quota) throw new SearchBlockedError("anysearch", "HTTP 402", "quota");
+        return [hit("https://a.com")];
+      },
+      true,
+    );
+    const backup = provider("yahoo-jp", async () => [hit("https://y.com")]);
+    let now = 0;
+    const service = createWebSearchService({
+      providers: [anysearch, backup],
+      fetch: vi.fn(),
+      now: () => now,
+    });
+    expect((await service.search("q1")).provider).toBe("yahoo-jp");
+    now += QUOTA_REST_MS - 1;
+    expect((await service.search("q2")).skipped).toEqual(["anysearch: resting"]);
+    now += 2;
+    await service.search("q3"); // still used up: two hours this time
+    expect(anysearch.calls).toBe(2);
+    now += QUOTA_REST_MS + 1;
+    await service.search("q4");
+    expect(anysearch.calls).toBe(2);
+    now += QUOTA_REST_MS;
+    quota = false;
+    expect((await service.search("q5")).provider).toBe("anysearch");
+    const [status] = service.status();
+    expect(status).toMatchObject({ name: "anysearch", state: "ok" });
+    expect(status?.lastRefusal?.kind).toBe("quota");
+  });
+
+  it("keeps a source to its daily budget, searches and page reads together", async () => {
+    quiet();
+    const keyed: SearchProvider & { calls: number } = {
+      ...provider("anysearch", async () => [hit("https://a.com")], true),
+      dailyBudget: 2,
+      extract: vi.fn(async () => ({ title: "T", text: "正文" })),
+    };
+    const backup = provider("yahoo-jp", async () => [hit("https://y.com")]);
+    let now = Date.parse("2026-10-15T10:00:00Z");
+    const service = createWebSearchService({
+      providers: [keyed, backup],
+      fetch: vi.fn(),
+      now: () => now,
+    });
+    expect((await service.search("q1")).provider).toBe("anysearch");
+    expect(await service.extract?.("https://zhihu.com/a")).toMatchObject({
+      provider: "anysearch",
+      text: "正文",
+    });
+    const third = await service.search("q2");
+    expect(third.provider).toBe("yahoo-jp");
+    expect(third.skipped).toEqual(["anysearch: daily budget used (2/2)"]);
+    await expect(service.extract?.("https://zhihu.com/b")).rejects.toThrow(
+      /daily budget/,
+    );
+    expect(service.status()[0]).toMatchObject({
+      state: "budget",
+      today: { used: 2, budget: 2 },
+    });
+    now = Date.parse("2026-10-16T00:00:01Z"); // a new UTC day
+    expect((await service.search("q3")).provider).toBe("anysearch");
+  });
+
   it("orders keyed sources before the key-less ones", () => {
     expect(
       webSearchProviders({
@@ -625,6 +711,7 @@ describe("search_web / read_webpage tools", () => {
     results: Array<{ title: string; url: string; snippet: string }>,
   ) => ({
     providers: ["fake"],
+    status: () => [],
     search: vi.fn(async () => ({
       provider: results.length ? "fake" : "none",
       results,
@@ -638,6 +725,36 @@ describe("search_web / read_webpage tools", () => {
     input: object,
   ) =>
     JSON.parse(String(await tools.find((t) => t.name === name)?.invoke(input)));
+
+  it("asks Gemini's Google Search when every free source is empty (第 70 条)", async () => {
+    quiet();
+    const geminiSearch = vi.fn(async () => ({
+      grounded: true,
+      answer: "Node.js 24 是当前的 LTS。",
+      queries: ["node lts"],
+      sources: [{ title: "Node.js", url: "https://nodejs.org" }],
+    }));
+    const tools = createWebTools({
+      mode: "free",
+      service: service([]),
+      geminiSearch: geminiSearch as never,
+      fallback: { baseUrl: "https://main.example", apiKey: "k", model: "gemini-3.8-flash" },
+    });
+    const out = await run(tools, "search_web", { query: "node lts" });
+    expect(out).toMatchObject({ via: "gemini", sources: [{ url: "https://nodejs.org" }] });
+    expect(geminiSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gemini-3.8-flash", query: "node lts" }),
+    );
+    // With results from the free sources it is never asked.
+    const found = createWebTools({
+      mode: "free",
+      service: service([{ title: "F", url: "https://f.com", snippet: "" }]),
+      geminiSearch: geminiSearch as never,
+      fallback: { baseUrl: "https://main.example", apiKey: "k", model: "gemini-3.8-flash" },
+    });
+    expect(await run(found, "search_web", { query: "x" })).toMatchObject({ via: "fake" });
+    expect(geminiSearch).toHaveBeenCalledTimes(1);
+  });
 
   it("uses Gemini's grounded answer when it has sources", async () => {
     quiet();

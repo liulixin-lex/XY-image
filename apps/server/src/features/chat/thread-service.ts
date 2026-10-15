@@ -16,6 +16,8 @@ export class ThreadServiceError extends Error {
 export type SessionThreadBinding = {
   sessionId: string;
   threadId: string;
+  /** The canvas the conversation belongs to (第 70 条: its history file). */
+  canvasId?: string;
 };
 
 export type ThreadService = {
@@ -42,7 +44,7 @@ export function createThreadService(options: {
       const client = options.createUserClient(user.accessToken);
       const { data, error } = await client
         .from("chat_sessions")
-        .select("id, thread_id")
+        .select("id, thread_id, canvas_id")
         .eq("id", sessionId)
         .single();
 
@@ -60,6 +62,7 @@ export function createThreadService(options: {
       return {
         sessionId: data.id,
         threadId: data.thread_id,
+        ...(data.canvas_id ? { canvasId: data.canvas_id } : {}),
       };
     },
   };
