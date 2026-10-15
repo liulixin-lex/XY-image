@@ -37,6 +37,12 @@
 //                        scripted model calls it, then answers
 //                        "（模拟上游）搜到了 N 条：<first url>".
 //   [[mock:searchtool]]  the same without the refusal: search_web when offered.
+//   [[mock:workflow]]    第 69 条: the scripted model builds a node workflow with
+//                        canvas_workflow (a prompt card, a 生成 node, an edge,
+//                        a frame), runs it with run_workflow, then answers
+//                        "（模拟上游）工作流已运行：<run summary>".
+//   Chat requests also record `agentTools`: which of canvas_workflow,
+//   run_workflow, write_todos, task, ls, glob, grep were offered.
 //   Lab     GET /search?q=…&format=json: a SearXNG-shaped answer (two
 //           results) for the server's free web search
 //           (LOOMIC_WEB_SEARCH_SEARXNG_URL=http://mock-upstream:8000).
@@ -343,8 +349,38 @@ const ARGUMENT_ERROR = /参数不符合要求/;
 // `toolOutputs` are the tool results since the last user message.
 function planReply({ lastRole, lastText: fullText, toolNames, toolOutputs = [] }) {
   const lastText = userWords(fullText);
-  // 第 68 条: the server's search_web tool.
   const d = directives(fullText);
+  // 第 69 条: build and run a node workflow.
+  if (d.workflow && toolNames.includes("canvas_workflow")) {
+    const outputs = toolOutputs
+      .map((t) => {
+        try {
+          return JSON.parse(t);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const ran = outputs.find((o) => Array.isArray(o.runs));
+    const built = outputs.find((o) => o.created && typeof o.summary === "string");
+    if (ran) return { kind: "text", text: `（模拟上游）工作流已运行：${ran.summary}` };
+    if (built?.created?.g1 && toolNames.includes("run_workflow"))
+      return { kind: "tool", name: "run_workflow", args: { generator_ids: [built.created.g1] } };
+    if (lastRole !== "tool")
+      return {
+        kind: "tool",
+        name: "canvas_workflow",
+        args: {
+          operations: [
+            { action: "add_prompt", ref: "p1", text: "lab 工作流：一只戴帽子的猫" },
+            { action: "add_generator", ref: "g1", prompt: "水彩风格", aspect_ratio: "1:1", count: 1 },
+            { action: "connect", from: "p1", to: "g1" },
+            { action: "add_frame", title: "lab 工作流", contains: ["p1", "g1"] },
+          ],
+        },
+      };
+  }
+  // 第 68 条: the server's search_web tool.
   if ((d.refusesearch || d.searchtool) && toolNames.includes("search_web")) {
     const found = toolOutputs
       .map((t) => {
@@ -474,6 +510,9 @@ async function handleChatCompletions(req, res, body, ctx) {
     .map((t) => t?.function?.name ?? t?.name)
     .filter(Boolean);
   ctx.toolNames = toolNames.filter((n) => n === "search_web" || n === "read_webpage");
+  ctx.agentTools = toolNames.filter((n) =>
+    ["canvas_workflow", "run_workflow", "write_todos", "task", "ls", "glob", "grep"].includes(n),
+  );
   if (
     d.refusesearch &&
     ((ctx.chatOptions.hostedTools ?? []).includes("web_search") || !toolNames.includes("search_web"))
@@ -617,6 +656,9 @@ async function handleResponses(req, res, body, ctx) {
     .map((t) => t?.name ?? t?.function?.name)
     .filter(Boolean);
   ctx.toolNames = toolNames.filter((n) => n === "search_web" || n === "read_webpage");
+  ctx.agentTools = toolNames.filter((n) =>
+    ["canvas_workflow", "run_workflow", "write_todos", "task", "ls", "glob", "grep"].includes(n),
+  );
   if (
     d.refusesearch &&
     ((ctx.chatOptions.hostedTools ?? []).includes("web_search") || !toolNames.includes("search_web"))

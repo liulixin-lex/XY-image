@@ -107,6 +107,8 @@ export type ServerEnv = {
    * tried first; LOOMIC_WEB_SEARCH_KEYLESS=off drops the key-less sources.
    */
   webSearchSearxngUrl?: string;
+  /** 第 69 条: LOOMIC_WEB_SEARCH_ANYSEARCH_KEY, tried right after SearXNG. */
+  webSearchAnysearchKey?: string;
   webSearchTavilyKey?: string;
   webSearchBraveKey?: string;
   webSearchKeyless?: "on" | "off";
@@ -321,6 +323,9 @@ export function loadServerEnv(
             z.url(),
           ).replace(/\/+$/, ""),
         }
+      : {}),
+    ...(source.LOOMIC_WEB_SEARCH_ANYSEARCH_KEY?.trim()
+      ? { webSearchAnysearchKey: source.LOOMIC_WEB_SEARCH_ANYSEARCH_KEY.trim() }
       : {}),
     ...(source.LOOMIC_WEB_SEARCH_TAVILY_KEY?.trim()
       ? { webSearchTavilyKey: source.LOOMIC_WEB_SEARCH_TAVILY_KEY.trim() }

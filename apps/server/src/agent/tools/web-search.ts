@@ -8,6 +8,8 @@ import {
 } from "../../features/web-search/gemini-grounded.js";
 import {
   ReadPageError,
+  type ReadPageResult,
+  pageSlice,
   readWebPage,
 } from "../../features/web-search/read-page.js";
 import { READ_PAGE_CHARS } from "../../features/web-search/read-page.js";
@@ -49,7 +51,19 @@ export type WebToolsOptions = {
   gemini?: { baseUrl: string; apiKey: string; model: string };
   geminiSearch?: typeof geminiGroundedSearch;
   readPage?: typeof readWebPage;
+  /**
+   * 第 69 条: reads a page through a page-reading service (AnySearch
+   * extract) when the direct read was refused or came back empty. Never for
+   * private addresses or unsupported files.
+   */
+  extract?: (
+    url: string,
+    signal?: AbortSignal,
+  ) => Promise<{ title: string; text: string }>;
 };
+
+/** Direct-read failures a page-reading service may still get past. */
+const EXTRACTABLE = new Set(["http", "network", "timeout"]);
 
 const searchSchema = z.object({
   query: z
@@ -179,11 +193,41 @@ export function createWebTools(options: WebToolsOptions): StructuredTool[] {
           url: input.url,
           error: `这一轮已经读了 ${RUN_READ_LIMIT} 个网页。用已有的内容回答。`,
         });
+      const viaService = async (): Promise<ReadPageResult | null> => {
+        if (!options.extract) return null;
+        try {
+          const read = await options.extract(input.url, signal);
+          if (!read.text) return null;
+          console.info(
+            `[web-read] ${new URL(input.url).host} read through the page service: ${read.text.length} chars`,
+          );
+          return pageSlice(
+            { url: input.url, title: read.title, text: read.text },
+            input.offset !== undefined ? { offset: input.offset } : {},
+          );
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          console.warn(
+            `[web-read] page service failed: ${describeErrorForLog(error)}`,
+          );
+          return null;
+        }
+      };
       try {
-        const page = await readPage(input.url, {
-          ...(input.offset !== undefined ? { offset: input.offset } : {}),
-          ...(signal ? { signal } : {}),
-        });
+        let page: ReadPageResult;
+        try {
+          page = await readPage(input.url, {
+            ...(input.offset !== undefined ? { offset: input.offset } : {}),
+            ...(signal ? { signal } : {}),
+          });
+          if (!page.totalChars) page = (await viaService()) ?? page;
+        } catch (error) {
+          const recoverable =
+            error instanceof ReadPageError && EXTRACTABLE.has(error.kind);
+          const viaExtract = recoverable ? await viaService() : null;
+          if (!viaExtract) throw error;
+          page = viaExtract;
+        }
         let host = "";
         try {
           host = new URL(page.url).host;

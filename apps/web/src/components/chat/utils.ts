@@ -82,6 +82,9 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   // Search called on its own, or the free search) and reading a page.
   search_web: { label: "联网搜索", icon: "search", showCard: true },
   read_webpage: { label: "打开网页", icon: "search", showCard: true },
+  // 第 69 条: node canvas workflows built and run from the chat.
+  canvas_workflow: { label: "搭建工作流", icon: "brush", showCard: true },
+  run_workflow: { label: "运行工作流", icon: "image", showCard: true },
   // 第 67 条 审图 and file editing.
   view_images: { label: "查看图片", icon: "eye", showCard: true },
   apply_patch: { label: "修改资料", icon: "tool", showCard: false },
@@ -254,6 +257,11 @@ export function describeToolResult(
       return typeof output.query === "string"
         ? `搜索「${output.query}」`
         : null;
+    }
+    case "canvas_workflow":
+    case "run_workflow": {
+      if (typeof output.summary === "string") return output.summary;
+      return failed ? "画布没有改动" : null;
     }
     case "read_webpage": {
       if (typeof output.summary === "string") return output.summary;

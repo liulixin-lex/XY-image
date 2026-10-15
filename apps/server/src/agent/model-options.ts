@@ -146,6 +146,60 @@ export function lowerChatEffort(
   );
 }
 
+/**
+ * 第 69 条 思考强度 that does not run away. A design request is mostly
+ * "understand, plan, call a tool, report": deep thinking pays off when the
+ * request is read (the call right after the user's message), not on every
+ * step after a tool result. So:
+ * - 自动 is 中 for that first call (where the model takes levels; personal
+ *   providers keep sending nothing), and 低 afterwards;
+ * - a chosen level is used for the first call; the calls after a tool
+ *   result use at most 中 (低 stays 低).
+ */
+export function planningEffort(
+  ref: ChatModelRef | null,
+  effort: ChatEffort,
+): ChatEffort {
+  if (effort !== "auto" || !ref || ref.source === "custom") return effort;
+  return chatEffortsFor(ref).includes("medium") ? "medium" : "auto";
+}
+
+const EFFORT_RANK: Record<SentEffort, number> = {
+  off: 0,
+  auto: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  xhigh: 5,
+  max: 6,
+};
+
+function lowestOf(a: SentEffort, b: SentEffort): SentEffort {
+  return EFFORT_RANK[a] <= EFFORT_RANK[b] ? a : b;
+}
+
+/** The level for a call that follows a tool result (see planningEffort). */
+export function executionEffort(
+  ref: ChatModelRef | null,
+  planning: SentEffort,
+  chosen: ChatEffort,
+): SentEffort {
+  if (planning === "off" || planning === "auto") return planning;
+  const cap: ChatEffort =
+    chosen === "auto" || chosen === "low" ? "low" : "medium";
+  if (EFFORT_RANK[planning] <= EFFORT_RANK[cap]) return planning;
+  return chatEffortsFor(ref).includes(cap) ? cap : planning;
+}
+
+/** Whether this model call follows a tool result (not the user's message). */
+export function followsToolResult(messages: readonly unknown[]): boolean {
+  const last = messages.at(-1) as
+    | { getType?: () => string; _getType?: () => string; type?: unknown }
+    | undefined;
+  const type = last?.getType?.() ?? last?._getType?.() ?? last?.type;
+  return type === "tool";
+}
+
 /** How the model searches this run: its own search, our tools, or not. */
 export type SearchRoute = "hosted" | "tools" | "off";
 
@@ -157,7 +211,10 @@ function toolName(tool: unknown): string | undefined {
 export function createChatOptionsMiddleware(options: {
   ref: ChatModelRef | null;
   label: string;
-  effort: ChatEffort;
+  /** The level of the planning call (planningEffort applied). */
+  effort: SentEffort;
+  /** What the chat panel asked for; picks the cap after tool results. */
+  chosen?: ChatEffort;
   search: SearchRoute;
   /**
    * search_web / read_webpage: used for "tools", and what a refused
@@ -167,21 +224,50 @@ export function createChatOptionsMiddleware(options: {
   /**
    * The chat model with other options (same transport, same key). Without
    * hosted search a model that is not Responses-native goes back to Chat
-   * Completions (deep-agent.ts createStreamingChatModel).
+   * Completions (deep-agent.ts createStreamingChatModel). The agent's own
+   * model is the one for (effort, the initial search route).
    */
   rebuild: (effort: SentEffort, hostedSearch: boolean) => BaseChatModel;
 }) {
-  let effort: SentEffort = options.effort;
+  const chosen: ChatEffort =
+    options.chosen ?? (options.effort === "off" ? "auto" : options.effort);
+  /** Highest level any call may send after a refusal (none yet). */
+  let ceiling: SentEffort = "max";
   let search: SearchRoute = options.search;
-  let model: BaseChatModel | undefined;
+  const initialKey = `${options.effort}|${options.search === "hosted"}`;
+  const models = new Map<string, BaseChatModel>();
+  const modelFor = (effort: SentEffort): BaseChatModel | undefined => {
+    const hosted = search === "hosted";
+    const key = `${effort}|${hosted}`;
+    if (key === initialKey) return undefined;
+    let model = models.get(key);
+    if (!model) {
+      model = options.rebuild(effort, hosted);
+      models.set(key, model);
+    }
+    return model;
+  };
   const searchTools = options.searchTools ?? [];
   const searchNames = new Set(searchTools.map((t) => t.name));
+  let executionLogged = false;
   return createMiddleware({
     name: "LoomicChatOptions",
     // Registered so the agent can run them; shown per call below.
     ...(searchTools.length ? { tools: searchTools } : {}),
     wrapModelCall: async (request, handler) => {
+      const execution = followsToolResult(request.messages);
       for (let step = 0; ; step++) {
+        const wanted = execution
+          ? executionEffort(options.ref, options.effort, chosen)
+          : options.effort;
+        const effort = lowestOf(wanted, ceiling);
+        if (execution && effort !== options.effort && !executionLogged) {
+          executionLogged = true;
+          console.info(
+            `[agent-model] ${options.label} steps after a tool result use effort ${effort} (first call ${options.effort})`,
+          );
+        }
+        const model = modelFor(effort);
         const base = request.tools.filter(
           (t) => !searchNames.has(toolName(t) ?? ""),
         );
@@ -211,8 +297,7 @@ export function createChatOptionsMiddleware(options: {
             console.warn(
               `[agent-model] ${options.label} refused a request with effort ${effort}; trying without`,
             );
-            effort = "auto";
-            model = options.rebuild(effort, search === "hosted");
+            ceiling = "auto";
             continue;
           }
           // With hosted search on, a 4xx that names nothing may be the
@@ -226,7 +311,6 @@ export function createChatOptionsMiddleware(options: {
               (!refused && rejectedRequest(error, [400, 404, 405, 422])))
           ) {
             search = searchTools.length ? "tools" : "off";
-            model = options.rebuild(effort, false);
             console.warn(
               `[agent-model] ${options.label} refused a request with built-in web search (${refused ?? "unnamed 4xx"}); this run ${search === "tools" ? "searches with the web search tool instead" : "goes on without it"}`,
             );
@@ -237,8 +321,7 @@ export function createChatOptionsMiddleware(options: {
             console.warn(
               `[agent-model] ${options.label} refused effort ${effort}; trying ${next}`,
             );
-            effort = next;
-            model = options.rebuild(effort, search === "hosted");
+            ceiling = next;
             continue;
           }
           // A provider that cannot take our search tools (some refuse

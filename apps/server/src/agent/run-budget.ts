@@ -14,13 +14,28 @@ import { describeErrorForLog } from "../utils/error-sanitizer.js";
  * - Context overflow: see utils/context-overflow.ts.
  */
 
-/** Model calls one run may make. Typical runs take 3–12. */
-export const RUN_MODEL_CALL_BUDGET = 60;
+/**
+ * Model calls one run may make. Typical runs take 3–8; 第 69 条 halved it
+ * (60 → 30): a design request that needs more steps than that is going in
+ * circles, and workflows are built and run in one call each.
+ */
+export const RUN_MODEL_CALL_BUDGET = 30;
+/**
+ * From this call on the model gets no tools and a note to wrap up, so a long
+ * run ends with a real answer about what was done, not with the budget line.
+ */
+export const RUN_WRAP_UP_AT = 25;
 
 export const RUN_BUDGET_TEXT =
   "这一轮的步骤太多了，我先停在这里。已经完成的改动都保留着；你可以告诉我接下来先做哪一步，我接着来。";
 
-export function createRunBudgetMiddleware(limit = RUN_MODEL_CALL_BUDGET) {
+export const RUN_WRAP_UP_NOTE =
+  "（系统提示：这一轮已经执行了很多步。现在不要再调用任何工具，直接用已有的结果简短回复用户：做了什么、结果在哪、还差什么。）";
+
+export function createRunBudgetMiddleware(
+  limit = RUN_MODEL_CALL_BUDGET,
+  wrapUpAt = RUN_WRAP_UP_AT,
+) {
   let calls = 0;
   return createMiddleware({
     name: "LoomicRunBudget",
@@ -30,8 +45,44 @@ export function createRunBudgetMiddleware(limit = RUN_MODEL_CALL_BUDGET) {
         console.warn(`[agent-model] run stopped after ${limit} model calls`);
         return new AIMessage({ content: RUN_BUDGET_TEXT });
       }
+      if (calls >= wrapUpAt) {
+        if (calls === wrapUpAt)
+          console.warn(
+            `[agent-model] ${calls} model calls: asking the model to wrap up without tools`,
+          );
+        return handler({
+          ...request,
+          tools: [],
+          systemMessage: request.systemMessage.concat(RUN_WRAP_UP_NOTE),
+        });
+      }
       return handler(request);
     },
+  });
+}
+
+/**
+ * 第 69 条: tools the design assistant has but should not see. deepagents'
+ * file middleware brings ls / glob / grep with read_file; the assistant
+ * knows its paths (/workspace/, /memories/AGENTS.md, skills are in the
+ * prompt), and with them it browsed directories like a coding agent before
+ * doing anything. A call from older history still runs.
+ */
+export const HIDDEN_TOOLS = ["ls", "glob", "grep", "execute"];
+
+export function createToolDietMiddleware(
+  hidden: readonly string[] = HIDDEN_TOOLS,
+) {
+  const names = new Set(hidden);
+  return createMiddleware({
+    name: "LoomicToolDiet",
+    wrapModelCall: (request, handler) =>
+      handler({
+        ...request,
+        tools: request.tools.filter(
+          (tool) => !names.has(String((tool as { name?: unknown }).name ?? "")),
+        ),
+      }),
   });
 }
 
@@ -77,8 +128,15 @@ export function createReadToolRetryMiddleware(
           return await handler(request);
         } catch (error) {
           const delay = delaysMs[attempt];
-          const signal = (request.runtime as { signal?: AbortSignal } | undefined)?.signal;
-          if (delay === undefined || signal?.aborted || !isTransientToolError(error)) throw error;
+          const signal = (
+            request.runtime as { signal?: AbortSignal } | undefined
+          )?.signal;
+          if (
+            delay === undefined ||
+            signal?.aborted ||
+            !isTransientToolError(error)
+          )
+            throw error;
           console.warn(
             `[agent-tools] ${name} failed (${describeErrorForLog(error)}); try ${attempt + 2} in ${delay}ms`,
           );

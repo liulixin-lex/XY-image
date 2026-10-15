@@ -59,8 +59,52 @@ describe("canvas summary for the design assistant (node canvas)", () => {
     );
     // An empty generator prompt is left out rather than shown as prompt="".
     expect(summary).not.toContain('prompt=""');
-    expect(summary).toContain("arrow#e1 @(240,60) 80x0 p1→g1");
+    // 第 69 条: edges as one compact line, not one element each.
+    expect(summary).toContain("edges: p1→g1");
+    expect(summary).toContain("Canvas: 2 nodes, 1 edges");
     expect(summary).not.toContain("gone");
+  });
+
+  it("shows how much of a generator's latest run is on the canvas", () => {
+    const summary = buildCanvasSummaryForContext([
+      {
+        id: "g1",
+        type: "generator",
+        x: 0,
+        y: 0,
+        width: 296,
+        height: 440,
+        customData: {
+          generator: {
+            count: 2,
+            run: {
+              batchId: "b",
+              jobs: [
+                {
+                  jobId: "j1",
+                  slot: { x: 400, y: 0, width: 280, height: 280 },
+                },
+                {
+                  jobId: "j2",
+                  slot: { x: 704, y: 0, width: 280, height: 280 },
+                },
+              ],
+              startedAt: 1,
+            },
+          },
+        },
+      },
+      {
+        id: "i1",
+        type: "image",
+        x: 400,
+        y: 0,
+        width: 280,
+        height: 280,
+        customData: { jobId: "j1" },
+      },
+    ]);
+    expect(summary).toContain("last_run=1/2 on canvas");
   });
 
   it("leaves a free arrow without endpoints", () => {

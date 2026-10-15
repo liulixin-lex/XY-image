@@ -17,8 +17,9 @@ import { decodeEntities, stripTags } from "./html.js";
  * - Google, Baidu, Sogou, 360, Brave html, Startpage, Qwant, Ecosia,
  *   Mojeek: blocked or empty.
  * A source that blocks us rests for a while (service.ts); configure
- * LOOMIC_WEB_SEARCH_TAVILY_KEY / _BRAVE_KEY / _SEARXNG_URL for a search
- * that does not depend on any of that (docs/XY_IMAGE_AGENT_CHAT.md).
+ * LOOMIC_WEB_SEARCH_ANYSEARCH_KEY (production since 第 69 条) or
+ * _TAVILY_KEY / _BRAVE_KEY / _SEARXNG_URL for a search that does not depend
+ * on any of that (docs/XY_IMAGE_AGENT_CHAT.md).
  */
 
 export type SearchResult = { title: string; url: string; snippet: string };
@@ -206,6 +207,129 @@ export function searxngProvider(baseUrl: string): SearchProvider {
         "content",
       );
     },
+  };
+}
+
+/**
+ * AnySearch (anysearch.com, 第 69 条): search built for agents, a key from
+ * LOOMIC_WEB_SEARCH_ANYSEARCH_KEY (free plan: 1,000 requests a day). One
+ * `POST /v1/search` per query; Chinese queries ask for the China zone and
+ * Chinese results (measured from the production box 2026-10-15: relevant
+ * Chinese design sources, 1.5–5 s). Errors come back as an envelope with a
+ * non-zero `code` (HTTP 200 included); a rate limit says "Rate limited".
+ */
+export const ANYSEARCH_BASE_URL = "https://api.anysearch.com";
+
+function anysearchRefused(status: number, message: string) {
+  return (
+    [401, 402, 403, 429].includes(status) ||
+    /rate limit|quota|unauthor|invalid (api )?key|forbidden/i.test(message)
+  );
+}
+
+function anysearchEnvelope(res: { status: number; text: string }): Record<
+  string,
+  unknown
+> {
+  let body: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(res.text);
+    if (parsed && typeof parsed === "object")
+      body = parsed as Record<string, unknown>;
+  } catch {
+    body = null;
+  }
+  const message =
+    typeof body?.message === "string" ? body.message.slice(0, 120) : "";
+  if (
+    res.status >= 400 ||
+    !body ||
+    (body.code !== undefined && body.code !== 0)
+  ) {
+    if (anysearchRefused(res.status, message))
+      throw new SearchBlockedError(
+        "anysearch",
+        `HTTP ${res.status}${message ? ` ${message}` : ""}`,
+      );
+    throw new Error(
+      `anysearch answered HTTP ${res.status}${message ? `: ${message}` : ""}`,
+    );
+  }
+  return (body.data as Record<string, unknown> | undefined) ?? {};
+}
+
+export function parseAnysearch(text: string): SearchResult[] {
+  const data = anysearchEnvelope({ status: 200, text });
+  return list(data.results).flatMap((item) => {
+    const url = httpUrl(item.url);
+    const title = typeof item.title === "string" ? stripTags(item.title) : "";
+    if (!url || !title) return [];
+    // `content` is the longer, query-focused excerpt; `snippet` the short one.
+    const body =
+      typeof item.content === "string" && item.content.trim()
+        ? item.content
+        : typeof item.snippet === "string"
+          ? item.snippet
+          : "";
+    return [{ title, url, snippet: stripTags(body) }];
+  });
+}
+
+export function anysearchProvider(
+  apiKey: string,
+  baseUrl = ANYSEARCH_BASE_URL,
+): SearchProvider {
+  return {
+    name: "anysearch",
+    keyed: true,
+    async search({ query, count, fetch, signal }) {
+      const chinese = CJK.test(query);
+      const res = await fetch(`${baseUrl}/v1/search`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+          "x-anysearch-client": "gguu-image-server/1.0",
+        },
+        body: JSON.stringify({
+          query,
+          max_results: Math.max(1, Math.min(10, count)),
+          ...(chinese ? { zone: "cn", language: "zh-CN" } : {}),
+        }),
+        ...(signal ? { signal } : {}),
+      });
+      anysearchEnvelope(res);
+      return parseAnysearch(res.text);
+    },
+  };
+}
+
+/**
+ * A page's text through AnySearch's `/v1/extract` (Markdown), for pages that
+ * refuse a direct read from our address (zhihu answered 403 on 2026-10-14).
+ * The page is fetched by AnySearch, not by this server.
+ */
+export async function anysearchExtract(
+  apiKey: string,
+  url: string,
+  fetch: SearchFetch,
+  signal?: AbortSignal,
+  baseUrl = ANYSEARCH_BASE_URL,
+): Promise<{ title: string; text: string }> {
+  const res = await fetch(`${baseUrl}/v1/extract`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      "x-anysearch-client": "gguu-image-server/1.0",
+    },
+    body: JSON.stringify({ url }),
+    ...(signal ? { signal } : {}),
+  });
+  const data = anysearchEnvelope(res);
+  return {
+    title: typeof data.title === "string" ? stripTags(data.title) : "",
+    text: typeof data.content === "string" ? data.content.trim() : "",
   };
 }
 
