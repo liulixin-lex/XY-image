@@ -361,6 +361,30 @@ HAProxy 每 5 秒向隧道对面发起一次 TCP 连接做检查，主站 Caddy 
   - 备份和监控用独立命名的 systemd unit，备份时间避开主站自己的备份窗口。
 - **验收时对比主站**：改动前后各记一次 Caddy 的 PID 和启动时间、主站各容器的启动时间和重启次数、首页和 `/health`，三者都不能变。
 
+### 换域名（10-15 agent01，正式站和预上线站互换）
+
+10-15 用户先改了 DNS（image → 主站服务器，image2 → 156），要求正式站放主站服务器。两套各自保留数据，只换域名。从改 DNS 到两边改完配置，两个域名对外都打不开（大约 10 分钟），所以以后要换就先在两台机器上把配置准备好，再改 DNS。每台机器上的步骤：
+
+1. **没有在途任务**，先做热备份，`runtime` 打包（不含 volumes）。
+2. **只改公开地址**：
+   - `runtime/.env`：`SITE_URL`、`API_EXTERNAL_URL`、`ADDITIONAL_REDIRECT_URLS`、`SUPABASE_PUBLIC_URL`；
+   - `runtime/server.env`：`LOOMIC_WEB_ORIGIN`、`SUPABASE_URL`、`SUPABASE_JWT_ISSUER`；
+   - 生成物 `web.env`、`deployment.json`、`Caddyfile`、`nginx.conf`，以及 `operations.json` 的 `publicUrl`，保持一致。
+   - **`SSO_EMAIL_DOMAIN` 不能改**。它是用户在本库里的内部邮箱后缀（`u<主站 id>@<域名>`）。改了以后，每个人登录都会新建一个空账号，原来的作品看不到。
+   - 不要重新跑 `prepare.mjs`，它会换密钥。
+3. **库里存的完整链接**：查 `public` 里含旧域名的行（`pg_dump --data-only --schema=public | grep`）。156 那套有 49 条 `background_jobs.result`、14 条 `payload`、4 条 `chat_messages`，在一个事务里替换成新域名。主站那套没有。
+4. **入口**：
+   - Caddy：改站点名，`caddy validate`，平滑 reload，证书自动签发。
+   - Nginx：改 `server_name`、跳转、证书路径和 stream 的 SNI 映射。先让 80 端口答新域名，再用 `certbot certonly --webroot` 签新证书。旧证书的续期配置改名为 `.disabled`，因为 DNS 已经不指向这里，续期会失败。
+5. **重建**：`compose.sh --profile app up -d` 会重建配置有变化的服务（auth、storage、studio、api-gw 等）。xy-api、xy-worker 用 `--no-deps --force-recreate` 再建一次。
+6. **前端**：用这套自己的 anon key 和新域名重新构建（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SERVER_BASE_URL`），再用 `publish-web.mjs` 发布。
+7. **验收**：
+   - 入口规则检查；
+   - 账号要重新登录：浏览器里的旧会话属于另一套，令牌对不上；
+   - 只读冒烟；
+   - 恢复演练。
+   - 本地 DNS 缓存还是旧地址时，`curl --resolve`、Chrome `--host-resolver-rules` 和 Node 的 `host-rules.mjs` 可以把域名钉到新地址。
+
 ## 备份与恢复
 
 `backup.mjs` 是停写的一致性备份，**会造成维护窗口**，仅在部署运维需要时执行；本轮没有运行真实备份。它停止正在运行的写入服务（保留DB），等待应用优雅停止；保存 postgres 和 `_supabase` 的自定义格式dump、角色SQL、Storage文件、DB自定义密钥配置、应用和Supabase环境文件、部署版本及恢复服务清单，另含 `deployment-config.tar.gz`（实际使用的Envoy脱敏配置、functions、pooler与DB顶层初始化SQL，不含DB数据目录）。手动和调度共享锁，停写失败标记阻止下一轮误报成功。全部成功生成SHA-256清单后才恢复原来运行的服务。失败保留部分结果和停机状态，人工检查 `resume.json` 后恢复，不把部分备份当成功。
