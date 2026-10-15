@@ -28,8 +28,26 @@ const BODY_LIMIT = 3 * 1024 * 1024;
 const TIMEOUT_MS = 20_000;
 const MAX_REDIRECTS = 5;
 
+/**
+ * Why a page was not read. "blocked" (a private or local address) and
+ * "format" (PDF, pictures) are final; "http" / "network" / "timeout" /
+ * "empty" may still be read through a page-reading service (第 69 条,
+ * agent/tools/web-search.ts).
+ */
+export type ReadPageFailure =
+  | "blocked"
+  | "format"
+  | "http"
+  | "network"
+  | "timeout"
+  | "empty"
+  | "invalid";
+
 export class ReadPageError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly kind: ReadPageFailure = "invalid",
+  ) {
     super(message);
     this.name = "ReadPageError";
   }
@@ -74,7 +92,7 @@ export function checkPageUrl(raw: string): URL {
           host,
         ))
   )
-    throw new ReadPageError("这个地址不能访问（内网或本机地址）");
+    throw new ReadPageError("这个地址不能访问（内网或本机地址）", "blocked");
   return url;
 }
 
@@ -148,6 +166,28 @@ function decode(body: Buffer, contentType: string): string {
   }
 }
 
+/** A slice of a page's text, the way read_webpage hands it out. */
+export function pageSlice(
+  page: { url: string; title: string; description?: string; text: string },
+  options: { offset?: number; maxChars?: number } = {},
+): ReadPageResult {
+  const maxChars = Math.max(
+    500,
+    Math.min(options.maxChars ?? READ_PAGE_CHARS, 20_000),
+  );
+  const offset = Math.max(0, Math.min(options.offset ?? 0, page.text.length));
+  const end = Math.min(page.text.length, offset + maxChars);
+  return {
+    url: page.url,
+    title: page.title,
+    description: page.description ?? "",
+    text: page.text.slice(offset, end),
+    offset,
+    nextOffset: end < page.text.length ? end : null,
+    totalChars: page.text.length,
+  };
+}
+
 export async function readWebPage(
   raw: string,
   options: {
@@ -176,28 +216,36 @@ export async function readWebPage(
           c.code === "provider_blocked_address",
       );
       if (blocked)
-        throw new ReadPageError("这个地址不能访问（内网或本机地址）");
+        throw new ReadPageError(
+          "这个地址不能访问（内网或本机地址）",
+          "blocked",
+        );
       console.warn(
         `[web-read] ${url.host} failed: ${describeErrorForLog(error)}`,
       );
       throw new ReadPageError(
         timeout.aborted ? "网页打开超时" : "网页打不开（连接失败）",
+        timeout.aborted ? "timeout" : "network",
       );
     }
     if (page.status >= 300 && page.status < 400 && page.location) {
-      if (hop >= MAX_REDIRECTS) throw new ReadPageError("网页跳转次数太多");
+      if (hop >= MAX_REDIRECTS)
+        throw new ReadPageError("网页跳转次数太多", "http");
       url = checkPageUrl(new URL(page.location, url).href);
       continue;
     }
     break;
   }
   if (page.status >= 400)
-    throw new ReadPageError(`网页返回 HTTP ${page.status}，没有读到内容`);
+    throw new ReadPageError(
+      `网页返回 HTTP ${page.status}，没有读到内容`,
+      "http",
+    );
   const type = (page.headers.get("content-type") ?? "").toLowerCase();
   if (/^(image|video|audio)\//.test(type))
-    throw new ReadPageError("这是图片或音视频文件，读不了文字");
+    throw new ReadPageError("这是图片或音视频文件，读不了文字", "format");
   if (type.includes("pdf"))
-    throw new ReadPageError("这是 PDF 文件，暂时读不了");
+    throw new ReadPageError("这是 PDF 文件，暂时读不了", "format");
   const decoded = decode(page.body, type);
   const isHtml =
     type.includes("html") ||

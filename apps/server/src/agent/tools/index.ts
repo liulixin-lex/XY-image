@@ -4,7 +4,15 @@ import type { AvailableModel } from "../../generation/providers/registry.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 
 import type { ConnectionManager } from "../../ws/connection-manager.js";
+import type { ReviewImageStore } from "../vision.js";
+import { createApplyPatchTool } from "./apply-patch.js";
 import { createBrandKitTool } from "./brand-kit.js";
+import {
+  type SubmitWorkflowBatchFn,
+  type WaitForJobsFn,
+  createCanvasWorkflowTool,
+  createRunWorkflowTool,
+} from "./canvas-workflow.js";
 import {
   type PersistImageFn,
   type SubmitImageJobFn,
@@ -17,8 +25,7 @@ import { createProjectSearchTool } from "./project-search.js";
 import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import { createVideoGenerateTool } from "./video-generate.js";
 import { createViewImagesTool } from "./view-images.js";
-import { createApplyPatchTool } from "./apply-patch.js";
-import type { ReviewImageStore } from "../vision.js";
+import { pictureRef } from "./view-images.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
 export { createVideoGenerateTool } from "./video-generate.js";
@@ -65,6 +72,12 @@ export function createMainAgentTools(
     availableModels?: AvailableModel[];
     /** 第 67 条 审图: pictures the model is shown (agent/vision.ts). */
     reviewImages?: ReviewImageStore;
+    /** 第 69 条: running 生成 nodes from the chat (agent/runtime.ts). */
+    workflow?: {
+      submitBatch: SubmitWorkflowBatchFn;
+      waitForJobs: WaitForJobsFn;
+      notifyCanvas?: () => void;
+    };
   },
 ) {
   const tools: StructuredTool[] = [
@@ -73,6 +86,11 @@ export function createMainAgentTools(
     createApplyPatchTool(backend) as unknown as StructuredTool,
     createInspectCanvasTool(deps),
     createManipulateCanvasTool(deps),
+    // 第 69 条: node canvas workflows (prompt cards → 生成 nodes → pictures).
+    createCanvasWorkflowTool({
+      createUserClient: deps.createUserClient,
+      availableModels: deps.availableModels ?? [],
+    }) as unknown as StructuredTool,
     createImageGenerateTool({
       availableModels: deps.availableModels ?? [],
       ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
@@ -86,6 +104,19 @@ export function createMainAgentTools(
     // 因为 CompositeBackend 的 default backend 是 LocalShellBackend。
     // 不需要在这里手动注册。
   ];
+  if (deps.workflow) {
+    tools.push(
+      createRunWorkflowTool({
+        createUserClient: deps.createUserClient,
+        submitBatch: deps.workflow.submitBatch,
+        waitForJobs: deps.workflow.waitForJobs,
+        ...(deps.workflow.notifyCanvas
+          ? { notifyCanvas: deps.workflow.notifyCanvas }
+          : {}),
+        pictureUrl: canvasPictureUrl,
+      }) as unknown as StructuredTool,
+    );
+  }
   if (deps.brandKitId) {
     tools.push(createBrandKitTool(deps, deps.brandKitId));
   }
@@ -112,4 +143,31 @@ export function createMainAgentTools(
 /** @deprecated Use createMainAgentTools + sub-agents instead */
 export function createPhaseATools(backend: BackendProtocol | BackendFactory) {
   return [createProjectSearchTool(backend), createImageGenerateTool()] as const;
+}
+
+/**
+ * The URL a canvas picture is sent by as a reference: its stored object's
+ * public Storage URL (the form the worker accepts, xy2api-reference.ts), as
+ * the page sends it; an https picture as it is.
+ */
+export function canvasPictureUrl(
+  client: {
+    storage: {
+      from: (bucket: string) => {
+        getPublicUrl: (path: string) => { data: { publicUrl: string } };
+      };
+    };
+  },
+  element: Record<string, unknown>,
+  files: Record<string, Record<string, unknown>> | undefined,
+): string | null {
+  const ref = pictureRef(element, files);
+  if (!ref) return null;
+  if (!ref.startsWith("oss://")) return ref;
+  const rest = ref.slice("oss://".length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  return client.storage
+    .from(rest.slice(0, slash))
+    .getPublicUrl(rest.slice(slash + 1)).data.publicUrl;
 }

@@ -62,7 +62,7 @@ export const CHAT_EFFORT_LABEL: Record<ChatEffort, string> = {
 };
 
 export const CHAT_EFFORT_HINT: Record<ChatEffort, string> = {
-  auto: "由模型决定想多久",
+  auto: "理解需求时多想一点，执行步骤时回得快",
   low: "回得快，适合简单改动",
   medium: "速度和思考兼顾",
   high: "多想一会儿，适合复杂需求",

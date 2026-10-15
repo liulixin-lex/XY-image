@@ -12,6 +12,14 @@ import { chatRunError } from "../features/chat-providers/run-error.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
 import { WEB_TOOL_NAMES } from "./tools/web-search.js";
 
+/** Tools that change the canvas: the page fetches it again after them. */
+const CANVAS_WRITING_TOOLS = new Set([
+  "manipulate_canvas",
+  // 第 69 条: node canvas workflows.
+  "canvas_workflow",
+  "run_workflow",
+]);
+
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
 
@@ -326,7 +334,7 @@ export async function* adaptDeepAgentStream(
           : extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
         if (
           (extractedArtifacts?.length ?? 0) > 0 ||
-          toolName === "manipulate_canvas"
+          CANVAS_WRITING_TOOLS.has(toolName)
         )
           answered = true;
         console.info(
@@ -348,7 +356,7 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.delete(toolCallId);
         }
 
-        if (toolName === "manipulate_canvas") {
+        if (CANVAS_WRITING_TOOLS.has(toolName)) {
           yield {
             type: "canvas.sync" as const,
             runId: options.runId,

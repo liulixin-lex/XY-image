@@ -5,15 +5,16 @@ const inspectCanvasSchema = z.object({
   detail_level: z
     .enum(["summary", "full"])
     .default("summary")
-    .describe("Level of detail: summary (id, type, position, size) or full (all properties)"),
-  element_id: z
-    .string()
-    .optional()
-    .describe("Query a specific element by ID"),
+    .describe(
+      "Level of detail: summary (id, type, position, size) or full (all properties)",
+    ),
+  element_id: z.string().optional().describe("Query a specific element by ID"),
   filter_type: z
     .array(z.string())
     .optional()
-    .describe("Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata)."),
+    .describe(
+      "Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata).",
+    ),
   filter_region: z
     .object({
       min_x: z.number(),
@@ -51,10 +52,18 @@ function summarizeElement(el: CanvasElement) {
   }
   // Node canvas: a generator node, its settings in customData.generator.
   if (el.type === "generator") {
-    const generator = (el.customData as { generator?: Record<string, unknown> } | undefined)
-      ?.generator;
-    for (const key of ["model", "aspectRatio", "resolution", "quality", "count"] as const) {
-      if (generator?.[key] !== undefined && generator[key] !== "") base[key] = generator[key];
+    const generator = (
+      el.customData as { generator?: Record<string, unknown> } | undefined
+    )?.generator;
+    for (const key of [
+      "model",
+      "aspectRatio",
+      "resolution",
+      "quality",
+      "count",
+    ] as const) {
+      if (generator?.[key] !== undefined && generator[key] !== "")
+        base[key] = generator[key];
     }
     if (typeof generator?.prompt === "string" && generator.prompt) {
       base.prompt =
@@ -65,8 +74,10 @@ function summarizeElement(el: CanvasElement) {
   }
   // An arrow bound at both ends is an edge of the node canvas: from → to.
   if (el.type === "arrow") {
-    const from = (el.startBinding as { elementId?: unknown } | null | undefined)?.elementId;
-    const to = (el.endBinding as { elementId?: unknown } | null | undefined)?.elementId;
+    const from = (el.startBinding as { elementId?: unknown } | null | undefined)
+      ?.elementId;
+    const to = (el.endBinding as { elementId?: unknown } | null | undefined)
+      ?.elementId;
     if (typeof from === "string" && typeof to === "string") {
       base.from = from;
       base.to = to;
@@ -80,7 +91,8 @@ function summarizeElement(el: CanvasElement) {
       base.type = "video";
       if (customData.videoUrl) base.videoUrl = customData.videoUrl;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     } else {
       if (customData?.title) {
         base.title = customData.title;
@@ -96,7 +108,8 @@ function summarizeElement(el: CanvasElement) {
       if (customData.title) base.title = customData.title;
       if (customData.prompt) base.prompt = customData.prompt;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     }
   }
 
@@ -119,7 +132,10 @@ function summarizeElement(el: CanvasElement) {
 
 function computeBoundingBox(elements: CanvasElement[]) {
   if (elements.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY,
+    minY = Number.POSITIVE_INFINITY,
+    maxX = Number.NEGATIVE_INFINITY,
+    maxY = Number.NEGATIVE_INFINITY;
   for (const el of elements) {
     const x = Number(el.x) || 0;
     const y = Number(el.y) || 0;
@@ -146,41 +162,93 @@ export function buildCanvasSummaryForContext(
   if (visible.length === 0) return null;
 
   const bbox = computeBoundingBox(visible);
-  const summaries = visible.map((el) => summarizeElement(el));
+  // 第 69 条: pictures placed for a generator run carry the job id; a
+  // generator shows how much of its latest run is on the canvas.
+  const placedJobs = new Set(
+    visible.flatMap((el) => {
+      const jobId = (el.customData as { jobId?: unknown } | undefined)?.jobId;
+      return el.type === "image" && typeof jobId === "string" ? [jobId] : [];
+    }),
+  );
+  const nodes = visible.filter((el) => !(el.type === "arrow" && boundEnds(el)));
+  const edges = visible.filter((el) => el.type === "arrow" && boundEnds(el));
+  const summaries = nodes.map((el) => summarizeElement(el));
 
   // Compact format: element count + bounding box + per-element one-liner
   const lines: string[] = [
-    `Canvas: ${visible.length} elements, bounds (${Math.round(bbox.minX)},${Math.round(bbox.minY)})→(${Math.round(bbox.maxX)},${Math.round(bbox.maxY)})`,
+    `Canvas: ${nodes.length} nodes, ${edges.length} edges, bounds (${Math.round(bbox.minX)},${Math.round(bbox.minY)})→(${Math.round(bbox.maxX)},${Math.round(bbox.maxY)})`,
   ];
 
-  // Cap at 30 elements to avoid bloating the context window
-  const toShow = summaries.slice(0, 30);
-  for (const s of toShow) {
+  // Cap the list to keep the context small.
+  const toShow = summaries.slice(0, SUMMARY_NODES);
+  for (const [index, s] of toShow.entries()) {
     const parts = [`${s.type}#${s.id}`];
     parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
-    parts.push(`${Math.round(s.width as number)}x${Math.round(s.height as number)}`);
+    parts.push(
+      `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
+    );
     if (s.text) parts.push(`"${s.text}"`);
     if (s.title) parts.push(`title="${s.title}"`);
     if (s.from && s.to) parts.push(`${s.from}→${s.to}`);
     if (s.type === "generator") {
-      for (const key of ["model", "aspectRatio", "resolution", "quality", "count"]) {
+      for (const key of [
+        "model",
+        "aspectRatio",
+        "resolution",
+        "quality",
+        "count",
+      ]) {
         if (s[key] !== undefined) parts.push(`${key}=${s[key]}`);
       }
       if (s.prompt) parts.push(`prompt="${s.prompt}"`);
+      const run = (
+        (
+          nodes[index]?.customData as
+            | { generator?: { run?: { jobs?: Array<{ jobId?: unknown }> } } }
+            | undefined
+        )?.generator?.run?.jobs ?? []
+      ).filter((job) => typeof job.jobId === "string");
+      if (run.length)
+        parts.push(
+          `last_run=${run.filter((job) => placedJobs.has(job.jobId as string)).length}/${run.length} on canvas`,
+        );
     }
     if (s.type === "video") {
       if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
-      if (s.prompt) parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
+      if (s.prompt)
+        parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
     }
     if (s.strokeColor) parts.push(`stroke=${s.strokeColor}`);
     if (s.backgroundColor) parts.push(`fill=${s.backgroundColor}`);
     lines.push(`  ${parts.join(" ")}`);
   }
-  if (summaries.length > 30) {
-    lines.push(`  ... and ${summaries.length - 30} more elements`);
+  if (summaries.length > SUMMARY_NODES) {
+    lines.push(
+      `  ... and ${summaries.length - SUMMARY_NODES} more nodes (inspect_canvas for the rest)`,
+    );
+  }
+  if (edges.length) {
+    const shown = edges.slice(0, SUMMARY_EDGES).map((el) => {
+      const [from, to] = boundEnds(el) as [string, string];
+      return `${from}→${to}`;
+    });
+    lines.push(
+      `  edges: ${shown.join(", ")}${edges.length > SUMMARY_EDGES ? ` … and ${edges.length - SUMMARY_EDGES} more` : ""}`,
+    );
   }
 
   return lines.join("\n");
+}
+
+const SUMMARY_NODES = 60;
+const SUMMARY_EDGES = 80;
+
+function boundEnds(el: Record<string, unknown>): [string, string] | null {
+  const from = (el.startBinding as { elementId?: unknown } | null | undefined)
+    ?.elementId;
+  const to = (el.endBinding as { elementId?: unknown } | null | undefined)
+    ?.elementId;
+  return typeof from === "string" && typeof to === "string" ? [from, to] : null;
 }
 
 export function createInspectCanvasTool(deps: {
@@ -208,7 +276,8 @@ export function createInspectCanvasTool(deps: {
 
       // 第 67 条: a dropped connection (no PostgREST code) is thrown, so the
       // read-only retry (run-budget.ts) tries again; not "not found".
-      if (error && !error.code) throw new Error(`canvas read failed: ${error.message}`);
+      if (error && !error.code)
+        throw new Error(`canvas read failed: ${error.message}`);
       if (error || !data) {
         return JSON.stringify({
           error: "canvas_not_found",
@@ -221,9 +290,7 @@ export function createInspectCanvasTool(deps: {
         appState?: Record<string, unknown>;
       };
 
-      const elements = (content.elements ?? []).filter(
-        (el) => !el.isDeleted,
-      );
+      const elements = (content.elements ?? []).filter((el) => !el.isDeleted);
 
       if (input.element_id) {
         const found = elements.find((el) => el.id === input.element_id);
@@ -244,9 +311,12 @@ export function createInspectCanvasTool(deps: {
       if (input.filter_type && input.filter_type.length > 0) {
         filtered = filtered.filter((el) => {
           // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
-          const customData = el.customData as Record<string, unknown> | undefined;
+          const customData = el.customData as
+            | Record<string, unknown>
+            | undefined;
           const isVideoElement =
-            (el.type === "image" || el.type === "embeddable") && customData?.isVideo === true;
+            (el.type === "image" || el.type === "embeddable") &&
+            customData?.isVideo === true;
           const logicalType = isVideoElement ? "video" : (el.type as string);
           return input.filter_type!.includes(logicalType);
         });
@@ -260,7 +330,12 @@ export function createInspectCanvasTool(deps: {
           const ew = Number(el.width) || 0;
           const eh = Number(el.height) || 0;
           // Element overlaps region if it's not completely outside
-          return !(ex + ew < r.min_x || ex > r.max_x || ey + eh < r.min_y || ey > r.max_y);
+          return !(
+            ex + ew < r.min_x ||
+            ex > r.max_x ||
+            ey + eh < r.min_y ||
+            ey > r.max_y
+          );
         });
       }
 

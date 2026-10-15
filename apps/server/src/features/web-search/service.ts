@@ -8,6 +8,7 @@ import {
   type SearchFetch,
   type SearchProvider,
   type SearchResult,
+  anysearchProvider,
   braveProvider,
   searxngProvider,
   tavilyProvider,
@@ -199,11 +200,16 @@ export function webSearchProviders(
     | "webSearchBraveKey"
     | "webSearchSearxngUrl"
     | "webSearchKeyless"
+    | "webSearchAnysearchKey"
   >,
 ): SearchProvider[] {
   return [
     ...(env.webSearchSearxngUrl
       ? [searxngProvider(env.webSearchSearxngUrl)]
+      : []),
+    // 第 69 条: production's search (an agent-oriented API, good Chinese).
+    ...(env.webSearchAnysearchKey
+      ? [anysearchProvider(env.webSearchAnysearchKey)]
       : []),
     ...(env.webSearchTavilyKey ? [tavilyProvider(env.webSearchTavilyKey)] : []),
     ...(env.webSearchBraveKey ? [braveProvider(env.webSearchBraveKey)] : []),
@@ -219,6 +225,7 @@ export function sharedWebSearchService(
 ): WebSearchService {
   const config = JSON.stringify([
     env.webSearchSearxngUrl ?? "",
+    Boolean(env.webSearchAnysearchKey),
     Boolean(env.webSearchTavilyKey),
     Boolean(env.webSearchBraveKey),
     env.webSearchKeyless ?? "on",

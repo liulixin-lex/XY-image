@@ -15,3 +15,4 @@ export * from "./ws-protocol.js";
 
 export * from "./chat-models.js";
 export * from "./chat-options.js";
+export * from "./canvas-layout.js";

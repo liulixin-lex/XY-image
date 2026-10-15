@@ -11,6 +11,9 @@ import { htmlToText, stripTags } from "./html.js";
 import {
   SearchBlockedError,
   type SearchProvider,
+  anysearchExtract,
+  anysearchProvider,
+  parseAnysearch,
   parseDuckDuckGo,
   parseWikipedia,
   parseYahooJapan,
@@ -89,6 +92,95 @@ describe("search result pages (第 68 条)", () => {
     });
     expect(results[0]?.snippet).toContain("春节");
     expect(results[0]?.snippet).not.toContain("searchmatch");
+  });
+});
+
+describe("AnySearch (第 69 条)", () => {
+  it("reads its results (recorded from the production key)", () => {
+    const results = parseAnysearch(fixture("anysearch-search.json"));
+    expect(results.length).toBe(4);
+    for (const r of results) {
+      expect(r.url).toMatch(/^https?:\/\//);
+      expect(r.title.length).toBeGreaterThan(2);
+      expect(r.snippet.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("asks for Chinese results for Chinese queries, with the key", async () => {
+    const calls: Array<{
+      url: string;
+      init: { headers: Record<string, string>; body: string };
+    }> = [];
+    const fetch = vi.fn(async (url: string, init?: unknown) => {
+      calls.push({
+        url,
+        init: init as { headers: Record<string, string>; body: string },
+      });
+      return { status: 200, text: fixture("anysearch-search.json") };
+    });
+    const provider = anysearchProvider("as_sk_test");
+    await provider.search({ query: "春节海报 配色", count: 6, fetch });
+    await provider.search({ query: "node.js lts", count: 20, fetch });
+    expect(calls[0]?.url).toBe("https://api.anysearch.com/v1/search");
+    expect(calls[0]?.init.headers.authorization).toBe("Bearer as_sk_test");
+    expect(JSON.parse(calls[0]?.init.body ?? "{}")).toEqual({
+      query: "春节海报 配色",
+      max_results: 6,
+      zone: "cn",
+      language: "zh-CN",
+    });
+    expect(JSON.parse(calls[1]?.init.body ?? "{}")).toEqual({
+      query: "node.js lts",
+      max_results: 10,
+    });
+  });
+
+  it("treats a rate limit or a bad key as a refusal and other errors as failures", async () => {
+    const answer = (status: number, body: object) =>
+      vi.fn(async () => ({ status, text: JSON.stringify(body) }));
+    const provider = anysearchProvider("k");
+    await expect(
+      provider.search({
+        query: "q",
+        count: 3,
+        fetch: answer(200, {
+          code: -1,
+          message: "Rate limited, retry after 300 seconds.",
+        }),
+      }),
+    ).rejects.toBeInstanceOf(SearchBlockedError);
+    await expect(
+      provider.search({
+        query: "q",
+        count: 3,
+        fetch: answer(401, { code: -1, message: "unauthorized" }),
+      }),
+    ).rejects.toBeInstanceOf(SearchBlockedError);
+    const failure = provider.search({
+      query: "q",
+      count: 3,
+      fetch: answer(500, { code: -1, message: "Internal server error." }),
+    });
+    await expect(failure).rejects.toThrow(/HTTP 500/);
+    await expect(failure).rejects.not.toBeInstanceOf(SearchBlockedError);
+  });
+
+  it("reads a page through extract", async () => {
+    const fetch = vi.fn(async () => ({
+      status: 200,
+      text: JSON.stringify({
+        code: 0,
+        data: {
+          url: "https://zhihu.com/a",
+          title: "标题",
+          content: "# 正文\n内容",
+        },
+      }),
+    }));
+    expect(await anysearchExtract("k", "https://zhihu.com/a", fetch)).toEqual({
+      title: "标题",
+      text: "# 正文\n内容",
+    });
   });
 });
 
@@ -554,6 +646,39 @@ describe("search_web / read_webpage tools", () => {
     expect((await run(tools, "search_web", { query: "more" })).summary).toBe(
       "这一轮搜索次数已用完",
     );
+  });
+
+  it("reads a refused page through the page service, never a blocked address", async () => {
+    quiet();
+    const extract = vi.fn(async () => ({
+      title: "知乎",
+      text: "这是正文".repeat(10),
+    }));
+    const tools = createWebTools({
+      mode: "free",
+      service: service([]),
+      extract,
+      readPage: async (url) => {
+        if (url.includes("zhihu"))
+          throw new ReadPageError("网页返回 HTTP 403，没有读到内容", "http");
+        throw new ReadPageError(
+          "这个地址不能访问（内网或本机地址）",
+          "blocked",
+        );
+      },
+    });
+    expect(
+      await run(tools, "read_webpage", { url: "https://www.zhihu.com/q/1" }),
+    ).toMatchObject({
+      title: "知乎",
+      text: expect.stringContaining("这是正文"),
+    });
+    expect(
+      await run(tools, "read_webpage", { url: "http://10.0.0.1/" }),
+    ).toMatchObject({
+      error: "这个地址不能访问（内网或本机地址）",
+    });
+    expect(extract).toHaveBeenCalledTimes(1);
   });
 
   it("returns a page's text, or why it could not be read", async () => {

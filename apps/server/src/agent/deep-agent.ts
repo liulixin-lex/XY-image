@@ -13,8 +13,12 @@ import {
   resolveChatEffort,
   usesResponsesApi,
 } from "@loomic/shared";
-import { createDeepAgent } from "deepagents";
-import type { createMiddleware } from "langchain";
+import {
+  createFilesystemMiddleware,
+  createPatchToolCallsMiddleware,
+  createSummarizationMiddleware,
+} from "deepagents";
+import { createAgent, type createMiddleware } from "langchain";
 import { createCustomChatModel } from "../features/chat-providers/chat-model.js";
 import {
   GatewayError,
@@ -25,7 +29,9 @@ import type { UserSupabaseClient } from "../supabase/user.js";
 
 import { Agent as HttpAgent, fetch as httpFetch } from "undici";
 import type { ServerEnv } from "../config/env.js";
+import { anysearchExtract } from "../features/web-search/providers.js";
 import { sharedWebSearchService } from "../features/web-search/service.js";
+import { defaultSearchFetch } from "../features/web-search/service.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
 import {
   isContextOverflowText,
@@ -44,6 +50,8 @@ import {
   type SentEffort,
   chatEffortKwargs,
   createChatOptionsMiddleware,
+  executionEffort,
+  planningEffort,
 } from "./model-options.js";
 import { ChatConnectError, createModelRetryMiddleware } from "./model-retry.js";
 import { createProjectMemoryMiddleware } from "./project-memory.js";
@@ -51,9 +59,15 @@ import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import {
   createReadToolRetryMiddleware,
   createRunBudgetMiddleware,
+  createToolDietMiddleware,
 } from "./run-budget.js";
+import { skillsSection } from "./skills-prompt.js";
 import { separateToolCallIndexes } from "./tool-call-stream.js";
 import { createToolErrorMiddleware } from "./tool-errors.js";
+import type {
+  SubmitWorkflowBatchFn,
+  WaitForJobsFn,
+} from "./tools/canvas-workflow.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -67,7 +81,7 @@ import {
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 export type LoomicAgent = Pick<
-  ReturnType<typeof createDeepAgent>,
+  ReturnType<typeof createAgent>,
   "stream" | "streamEvents"
 >;
 
@@ -90,9 +104,17 @@ export type LoomicAgentFactory = (options: {
   chatOptions?: ChatRunOptions;
   /** 第 67 条 审图: pictures the model is shown (vision.ts). */
   reviewImages?: ReviewImageStore;
+  /** 第 69 条: running 生成 nodes from the chat (tools/canvas-workflow.ts). */
+  workflow?: WorkflowDeps;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }) => LoomicAgent;
+
+export type WorkflowDeps = {
+  submitBatch: SubmitWorkflowBatchFn;
+  waitForJobs: WaitForJobsFn;
+  notifyCanvas?: () => void;
+};
 
 export type ChatRunOptions = {
   effort?: ChatEffort;
@@ -116,10 +138,12 @@ export function loomicAgentMiddleware(
 ) {
   return [
     createGluedToolCallMiddleware(),
+    // 第 69 条: no ls / glob / grep in front of the model.
+    createToolDietMiddleware(),
     createToolErrorMiddleware(),
     // Inside the tool-errors one: read-only tools get a second try first.
     createReadToolRetryMiddleware(),
-    // 第 67 条: a run stops after RUN_MODEL_CALL_BUDGET model calls.
+    // 第 67 / 69 条: wrap up at RUN_WRAP_UP_AT, stop at RUN_MODEL_CALL_BUDGET.
     createRunBudgetMiddleware(),
     // Project memory and other system-prompt context (project-memory.ts).
     ...context,
@@ -146,6 +170,7 @@ export function createLoomicDeepAgent(options: {
   customChat?: Parameters<typeof createCustomChatModel>[0];
   chatOptions?: ChatRunOptions;
   reviewImages?: ReviewImageStore;
+  workflow?: WorkflowDeps;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
 }): LoomicAgent {
@@ -167,7 +192,10 @@ export function createLoomicDeepAgent(options: {
         )
       : null;
   const chatOptions = options.chatOptions ?? {};
-  const effort = resolveChatEffort(ref, chatOptions.effort);
+  const chosenEffort = resolveChatEffort(ref, chatOptions.effort);
+  // 第 69 条: the first call of a turn thinks at the chosen level (自动 = 中
+  // where the model takes it); later steps are capped (model-options.ts).
+  const effort = planningEffort(ref, chosenEffort);
   // 第 68 条: every model searches one way or another (chat-options.ts).
   const searchMode = chatOptions.webSearch ? chatWebSearchMode(ref) : null;
   const hostedSearch = searchMode === "hosted";
@@ -200,6 +228,18 @@ export function createLoomicDeepAgent(options: {
           ...(searchMode === "gemini" && options.credentials && ref
             ? { gemini: { ...options.credentials, model: ref.model } }
             : {}),
+          // 第 69 条: pages that refuse us are read through AnySearch.
+          ...(options.env.webSearchAnysearchKey
+            ? {
+                extract: (url: string, signal?: AbortSignal) =>
+                  anysearchExtract(
+                    options.env.webSearchAnysearchKey as string,
+                    url,
+                    defaultSearchFetch,
+                    signal,
+                  ),
+              }
+            : {}),
         })
       : [];
   const searchRoute: SearchRoute = !searchMode
@@ -209,7 +249,7 @@ export function createLoomicDeepAgent(options: {
       : "tools";
   if (builtHere && ref)
     console.info(
-      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} webSearch=${searchMode ?? "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
+      `[agent-model] ${ref.source === "custom" ? "custom:" : ""}${ref.model} effort=${chatOptions.effort ?? "auto"}→${effort} (after tools ${executionEffort(ref, effort, chosenEffort)}) webSearch=${searchMode ?? "off"} cacheKey=${promptCacheKey ? "thread" : "none"}`,
     );
   const optionsMiddleware: ReturnType<typeof createMiddleware>[] = builtHere
     ? [
@@ -217,6 +257,7 @@ export function createLoomicDeepAgent(options: {
           ref,
           label: ref?.model ?? "model",
           effort,
+          chosen: chosenEffort,
           search: searchRoute,
           searchTools,
           rebuild: (sent, hosted) =>
@@ -243,41 +284,36 @@ export function createLoomicDeepAgent(options: {
       // (FINDINGS A1 showed a failed step and "无法读取你标记的品牌套件").
       `${LOOMIC_SYSTEM_PROMPT}\n\n当前项目没有选品牌套件，也没有默认品牌套件。用户提到品牌套件或品牌规范时，告诉用户可以在画布顶部的「品牌套件」里选一个，或在「品牌套件」页打开「应用到新项目」；不要去文件里找品牌套件。`;
 
-  // Inject enabled skills (both system and user-created) into the system prompt.
-  // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
-  const wsSkills = options.workspaceSkills ?? [];
-  if (wsSkills.length > 0) {
-    const skillsList = wsSkills
-      .map((s) => {
-        let line = `- **${s.name}**: ${s.description}\n  → Read \`${s.path}\` for full instructions`;
-        if (s.files.length > 0) {
-          const counts: Record<string, number> = {};
-          for (const f of s.files) {
-            const dir = f.path.split("/")[0] ?? "other";
-            counts[dir] = (counts[dir] ?? 0) + 1;
-          }
-          const summary = Object.entries(counts)
-            .map(([dir, n]) => `${dir}/ (${n})`)
-            .join(", ");
-          line += `\n  → Has: ${summary}`;
-        }
-        return line;
-      })
-      .join("\n");
-    systemPrompt += `\n\n## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
-  }
+  // Enabled skills (system and user-created, loaded from the database in
+  // runtime.ts), written out in full (skills-prompt.ts, 第 69 条).
+  const skills = skillsSection(options.workspaceSkills ?? []);
+  if (skills) systemPrompt += `\n\n${skills}`;
 
-  return createDeepAgent({
-    backend: backendResult.factory,
-    ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
-    middleware: loomicAgentMiddleware(optionsMiddleware, [
-      createProjectMemoryMiddleware(backendResult.factory),
-    ]),
-    model: resolvedModel,
-    name: "loomic",
-    ...(options.store ? { store: options.store } : {}),
-    subagents: [],
+  // 第 69 条: a design assistant, not deepagents' coding agent: no todo
+  // list (write_todos) and no general-purpose sub-agent (task), which made
+  // simple requests take extra rounds; the file tools, the conversation
+  // summary (also what handles a context overflow, utils/context-overflow.ts)
+  // and the repair of dangling tool calls stay.
+  return createAgent({
+    model: resolvedModel as BaseChatModel,
     systemPrompt,
+    ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
+    ...(options.store ? { store: options.store } : {}),
+    name: "loomic",
+    middleware: [
+      createFilesystemMiddleware({
+        backend: backendResult.factory,
+        systemPrompt: FILES_PROMPT,
+      }),
+      createSummarizationMiddleware({
+        model: resolvedModel as BaseChatModel,
+        backend: backendResult.factory,
+      }),
+      createPatchToolCallsMiddleware(),
+      ...loomicAgentMiddleware(optionsMiddleware, [
+        createProjectMemoryMiddleware(backendResult.factory),
+      ]),
+    ],
     tools: createMainAgentTools(backendResult.factory, {
       createUserClient,
       ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
@@ -294,9 +330,16 @@ export function createLoomicDeepAgent(options: {
         : {}),
       availableModels: options.imageModels ?? [],
       ...(options.reviewImages ? { reviewImages: options.reviewImages } : {}),
+      ...(options.workflow ? { workflow: options.workflow } : {}),
     }),
-  });
+  }) as unknown as LoomicAgent;
 }
+
+/** What the file tools are for (replaces deepagents' coding-agent prompt). */
+export const FILES_PROMPT = `## 文件
+- /workspace/ 下是这个项目的文字资料（文案、分镜、方案、清单），这个项目的其他对话也能读到；/memories/AGENTS.md 是项目记忆。
+- 知道路径就直接 read_file，不要先列目录或搜索文件；新建用 write_file，修改用 apply_patch（一次改多处）或 edit_file。
+- 文件只放文字；图片、提示词卡片和生成节点都在画布上，用画布工具处理。`;
 
 // Only the transport closure sees the credential; it is never put in graph state.
 // 第 67 条: no time limit on a whole answer (a long reasoning call is fine),

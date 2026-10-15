@@ -1,6 +1,32 @@
-# 设计助手：思考强度、联网搜索、审图、上下文与工具（第 67、68 条）
+# 设计助手：思考强度、联网搜索、审图、工作流、上下文与工具（第 67–69 条）
 
-2026-10-14，agent01。设计助手（画布右侧的对话）这两轮加的能力，各自怎么工作、在哪里改、日志怎么看。第 68 条按主站源码和真实调用重新核对了每家模型的思考强度，并让所有模型都能联网搜索。
+2026-10-14～15，agent01。设计助手（画布右侧的对话）这几轮加的能力，各自怎么工作、在哪里改、日志怎么看。第 68 条按主站源码和真实调用重新核对了每家模型的思考强度，并让所有模型都能联网搜索；第 69 条让助手做事高效（不像编程助手那样反复思考、探索），接入 AnySearch，并能只靠对话搭建和运行完整的节点工作流。
+
+## 高效做事（第 69 条）
+
+以前的问题（旧正式站 10-11～10-14 的记录）：几乎每轮都先读技能文件，常常先 `ls`/`glob` 浏览目录、反复写待办清单（`write_todos`）、每轮都 `inspect_canvas`，有一轮连接挂了近两小时。这些都是编程助手（deepagents）的习惯。现在：
+
+| 改动 | 位置 |
+| --- | --- |
+| 不再用 deepagents 的整套编程助手：没有待办清单（`write_todos`）和通用子助手（`task`）；只保留文件工具、对话摘要（也负责上下文超长时压缩）和补全悬空工具调用 | `agent/deep-agent.ts`（`createAgent` + 选出的中间件） |
+| 文件工具的说明换成三行中文（知道路径就直接读，不列目录）；`ls`、`glob`、`grep` 不给模型看 | `deep-agent.ts` `FILES_PROMPT`，`run-budget.ts` `createToolDietMiddleware` |
+| 启用的技能直接写进系统提示词（14,000 字以内，超出的列出路径），不用再读文件；系统提示词按对话缓存 | `agent/skills-prompt.ts` |
+| 思考强度：理解需求的那一步（用户刚发消息）按所选档位，「自动」按中；拿到工具结果之后的步骤，「自动」和「低」按低，其余最多按中 | `agent/model-options.ts` `planningEffort` / `executionEffort` |
+| 一轮最多 30 次模型调用（原来 60）；从第 25 次起不再给工具、提示模型用已有结果收尾 | `run-budget.ts` |
+| 系统提示词重写：最重要的一节是「高效做事」（直接动手、合理默认、不重复检查、只做用户要的、回复不超过 5 行），并按节点画布讲清楚工作流 | `agent/prompts/loomic-main.ts` |
+| `<canvas_state>` 把连线合成一行，生成节点显示最近一次运行有几张已在画布上，最多列 60 个节点，模型不用先 `inspect_canvas` | `agent/tools/inspect-canvas.ts` |
+
+日志：`[agent-model] gpt-6-sol effort=auto→medium (after tools low) …`、`[agent-model] … steps after a tool result use effort low (first call medium)`、`[agent-model] 25 model calls: asking the model to wrap up without tools`。
+
+## 只靠对话搭建画布工作流（第 69 条）
+
+画布是节点画布（`apps/web/src/lib/node-canvas`）：提示词卡片（`prompt`）、生成节点（`generator`，设置在 `customData.generator`）、图片、文字、分组框（`frame`），用两端绑定的箭头连接。生成节点运行时发送「连进来的提示词卡片文字 + 自己的描述」，连进来的图片作为参考图，连进来的上游生成节点把最近一次出的图作为参考图（链式）。
+
+- **canvas_workflow**（`agent/tools/canvas-workflow.ts`）：一次调用完成整个结构：`add_prompt`、`add_generator`（模型、比例、画质、质量、张数、描述）、`add_note`、`connect`、`disconnect`、`update_prompt`、`update_generator`、`move`、`delete`、`add_frame`。新节点用 `ref`（p1、g1…）命名，同一次调用里直接连。不写坐标时从左到右自动排（卡片 → 生成节点 → 出图位置 → 下一个生成节点），放在已有内容右边；每个生成节点最多 8 张。模型名不认识时用默认模型并在结果里说明。
+- **run_workflow**：和用户点「生成」走同一条路（`features/jobs/image-batch.ts`，HTTP 批量接口也改用它）：每个生成节点一批，出图位置按页面同样的 `outputSlots`（已移到 `packages/shared/src/canvas-layout.ts`），运行记录写进生成节点，打开的页面马上显示等待中的图，Worker 把图放到位置上并连线。同一次传入的链式节点先运行上游、等它出完图再运行下游。默认等出图并返回图片元素 id；算在本轮生图上限里。
+- 写画布统一用 `features/canvas/canvas-mutation.ts` 的 `mutateCanvas`：只在 `updated_at` 没变时写入，否则重读再改，页面同时保存的内容不会被覆盖（`manipulate_canvas` 以前直接覆盖整张画布，现在也改用它）。
+- 两个工具执行后页面都会重新同步画布（`canvas.sync`）。对话里显示「搭建工作流」「运行工作流」两个块。
+- 实验室演练 `workflow.sh`：假模型用 canvas_workflow 搭出提示词卡片、生成节点、连线和分组框，再 run_workflow；检查存下来的画布（运行记录、图片在生成节点右边并连线、分组框包住节点）、页面上的节点，以及假上游收到的工具和思考强度（中 → 低 → 低，没有 write_todos/ls/glob/grep）。
 
 ## 思考强度
 
@@ -17,7 +43,8 @@
 
 只有「自动」的模型，模型名右边显示一个不能点的「自动」，鼠标停留提示「这个模型的思考强度由主站决定，不能调」。
 
-- 「自动」什么都不发，由模型自己决定；gpt-6 系列在「自动」时也会要推理摘要（`reasoning.summary = "auto"`），思考过程显示在回复上方，长时间思考时连接也一直有数据。
+- 「自动」（第 69 条起）：理解需求的那一步按中、之后的步骤按低（见「高效做事」）；Gemini（主站）和自己添加的服务商仍然什么都不发。gpt-6 系列也会要推理摘要（`reasoning.summary = "auto"`），思考过程显示在回复上方，长时间思考时连接也一直有数据。
+- 选了其他档位：第一步按所选档位，拿到工具结果后的步骤最多按中（低仍按低）。
 - 记住的档位换到不支持它的模型上，按它有的、比所选低的最高一档发（例：最高在 Gemini 上按高），选择框显示的就是实际会用的那档。
 - 主站分组可以设上限（xy2api `max_reasoning_effort`，默认超出就降档）。模型仍然拒绝（400/422，报错里提到 reasoning/effort）时，服务端降一档重试，直到不发；服务商回了说不清原因的 400 而当时带着档位，就去掉档位再试一次。一次对话里降过就一直用降过的。
 - 代码：`agent/model-options.ts`（降档、联网兜底）、`agent/deep-agent.ts` `createStreamingChatModel`（字段格式）。LangChain 只给它认识的模型名（gpt-5*、o*）发 `reasoning`，所以这里用 `modelKwargs` 直接写字段。
@@ -44,7 +71,9 @@
 
 按顺序试，哪个先给出结果就用哪个（`features/web-search/service.ts`）：
 
-1. 配置了才有（可靠，推荐生产配置一个）：`LOOMIC_WEB_SEARCH_SEARXNG_URL`（自建 SearXNG，要在 settings.yml 打开 json 格式）、`LOOMIC_WEB_SEARCH_TAVILY_KEY`（Tavily，免费额度每月 1000 次）、`LOOMIC_WEB_SEARCH_BRAVE_KEY`（Brave Search API）。
+1. 配置了才有（可靠）：`LOOMIC_WEB_SEARCH_SEARXNG_URL`（自建 SearXNG，要在 settings.yml 打开 json 格式）、**`LOOMIC_WEB_SEARCH_ANYSEARCH_KEY`（AnySearch，正式环境第 69 条起使用；免费套餐每天 1,000 次）**、`LOOMIC_WEB_SEARCH_TAVILY_KEY`（Tavily，免费额度每月 1000 次）、`LOOMIC_WEB_SEARCH_BRAVE_KEY`（Brave Search API）。
+   - AnySearch（`features/web-search/providers.ts`）：`POST https://api.anysearch.com/v1/search`，`Authorization: Bearer <key>`；中文问题带 `zone: "cn"`、`language: "zh-CN"`；结果用较长的 `content` 摘要。限流、Key 无效（`Rate limited`、401/403/429）算被拒，歇 15 分钟后再用。2026-10-15 从正式服务器实测：中文设计类问题 1.6–4.7 秒、结果相关（多乐士、立邦、站酷等）。
+   - `read_webpage` 直接读被拒（HTTP 错误、连不上、超时）或读不到文字时，配置了 AnySearch 就改用它的 `POST /v1/extract` 读（页面由 AnySearch 抓取，不是本服务器）；内网地址、PDF 和图片不会走这条路。
 2. 不用 Key 的网页：Yahoo! JAPAN（Google 的索引，中文结果也好）→ DuckDuckGo html → 维基百科 API（只有百科条目）。`LOOMIC_WEB_SEARCH_KEYLESS=off` 可以关掉这一组。
 
 - 2026-10-14 从正式服务器（156.238.224.151）实测：Yahoo! JAPAN 有结果；DuckDuckGo 一开始有结果，被连续探测几十次后对我们所有服务器都弹「请证明你是人」（HTTP 202）；维基百科一直可用；Bing（RSS 和网页）对这个 IP 返回空页，而且它的 RSS 写明只许个人非商业使用，所以不用；Google、百度、搜狗、360、Brave 网页版、Startpage、Qwant、Ecosia、Mojeek 不是被拦就是没结果。
@@ -81,11 +110,11 @@
 
 - **apply_patch**（`agent/tools/apply-patch.ts`）：Codex 的补丁格式，一次改多处、多个文件。上下文先精确匹配，再忽略行尾空格，再忽略首尾空白和全角/半角标点。所有改动先全部核对，有一处对不上就一个文件都不改，并指出是第几处。不支持删除和移动。`edit_file`、`write_file` 仍然可用。
 - **读取类工具重试**（`agent/run-budget.ts`）：`inspect_canvas`、`project_search`、`get_brand_kit`、`view_images` 和文件读取遇到连接断开、超时，间隔 0.8 秒、2 秒再试两次；写入和生图不重试。画布读取遇到网络错误时抛出（以前会说「画布不存在」）。
-- **单次运行上限**：一次运行最多调用模型 60 次，超过就停下并告诉用户「这一轮的步骤太多了，我先停在这里……」，已完成的改动保留。
+- **单次运行上限**：一次运行最多调用模型 30 次（第 69 条起，原 60 次），第 25 次起不给工具、让模型收尾；超过 30 次就停下并告诉用户「这一轮的步骤太多了，我先停在这里……」，已完成的改动保留。
 - **上下文超长**：主站或服务商回「超出上下文长度」时，错误链里放一个 LangChain 的 `ContextOverflowError`，deepagents 的摘要中间件会压缩历史后重试，而不是让运行失败（`utils/context-overflow.ts`）。
-- 提示词新增：互不依赖的读取同一轮并行调用；多步骤任务先 `write_todos`；文字资料放 `/workspace/` 并用 apply_patch 修改；需要最新外部信息时用联网搜索并写明来源。
+- 提示词（第 69 条重写）：互不依赖的调用同一轮一起发；文字资料放 `/workspace/` 并用 apply_patch 修改；需要最新外部信息时用联网搜索并写明来源；工作流用 canvas_workflow / run_workflow。
 
-中间件顺序（`agent/deep-agent.ts` `loomicAgentMiddleware`，排在前面的在外层）：deepagents 自带（待办、文件、子任务、摘要、补全工具调用）→ 拆开粘连的工具调用 → 工具错误回给模型 → 读取工具重试 → 运行上限 → 项目记忆 → 模型重试 → 思考强度 / 联网搜索 → 审图。
+中间件顺序（`agent/deep-agent.ts`，排在前面的在外层）：文件工具（deepagents）→ 对话摘要（deepagents）→ 补全悬空工具调用（deepagents）→ 拆开粘连的工具调用 → 隐藏 ls/glob/grep → 工具错误回给模型 → 读取工具重试 → 运行上限与收尾 → 项目记忆 → 模型重试 → 思考强度 / 联网搜索 → 审图。
 
 ## 网络和重试
 

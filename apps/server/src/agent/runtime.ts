@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReviewImageStore, toModelImage } from "./vision.js";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { findChatProviderError } from "../features/chat-providers/errors.js";
@@ -10,6 +9,7 @@ import {
 import { chatRunError } from "../features/chat-providers/run-error.js";
 import { fetchReferenceImage } from "../generation/providers/xy2api-reference.js";
 import { createSupabaseFetch } from "../supabase/transport.js";
+import { createReviewImageStore, toModelImage } from "./vision.js";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -26,16 +26,18 @@ import type {
 } from "@loomic/shared";
 
 import type { BillingErrorCode } from "@loomic/shared";
+import { createImageBatchRequestSchema } from "@loomic/shared";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import { insertImageElement } from "../features/canvas/canvas-element-writer.js";
+import { createImageBatchJobs } from "../features/jobs/image-batch.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { storedOutputOptions } from "../features/xy2api/billing-guard.js";
 import {
   IMAGE_PROVIDER_BY_PROTOCOL,
   findImageModel,
 } from "../features/xy2api/catalog.js";
-import { storedOutputOptions } from "../features/xy2api/billing-guard.js";
 import { BillingGuardError } from "../features/xy2api/errors.js";
 import type { Xy2apiServices } from "../features/xy2api/services.js";
 import type { AvailableModel } from "../generation/providers/registry.js";
@@ -53,6 +55,11 @@ import {
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
+import type {
+  SubmitWorkflowBatchFn,
+  WaitForJobsFn,
+  WorkflowJobOutcome,
+} from "./tools/canvas-workflow.js";
 // Model tools have no host shell access because this process holds credentials.
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
@@ -580,6 +587,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       // Submit images through the guarded queue; no credentials enter the payload.
       let submitImageJob: SubmitImageJobFn | undefined;
+      let submitWorkflowBatch: SubmitWorkflowBatchFn | undefined;
+      let waitForWorkflowJobs: WaitForJobsFn | undefined;
       let imageCount = 0;
       if (
         options.jobService &&
@@ -839,6 +848,162 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             error: `Job timed out after ${MAX_WAIT / 1000}s`,
           };
         };
+
+        // 第 69 条 run_workflow: a 生成 node run from the chat goes through
+        // the same batch path as the page's 生成 button
+        // (features/jobs/image-batch.ts), counted against the run's image
+        // limit like generate_image.
+        submitWorkflowBatch = async (input) => {
+          const client = createClient(accessToken) as UserSupabaseClient;
+          const { data: ws } = await client
+            .from("workspaces")
+            .select("id")
+            .eq("owner_user_id", userId)
+            .eq("type", "personal")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .single();
+          if (!ws?.id) throw new Error("No personal workspace found");
+          const { data: canvasRow } = await (client as any)
+            .from("canvases")
+            .select("project_id")
+            .eq("id", canvasId)
+            .single();
+          const user: AuthenticatedUser = {
+            id: userId,
+            accessToken,
+            email: "",
+            userMetadata: {},
+          };
+          if ((imageCount += input.count) > options.env.maxImagesPerRun) {
+            imageCount -= input.count;
+            throw new BillingGuardError("run_image_limit", 429);
+          }
+          const body = createImageBatchRequestSchema.parse({
+            prompt: input.prompt,
+            title: input.title,
+            ...(input.model ? { model: input.model } : {}),
+            ...(input.keyId ? { key_id: input.keyId } : {}),
+            aspect_ratio: input.aspectRatio,
+            resolution: input.resolution,
+            quality: input.quality,
+            count: input.count,
+            ...(typeof canvasRow?.project_id === "string"
+              ? { project_id: canvasRow.project_id }
+              : {}),
+            ...(canvasId ? { canvas_id: canvasId } : {}),
+            ...(sessionId ? { session_id: sessionId } : {}),
+            canvas_source_id: input.canvasSourceId,
+            canvas_slots: input.slots,
+            ...(input.inputImages.length
+              ? { input_images: input.inputImages }
+              : {}),
+            ...(input.outputFormat
+              ? { output_format: input.outputFormat }
+              : {}),
+            ...(input.outputCompression != null
+              ? { output_compression: input.outputCompression }
+              : {}),
+            ...(input.background && input.background !== "auto"
+              ? { background: input.background }
+              : {}),
+            ...(input.moderation && input.moderation !== "auto"
+              ? { moderation: input.moderation }
+              : {}),
+          });
+          try {
+            const batch = await createImageBatchJobs(
+              { billing: options.xy2api.billing, jobService: jobSvc },
+              user,
+              ws.id,
+              body,
+            );
+            return {
+              batchId: batch.batchId,
+              requested: batch.requested,
+              jobs: batch.jobs.map((job, index) => ({
+                id: job.id,
+                batchIndex:
+                  typeof (job.payload as { batch_index?: unknown })
+                    ?.batch_index === "number"
+                    ? (job.payload as { batch_index: number }).batch_index
+                    : index,
+              })),
+            };
+          } catch (error) {
+            imageCount -= input.count;
+            if (error instanceof BillingGuardError)
+              pushBillingErrorAndAbort(
+                run,
+                canvasId,
+                options,
+                error.code,
+                error.message,
+              );
+            throw error;
+          }
+        };
+
+        waitForWorkflowJobs = async (jobIds) => {
+          const POLL_INTERVAL = 3000;
+          const MAX_WAIT = 900_000;
+          const start = Date.now();
+          const outcomes = new Map<string, WorkflowJobOutcome>();
+          const terminal = (status: string, attempts: number, max: number) =>
+            status === "succeeded" ||
+            status === "canceled" ||
+            status === "dead_letter" ||
+            (status === "failed" && attempts >= max);
+          while (Date.now() - start < MAX_WAIT) {
+            await delay(POLL_INTERVAL, undefined, {
+              signal: run.controller.signal,
+            }).catch(() => {});
+            if (run.controller.signal.aborted) {
+              await Promise.all(
+                jobIds
+                  .filter((id) => !outcomes.has(id))
+                  .map((id) =>
+                    jobSvc.cancelUnsentJobAdmin(id).catch(() => false),
+                  ),
+              );
+              throw new Error("Run was canceled");
+            }
+            for (const id of jobIds) {
+              if (outcomes.has(id)) continue;
+              const current = await jobSvc.getJobAdmin(id).catch(() => null);
+              if (!current) continue;
+              if (
+                !terminal(
+                  current.status,
+                  current.attempt_count,
+                  current.max_attempts,
+                )
+              )
+                continue;
+              const result = (current.result ?? {}) as { element_id?: unknown };
+              outcomes.set(id, {
+                id,
+                status: current.status,
+                ...(typeof result.element_id === "string"
+                  ? { elementId: result.element_id }
+                  : {}),
+                ...(current.error_code
+                  ? { errorCode: current.error_code }
+                  : {}),
+                ...(current.error_message
+                  ? { errorMessage: current.error_message }
+                  : {}),
+                ...(current.billing_status
+                  ? { billingStatus: current.billing_status }
+                  : {}),
+              });
+            }
+            if (outcomes.size === jobIds.length) break;
+          }
+          return jobIds.map(
+            (id) => outcomes.get(id) ?? { id, status: "running" },
+          );
+        };
       }
 
       // Load workspace skills (user-installed skills from DB).
@@ -963,7 +1128,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // A project without a kit uses the user's default (「应用到新项目」),
           // so projects made before the switch was set get it too (A1).
           let brandKitSource = brandKitId ? "project" : "none";
-          if (!brandKitId && run.accessToken && run.userId && options.createUserClient) {
+          if (
+            !brandKitId &&
+            run.accessToken &&
+            run.userId &&
+            options.createUserClient
+          ) {
             try {
               const { data: kit } = await (
                 options.createUserClient(run.accessToken) as UserSupabaseClient
@@ -979,7 +1149,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 brandKitSource = "default";
               }
             } catch {
-              console.warn(`[agent-runtime] run ${runId}: default brand kit lookup failed`);
+              console.warn(
+                `[agent-runtime] run ${runId}: default brand kit lookup failed`,
+              );
             }
           }
           rlog.lap("brand_kit_resolved", { source: brandKitSource });
@@ -1042,6 +1214,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(persistImage ? { persistImage } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(submitImageJob ? { submitImageJob } : {}),
+            ...(submitWorkflowBatch && waitForWorkflowJobs
+              ? {
+                  workflow: {
+                    submitBatch: submitWorkflowBatch,
+                    waitForJobs: waitForWorkflowJobs,
+                    notifyCanvas: () => {
+                      if (run.canvasId)
+                        options.connectionManager?.pushToCanvas(run.canvasId, {
+                          type: "canvas.sync" as const,
+                          runId: run.runId,
+                          timestamp: new Date().toISOString(),
+                        });
+                    },
+                  },
+                }
+              : {}),
             imageModels: availableImageModels,
             ...(chatSelection.source === "custom"
               ? { customChat: chatSelection.customChat }
@@ -1057,9 +1245,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       const client = options.createUserClient?.(
                         run.accessToken ?? "",
                       ) as UserSupabaseClient | undefined;
-                      const { data, error } =
-                        (await client?.storage.from(bucket).download(path)) ??
-                        { data: null, error: null };
+                      const { data, error } = (await client?.storage
+                        .from(bucket)
+                        .download(path)) ?? { data: null, error: null };
                       if (error || !data) return null;
                       return Buffer.from(await data.arrayBuffer());
                     },
@@ -1300,7 +1488,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   canceled,
                   now,
                 ).catch(() =>
-                  console.error(`[agent-runtime] run ${runId} canceled; status not saved`),
+                  console.error(
+                    `[agent-runtime] run ${runId} canceled; status not saved`,
+                  ),
                 );
                 yield canceled;
                 return;

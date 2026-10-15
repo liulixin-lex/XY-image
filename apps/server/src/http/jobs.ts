@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -6,20 +5,17 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
-  CanvasPlacementPayload,
   CreateImageJobRequest,
 } from "@loomic/shared";
 import {
+  IMAGE_JOB_SOURCES,
+  JOB_LIST_VIEWS,
+  JOB_PAGE_MAX,
   applicationErrorResponseSchema,
   cancelImageBatchResponseSchema,
   createImageBatchRequestSchema,
   createImageJobRequestSchema,
-  imageBatchPayloadSchema,
   imageBatchResponseSchema,
-  imageBatchTargets,
-  IMAGE_JOB_SOURCES,
-  JOB_LIST_VIEWS,
-  JOB_PAGE_MAX,
   jobDeleteResponseSchema,
   jobIdsRequestSchema,
   jobListResponseSchema,
@@ -29,6 +25,12 @@ import {
 } from "@loomic/shared";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  ImageBatchSlotsError,
+  canvasPlacement,
+  createImageBatchJobs,
+  titleOf,
+} from "../features/jobs/image-batch.js";
 import {
   type JobListFilters,
   type JobService,
@@ -76,7 +78,11 @@ export async function registerJobRoutes(
           ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
           ...(payload.session_id ? { sessionId: payload.session_id } : {}),
           ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-          payload: { ...input, ...titleOf(payload), ...canvasPlacement(payload, 0) },
+          payload: {
+            ...input,
+            ...titleOf(payload),
+            ...canvasPlacement(payload, 0),
+          },
         });
       });
       return reply
@@ -102,98 +108,27 @@ export async function registerJobRoutes(
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
       const body = createImageBatchRequestSchema.parse(request.body);
-      const targets = imageBatchTargets(body);
-      const { count: _count, targets: _targets, key_id: _key, ...payload } =
-        body;
-      const total = targets.reduce((sum, target) => sum + target.count, 0);
-      if (payload.canvas_slots && payload.canvas_slots.length < total)
-        return reply.code(400).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "invalid_input",
-              message: "canvas_slots needs one slot per picture",
-            },
-          }),
-        );
       const viewer = await options.viewerService.ensureViewer(user);
-      const batchId = randomUUID();
-      const jobs = await options.billing.withUserLock(user.id, async () => {
-        const prepared = await options.billing.prepareImageJobs(
-          user,
-          payload,
-          targets,
-        );
-        // One job per picture, numbered across the targets. Created a few
-        // at a time (a click can ask for hundreds since 第 57 条), in order.
-        const plan = prepared.flatMap((target) => {
-          const input = imagePayloadSchema.parse({
-            ...payload,
-            model: target.model,
-            resolution: target.resolution,
-            quality: target.quality,
-            aspect_ratio: target.aspect_ratio,
-            ...storedOutputOptions(target),
-          });
-          return Array.from({ length: target.count }, () => ({
-            keyId: target.keyId,
-            input,
-          }));
-        });
-        const create = (keyId: number, input: typeof plan[number]["input"], index: number) =>
-          options.jobService.createJob(user, {
-            workspaceId: viewer.workspace.id,
-            jobType: "image_generation",
-            xy2apiKeyId: keyId,
-            ...(payload.project_id ? { projectId: payload.project_id } : {}),
-            ...(payload.canvas_id ? { canvasId: payload.canvas_id } : {}),
-            ...(payload.session_id ? { sessionId: payload.session_id } : {}),
-            ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
-            payload: {
-              ...input,
-              ...titleOf(payload),
-              ...canvasPlacement(payload, index),
-              ...imageBatchPayloadSchema.parse({
-                batch_id: batchId,
-                batch_index: index,
-                batch_size: total,
-              }),
-            },
-          });
-        const created: BackgroundJob[] = [];
-        for (let start = 0; start < plan.length; start += CREATE_CHUNK) {
-          const chunk = plan.slice(start, start + CREATE_CHUNK);
-          const results = await Promise.allSettled(
-            chunk.map((item, offset) => create(item.keyId, item.input, start + offset)),
-          );
-          // Every job that was created is real and will be sent: keep them
-          // all (in order). Nothing is sent at creation, so stopping after a
-          // failed chunk costs nothing; the page says how many were queued.
-          for (const result of results)
-            if (result.status === "fulfilled") created.push(result.value);
-          const failure = results.find((r) => r.status === "rejected") as
-            | PromiseRejectedResult
-            | undefined;
-          if (failure) {
-            if (created.length === 0) throw failure.reason;
-            console.error(
-              `[jobs] batch ${batchId}: created ${created.length} of ${total}, the rest failed to queue`,
-            );
-            break;
-          }
-        }
-        return created;
-      });
-      console.log(
-        `[jobs] batch ${batchId} of user ${user.id}: ${jobs.length}/${total} queued${targets.length > 1 ? ` across ${targets.length} models` : ""}`,
+      const batch = await createImageBatchJobs(
+        { billing: options.billing, jobService: options.jobService },
+        user,
+        viewer.workspace.id,
+        body,
       );
       return reply.code(201).send(
         imageBatchResponseSchema.parse({
-          batch_id: batchId,
-          requested: total,
-          jobs: jobs.map(forClient),
+          batch_id: batch.batchId,
+          requested: batch.requested,
+          jobs: batch.jobs.map(forClient),
         }),
       );
     } catch (error) {
+      if (error instanceof ImageBatchSlotsError)
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: error.message },
+          }),
+        );
       if (error instanceof JobServiceError)
         return sendJobError(error, reply, "job_create_failed");
       return sendAccountError(reply, error);
@@ -329,13 +264,6 @@ const batchParamsSchema = z.object({ batchId: z.string().uuid() });
  * The label lists show (第 58 条): the user's own words when the prompt sent
  * carries more, e.g. a brand kit's rules. Absent: lists fall back to prompt.
  */
-function titleOf(payload: { title?: string | undefined }): { title?: string } {
-  return payload.title ? { title: payload.title } : {};
-}
-
-/** Jobs of one batch created at once (database round trips in parallel). */
-const CREATE_CHUNK = 8;
-
 /**
  * GET /api/jobs: filters and the page. `before` = created_at of the last job
  * seen (作品 scroll); `offset` for numbered pages (生成记录), with
@@ -420,23 +348,4 @@ function sendJobError(
       },
     }),
   );
-}
-
-/**
- * Node canvas: where picture `index` goes and the generator node it comes
- * from, stored in its job payload for the worker's canvas writer. Only kept
- * with a canvas; a missing slot lets the writer place the picture itself.
- */
-function canvasPlacement(
-  payload: CreateImageJobRequest,
-  index: number,
-): CanvasPlacementPayload {
-  if (!payload.canvas_id) return {};
-  const slot = payload.canvas_slots?.[index];
-  return {
-    ...(slot ? { canvas_slot: slot } : {}),
-    ...(payload.canvas_source_id
-      ? { canvas_source_id: payload.canvas_source_id }
-      : {}),
-  };
 }
