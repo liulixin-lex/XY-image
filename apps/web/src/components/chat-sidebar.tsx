@@ -1242,16 +1242,17 @@ export function ChatSidebar({
           mentions={messageMentions}
           onRemoveMention={handleRemoveMention}
           {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
-          pickMenu={
+          pickMenu={({ addImages }) => (
             <PickMenu
               accessToken={accessToken}
               picked={messageMentions}
               onToggle={handleTogglePick}
               skills={skillMentionItems}
               disabled={streaming}
+              {...(addImages ? { onAddImages: addImages } : {})}
               {...(onRequestCanvasNodes ? { requestNodes: onRequestCanvasNodes } : {})}
             />
-          }
+          )}
         />
       </div>
     </>

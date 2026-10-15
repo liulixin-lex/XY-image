@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * 第 70 条 指定: the chat panel's 「+」 menu. The user picks, for the next
- * message, what the assistant works on and with:
+ * 第 70 条 指定: the chat panel's 「+」 menu. 添加图片 (upload a reference;
+ * dragging or pasting still works), then, for the next message, what the
+ * assistant works on and with:
  * - 目标: nodes on the canvas (prompt cards, 生成 nodes, pictures, frames,
  *   text) the message is about;
  * - 技能: an enabled skill to follow;
@@ -22,6 +23,7 @@ import {
   CheckIcon,
   FrameIcon,
   ImageIcon,
+  ImagePlusIcon,
   PaletteIcon,
   PlusIcon,
   SparklesIcon,
@@ -88,6 +90,7 @@ export function PickMenu({
   requestNodes,
   skills,
   disabled,
+  onAddImages,
 }: {
   accessToken: string;
   picked: MessageMention[];
@@ -95,6 +98,8 @@ export function PickMenu({
   requestNodes?: () => CanvasNodeItem[];
   skills: SkillMentionItem[];
   disabled?: boolean;
+  /** Opens the chat input's file picker. */
+  onAddImages?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("target");
@@ -252,7 +257,7 @@ export function PickMenu({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        title="指定目标、技能、品牌套件或工具"
+        title="添加图片，或指定目标、技能、品牌套件、工具"
         aria-label="指定目标、技能、品牌套件或工具"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -282,6 +287,21 @@ export function PickMenu({
               }}
               className="fixed z-[9999] rounded-lg glass-menu shadow-float"
             >
+              {onAddImages ? (
+                <div className="border-b border-line p-1.5">
+                  {row(
+                    "add-images",
+                    false,
+                    () => {
+                      setOpen(false);
+                      onAddImages();
+                    },
+                    <ImagePlusIcon className="size-3.5 shrink-0 text-fg-muted" strokeWidth={1.75} />,
+                    "添加图片",
+                    "上传参考图；也可以直接拖进来或粘贴",
+                  )}
+                </div>
+              ) : null}
               <div className="px-3.5 pt-3 pb-2">
                 <p className="text-[13.5px] font-semibold text-fg">这条消息指定</p>
                 <p className="mt-0.5 text-[12px] leading-snug text-fg-muted">

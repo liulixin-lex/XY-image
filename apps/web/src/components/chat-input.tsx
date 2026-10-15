@@ -30,8 +30,12 @@ type ChatInputProps = {
   mentions?: MessageMention[];
   onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
-  /** 第 70 条: the 「+」 menu (指定), after the picture button. */
-  pickMenu?: React.ReactNode;
+  /**
+   * 第 70 条: the 「+」 menu (添加图片 and 指定). It takes the picture button's
+   * place, so the toolbar keeps room for the model name; `addImages` opens
+   * the file picker.
+   */
+  pickMenu?: (actions: { addImages?: () => void }) => React.ReactNode;
 };
 
 /** What a chip above the input says it is (第 70 条 指定 included). */
@@ -285,18 +289,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   className="hidden"
                   onChange={handleFileChange}
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
-                  title="添加图片"
-                  aria-label="添加图片"
-                >
-                  <ImagePlusIcon className="size-4" strokeWidth={1.75} />
-                </button>
+                {pickMenu ? null : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-soft transition-colors hover:bg-tint/[0.07] hover:text-fg focus-visible:outline-2 focus-visible:outline-acc"
+                    title="添加图片"
+                    aria-label="添加图片"
+                  >
+                    <ImagePlusIcon className="size-4" strokeWidth={1.75} />
+                  </button>
+                )}
               </>
             )}
-            {pickMenu}
+            {pickMenu?.(onAddFiles ? { addImages: () => fileInputRef.current?.click() } : {})}
             <AgentModelSelector compact />
             <AgentChatOptions />
             <div className="relative">
