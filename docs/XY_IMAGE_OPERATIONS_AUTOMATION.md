@@ -50,6 +50,11 @@ AWS_SECRET_ACCESS_KEY=实际访问密钥
 
 ## 生产现状（10-14 起，agent01）
 
+> **10-15 起正式站和预上线站互换了服务器**（用户：「最终正式站部署，应该与主站同服务器，使用 image.gguuai.com，image2.gguuai.com 为预上线站点」，DNS 由用户改好）：
+> - **正式站 image.gguuai.com** = 主站服务器 15.204.81.104 上 `/opt/xy-image2` 那一套（见下文「主站服务器上的正式站」；目录、compose 项目、unit 名仍叫 xy-image2，没改名）。
+> - **预上线站 image2.gguuai.com** = 下面这台 156.238.224.151 的 `/www/xy-image`。
+> - 两套各自保留原来的数据，只换了域名，做法见 [自建手册](XY_IMAGE_SELFHOST.md) 的「换域名」。
+
 10-14 起，image.gguuai.com 迁到一台新服务器（4 vCPU、4 GB 内存，和其他服务共用）。迁移是另一个代理做的；旧服务器（ovh）上的 `xy-image-prod` 一套没有删，也不再对外服务。新服务器的布局：
 
 | 位置 | 内容 |
@@ -82,7 +87,9 @@ AWS_SECRET_ACCESS_KEY=实际访问密钥
   - `xy2apiRouteStatsUrl`：读到主站私网线路（HAProxy）的状态。
 - 异地备份（restic）没有配置，`offsiteConfirmed` 仍是 false，`operations.mjs backup` 不会运行。
 
-### 第二个站点 image2.gguuai.com（10-14 起，agent01）
+### 主站服务器上的正式站（10-14 以 image2.gguuai.com 部署，10-15 起为 image.gguuai.com，agent01）
+
+10-15 起这一套就是正式站 image.gguuai.com，下面是 10-14 首次部署时的说明。
 
 用户 10-14 要求在主站服务器（15.204.81.104，和 gguuai.com 同机）上再部署一套，域名 image2.gguuai.com，不能中断主站和 image.gguuai.com。两套的数据库、Storage、密钥、登录会话都不共享。做法见 [自建手册](XY_IMAGE_SELFHOST.md) 的「和主站装在同一台机器」。
 
@@ -100,7 +107,8 @@ AWS_SECRET_ACCESS_KEY=实际访问密钥
 | `xy-image2-monitor.timer` / `.service` | `operations.mjs monitor /opt/xy-image2/operations.json`，内存可用低于 1 GiB 报警 | 每 2 分钟 |
 
 - 10-14 首次部署 v0.0.13：迁移 52/52，12 个服务 healthy。两个测试账号用真实 Chrome 过 Turnstile 登录；余额和 Key 和主站数据库逐项一致。只读冒烟通过，没有发起付费请求。热备份和恢复演练都通过。前后对比：主站 Caddy 进程和各容器都没有重启。
-- 升级流程和 image.gguuai.com 一样（别处构建镜像和前端），只是路径不同；主站机器上不构建。
+- 升级流程和 156 那台一样（别处构建镜像和前端），只是路径不同；主站机器上不构建。
+- 10-15 升级到 v0.0.15，同时改为正式站 image.gguuai.com：公开地址、Caddy 站点名、证书（Caddy 自动签发）都换成 image.gguuai.com；前端用这套自己的 anon key 重新构建。两个账号重新登录后只读冒烟通过，一次真实的对话搭建并运行工作流通过；主站 Caddy PID 不变。
 
 ## 失败与人工恢复
 
