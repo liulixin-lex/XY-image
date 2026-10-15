@@ -7,7 +7,7 @@
 | 方面 | 做法 | 位置 |
 | --- | --- | --- |
 | 执行步骤模型 | 设置 › 模型 › 执行步骤模型：选一个对话模型和思考强度，拿到工具结果之后的每一步都用它。不设置时用对话模型、思考强度「低」（模型没有档位时「自动」）。选的模型不能用了（Key 没了这个模型、服务商关了）就自动改用对话模型，日志 `[agent-model] execution model … is not usable`。两个模型不同时，历史里的推理内容（Responses 的 reasoning、reasoning_content、thinking 块）不传给另一个模型 | 迁移 `20261015000001_agent_execution_model.sql`（`xy2api_preferences.agent_exec_model / agent_exec_effort`）；`agent/execution-model.ts`；`agent/model-options.ts`（`createChatOptionsMiddleware` 的 planning / execution 两侧，`withoutReasoning`）；网页 `components/settings/models-tab.tsx` |
-| 上下文窗口 | 不再限制每轮调用模型的次数（原来 30 次）。每次调用前估算上下文（中文约一字一 token，图片按 1000，按上一次调用实际计的 token 校准）；到窗口（10 万，模型更小时按模型）的 80% 时，较早的对话由执行步骤模型压缩成摘要，最近约 2 万 token 原文保留；服务商说超长时也压缩后重试。被压缩的原文存进项目的 `/history/<会话>.md`，模型需要细节时可以 read_file。每次调用后发 `context.updated` 事件，对话框右下角的圆环显示用量 | `agent/context-window.ts`（替代 deepagents 的摘要中间件，状态字段沿用 `_summarizationEvent`，已压缩过的旧会话照常可用）；`backends/prod.ts`、`dev.ts` 的 `/history/` 路由；`stream-adapter.ts`；网页 `components/chat/context-meter.tsx` |
+| 上下文窗口 | 不再限制每轮调用模型的次数（原来 30 次）。每次调用前估算上下文（中文约一字一 token，图片按 1000，按上一次调用实际计的 token 校准）；到窗口（10 万，模型更小时按模型）的 80% 时，较早的对话由执行步骤模型压缩成摘要，最近约 2 万 token 原文保留；服务商说超长时也压缩后重试。被压缩的原文存进项目的 `/history/<会话>.md`，模型需要细节时可以 read_file。每次调用后发 `context.updated` 事件，对话面板顶部的圆环显示用量 | `agent/context-window.ts`（替代 deepagents 的摘要中间件，状态字段沿用 `_summarizationEvent`，已压缩过的旧会话照常可用）；`backends/prod.ts`、`dev.ts` 的 `/history/` 路由；`stream-adapter.ts`；网页 `components/chat/context-meter.tsx` |
 | 手动压缩 | 点圆环 › 现在压缩：用同样的方法压缩（保留最近约 30%，至少 2000 token），对话还在回复时不能压缩（409）。`GET /api/agent/sessions/:id/context` 读用量，`POST …/compact` 压缩 | `runtime.ts` `sessionContext` / `compactSession`，`http/runs.ts`，`context-window.ts` `compactAgentThread`（用和运行时同一张图写状态，不会丢掉同一会话里的文件等其他状态） |
 | 防止死循环 | 同一个工具、同样的参数连续第三次调用不执行，告诉模型换个做法或直接回复；LangGraph 的步数上限恢复为 10,000（v0.0.15 用 `createAgent` 后默认只有 25 步，大约 8 轮工具就会报错） | `agent/run-guards.ts`（原 `run-budget.ts`） |
 | 指定（「+」菜单） | 输入框左下的「+」：目标（画布上的节点）、技能、品牌套件（整套，替换这条消息用的项目套件）、工具（生图、搭建工作流、运行工作流、联网搜索、审图、编辑画布）。选中的显示在输入框上方，随消息发出；服务端写成 `<human_targets>`、`<human_skill_mentions>`、`<human_brand_kit_choice>`、`<human_tool_choice>` 并要求模型照做。选「联网搜索」时这条消息自动打开联网 | 网页 `components/chat/pick-menu.tsx`；`packages/shared/src/contracts.ts`（`canvas-node`、`brand-kit`、`tool` 三种引用）；`runtime.ts` `buildMentionXmlBlocks` |
@@ -140,7 +140,7 @@
 
 - 选最高、联网默认开，发一条带 `[[mock:websearch]]` 的消息；关掉联网、选低再发一条；检查假上游收到的档位、`stream_options`、缓存 Key。
 - 审图：截图后下一次请求带着 JPEG。
-- 第 68 条：联网打开、选中，发 `[[mock:refusesearch]] …`。假上游拒绝没有 `search_web` 的请求（模拟不支持自带搜索的分组），服务端改用 `search_web`，假模型调用它，免费搜索去问假上游的 SearXNG 接口（实验室 `server.env` 里 `LOOMIC_WEB_SEARCH_SEARXNG_URL=http://mock-upstream:8000`、`LOOMIC_WEB_SEARCH_KEYLESS=off`），回复引用第一条结果；「联网搜索」块显示 2 个来源，刷新后还在。
+- 第 68 条：联网打开、选中，发 `[[mock:refusesearch]] …`。假上游拒绝没有 `search_web` 的请求（模拟不支持自带搜索的分组），服务端改用 `search_web`，假模型调用它，免费搜索去问假上游的 SearXNG 接口（实验室 `server.env` 里 `LOOMIC_WEB_SEARCH_SEARXNG_URL=http://mock-upstream:8000`、`LOOMIC_WEB_SEARCH_KEYLESS=off`），回复引用第一条结果；「联网搜索」块显示 2 个来源，刷新后还在。第 70 条起，拿到搜索结果之后的调用是执行步骤，用对话模型、思考强度「低」（lab-a 没设执行步骤模型），所以检查的是：第一次带 `search_web` 的调用为「中」，之后的为「低」。
 - 实验室的 xy2api 用 API Key 账号把 Responses 请求转成 Chat Completions 发给假上游，并去掉自带的 `web_search` 工具，所以自带搜索块只能由单元测试覆盖（`agent/model-options.test.ts`）。
 
 `~/xy-lab/e2e/controls.sh`（`18-controls.mjs`，第 70 条）：设置页的「执行步骤模型」；用「+」选「搭建工作流」后发 `[[mock:workflow]]`，假上游收到 `<human_tool_choice>`，第一次调用用对话模型（中），工具结果之后用执行步骤模型（中）；发一段长文后点圆环 › 现在压缩，假上游收到一次摘要请求（由执行步骤模型发出），会话读回已压缩。假上游在 `/__mock/requests` 里记 `picks` 和 `summary`。
