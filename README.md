@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-15，v0.0.15）：正式站 [image.gguuai.com](https://image.gguuai.com) 部署在主站服务器上（和 gguuai.com 同机），接真实主站；预上线站 [image2.gguuai.com](https://image2.gguuai.com) 在另一台服务器上，数据和正式站互不共享。** 本版：联网搜索接入 AnySearch；设计助手思考和步数有上限，不再像编码 agent 那样反复规划；只靠对话就能在节点画布上搭好并运行整条工作流。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-10-15，v0.0.16）：正式站 [image.gguuai.com](https://image.gguuai.com) 部署在主站服务器上（和 gguuai.com 同机），接真实主站，原正式站的数据已迁入；预上线站 [image2.gguuai.com](https://image2.gguuai.com) 在另一台服务器上。** 本版：执行步骤可单独选模型和思考强度；取消每轮调用次数上限，改为 10 万 token 上下文窗口并自动 / 手动压缩；「+」指定目标、技能、品牌套件和工具；联网搜索额度用完自动兜底；AnySearch 乱码修复。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -44,8 +44,8 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 922 项
-pnpm --filter @loomic/web test    # 309 项
+pnpm --filter @loomic/server test # 943 项
+pnpm --filter @loomic/web test    # 311 项
 pnpm --filter @loomic/shared test # 67 项
 pnpm test:workspace               # 10 项
 pnpm test:selfhost                # 37 项通过，2 项跳过（真实 nginx，在 CI 里跑）
