@@ -36,14 +36,18 @@ export function ContextMeter({
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
+  // Opens toward the side with more room (it sits in the panel's header).
   useLayoutEffect(() => {
     if (!open || !buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const above = spaceBelow < 240 && rect.top > spaceBelow;
     setPos({
-      top: rect.top - 8,
+      top: above ? rect.top - 8 : rect.bottom + 8,
       left: Math.max(8, Math.min(rect.right - POPOVER_WIDTH, window.innerWidth - POPOVER_WIDTH - 8)),
+      above,
     });
   }, [open]);
 
@@ -114,7 +118,12 @@ export function ContextMeter({
               ref={popoverRef}
               role="dialog"
               aria-label="上下文"
-              style={{ bottom: window.innerHeight - pos.top, left: pos.left, width: POPOVER_WIDTH }}
+              style={{
+                top: pos.above ? undefined : pos.top,
+                bottom: pos.above ? window.innerHeight - pos.top : undefined,
+                left: pos.left,
+                width: POPOVER_WIDTH,
+              }}
               className="fixed z-[9999] rounded-lg glass-menu p-3.5 shadow-float"
             >
               <p className="text-[13.5px] font-semibold text-fg">上下文</p>

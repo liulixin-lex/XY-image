@@ -32,8 +32,6 @@ type ChatInputProps = {
   selectedCanvasElements?: CanvasSelectedElement[];
   /** 第 70 条: the 「+」 menu (指定), after the picture button. */
   pickMenu?: React.ReactNode;
-  /** 第 70 条: the context meter, next to the send button. */
-  contextMeter?: React.ReactNode;
 };
 
 /** What a chip above the input says it is (第 70 条 指定 included). */
@@ -67,7 +65,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   onRemoveMention,
   selectedCanvasElements,
   pickMenu,
-  contextMeter,
 }, ref) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -328,8 +325,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           {/* Send is the panel's one coral call to action (slanted, like the
               studio's 生成); stop is ink, so a running chat never looks like
               something to press again. */}
-          <div className="flex shrink-0 items-center gap-1">
-          {contextMeter}
           {running && onStop ? (
             <button
               type="button"
@@ -356,7 +351,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               </span>
             </button>
           )}
-          </div>
         </div>
       </div>
     </div>

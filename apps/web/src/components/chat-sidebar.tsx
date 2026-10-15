@@ -1164,6 +1164,16 @@ export function ChatSidebar({
         onNewChat={handleNewChat}
         onDeleteSession={handleDeleteSession}
         onCollapse={onToggle}
+        extra={
+          activeSessionId ? (
+            <ContextMeter
+              usage={contextUsage}
+              onCompact={() => void handleCompact()}
+              compacting={compacting}
+              running={streaming}
+            />
+          ) : null
+        }
       />
 
       {/* Connection banner: a dropped connection, or a slow first connect */}
@@ -1240,14 +1250,6 @@ export function ChatSidebar({
               skills={skillMentionItems}
               disabled={streaming}
               {...(onRequestCanvasNodes ? { requestNodes: onRequestCanvasNodes } : {})}
-            />
-          }
-          contextMeter={
-            <ContextMeter
-              usage={contextUsage}
-              onCompact={() => void handleCompact()}
-              compacting={compacting}
-              running={streaming}
             />
           }
         />
