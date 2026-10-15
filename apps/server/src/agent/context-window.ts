@@ -45,6 +45,8 @@ export const KEEP_RECENT_TOKENS = 20_000;
 /** Most of the dropped turns that goes into the summary call. */
 export const SUMMARY_INPUT_TOKENS = 50_000;
 export const CONTEXT_EVENT = "loomic_context";
+/** Reported input tokens below this share of our estimate are not trusted. */
+const MIN_REPORTED_RATIO = 0.5;
 const HISTORY_PREFIX = "/history";
 
 export type SummarizationEvent = {
@@ -483,8 +485,15 @@ export function createContextWindowMiddleware(
       const output = estimateTokens(
         AIMessage.isInstance(response) ? [response] : [],
       );
+      // What the provider counted, but never below half our own estimate: a
+      // gateway that reports a token count of its own (or a constant) must
+      // not make a full context look empty.
+      const sent = Math.max(
+        input ?? approx * ratio,
+        approx * MIN_REPORTED_RATIO,
+      );
       await report({
-        usedTokens: Math.round((input ?? approx * ratio) + output),
+        usedTokens: Math.round(sent + output),
         windowTokens: window,
         compacted: Boolean(update),
         ...(reason ? { reason } : {}),
