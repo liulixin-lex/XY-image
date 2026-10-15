@@ -258,11 +258,61 @@ function anysearchEnvelope(res: { status: number; text: string }): Record<
   return (body.data as Record<string, unknown> | undefined) ?? {};
 }
 
+/** Windows-1252 characters for bytes 0x80–0x9F (the rest map to themselves). */
+const CP1252_BYTES = new Map<number, number>(
+  [
+    0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
+    0x0160, 0x2039, 0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d,
+    0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e,
+    0x0178,
+  ].flatMap((code, i) => (code ? [[code, 0x80 + i] as [number, number]] : [])),
+);
+/** A UTF-8 lead byte read as Windows-1252, followed by a continuation byte. */
+const MOJIBAKE =
+  /[\u00c2-\u00f4][\u0080-\u00bf\u0152\u0153\u0160\u0161\u0178\u017d\u017e\u0192\u02c6\u02dc\u2013-\u2122\ufffd]/g;
+const REPLACEMENT = /\ufffd/g;
+const utf8 = new TextDecoder("utf-8");
+const utf8Bytes = new TextEncoder();
+/** One lost byte breaks a whole character into two or three of these. */
+const REPLACEMENT_RUN = new RegExp(`${REPLACEMENT.source}+`, "g");
+
+/**
+ * AnySearch reads pages that declare no charset as Windows-1252, so UTF-8
+ * text comes back garbled: "â€”" for "—", "ä¸­æ–‡" for "中文" (第 69 条,
+ * seen on nodejs.org 2026-10-15; pages with a <meta charset> are fine). Put
+ * the bytes back and read them as UTF-8. Bytes Windows-1252 leaves undefined
+ * (0x81, 0x8D, 0x8F, 0x90, 0x9D) arrive as U+FFFD and stay lost, so a few
+ * characters become "�". Text without the pattern, or that would come out
+ * worse, is returned as it was (correct Latin-1 text like "café" included).
+ */
+export function repairMojibake(text: string): string {
+  const signs = text.match(MOJIBAKE)?.length ?? 0;
+  if (signs === 0) return text;
+  const bytes: number[] = [];
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    const byte = code < 0x100 ? code : CP1252_BYTES.get(code);
+    if (byte !== undefined) bytes.push(byte);
+    else bytes.push(...utf8Bytes.encode(char));
+  }
+  const repaired = utf8
+    .decode(Uint8Array.from(bytes))
+    .replace(REPLACEMENT_RUN, String.fromCharCode(0xfffd));
+  const lost =
+    (repaired.match(REPLACEMENT)?.length ?? 0) -
+    (text.match(REPLACEMENT)?.length ?? 0);
+  const left = repaired.match(MOJIBAKE)?.length ?? 0;
+  return left < signs && lost <= signs / 2 ? repaired : text;
+}
+
 export function parseAnysearch(text: string): SearchResult[] {
   const data = anysearchEnvelope({ status: 200, text });
   return list(data.results).flatMap((item) => {
     const url = httpUrl(item.url);
-    const title = typeof item.title === "string" ? stripTags(item.title) : "";
+    const title =
+      typeof item.title === "string"
+        ? stripTags(repairMojibake(item.title))
+        : "";
     if (!url || !title) return [];
     // `content` is the longer, query-focused excerpt; `snippet` the short one.
     const body =
@@ -271,7 +321,7 @@ export function parseAnysearch(text: string): SearchResult[] {
         : typeof item.snippet === "string"
           ? item.snippet
           : "";
-    return [{ title, url, snippet: stripTags(body) }];
+    return [{ title, url, snippet: stripTags(repairMojibake(body)) }];
   });
 }
 
@@ -327,10 +377,15 @@ export async function anysearchExtract(
     ...(signal ? { signal } : {}),
   });
   const data = anysearchEnvelope(res);
-  return {
-    title: typeof data.title === "string" ? stripTags(data.title) : "",
-    text: typeof data.content === "string" ? data.content.trim() : "",
-  };
+  const raw = typeof data.content === "string" ? data.content.trim() : "";
+  const text = repairMojibake(raw);
+  const title =
+    typeof data.title === "string" ? stripTags(repairMojibake(data.title)) : "";
+  if (text !== raw)
+    console.info(
+      `[web-search] anysearch extract: repaired mis-decoded text (${text.length} chars)`,
+    );
+  return { title, text };
 }
 
 // --- key-less ------------------------------------------------------------

@@ -17,6 +17,7 @@ import {
   parseDuckDuckGo,
   parseWikipedia,
   parseYahooJapan,
+  repairMojibake,
 } from "./providers.js";
 import { ReadPageError, checkPageUrl, readWebPage } from "./read-page.js";
 import {
@@ -181,6 +182,75 @@ describe("AnySearch (第 69 条)", () => {
       title: "标题",
       text: "# 正文\n内容",
     });
+  });
+
+  // AnySearch reads pages without a declared charset as Windows-1252
+  // (nodejs.org, 2026-10-15). Garble text the same way to test the repair.
+  const garble = (text: string) =>
+    new TextDecoder("windows-1252").decode(new TextEncoder().encode(text));
+  // AnySearch sends U+FFFD for the five bytes Windows-1252 leaves undefined.
+  const undefinedBytes = new RegExp(
+    `[${[0x81, 0x8d, 0x8f, 0x90, 0x9d].map((c) => String.fromCharCode(c)).join("")}]`,
+    "g",
+  );
+  const lost = String.fromCharCode(0xfffd);
+  const chinese = "节点画布可以只靠对话搭建完整的生图工作流，然后按顺序运行。";
+
+  it("repairs text AnySearch read in the wrong charset", () => {
+    expect(repairMojibake(garble("Node.js — Node.js Releases"))).toBe(
+      "Node.js — Node.js Releases",
+    );
+    expect(repairMojibake(garble(chinese))).toBe(chinese);
+    // Real answers lose the undefined bytes: most characters still come back.
+    const damaged = garble(chinese).replace(undefinedBytes, lost);
+    const repaired = repairMojibake(damaged);
+    const kept = [...repaired].filter((c, i) => c === [...chinese][i]).length;
+    expect(repaired).not.toBe(damaged);
+    expect(repairMojibake(repaired)).toBe(repaired);
+    expect(
+      [...repaired].filter((c) => /[一-龥]/.test(c)).length,
+    ).toBeGreaterThan(chinese.length * 0.6);
+    expect(kept).toBeGreaterThan(0);
+  });
+
+  it("leaves correctly decoded text alone", () => {
+    for (const text of [
+      "Café crème brûlée, naïve résumé",
+      "中文 and résumé — “quoted” 5€",
+      "Ã la carte",
+      chinese,
+    ])
+      expect(repairMojibake(text)).toBe(text);
+  });
+
+  it("repairs extract pages and search results", async () => {
+    const page = "## 发布\nNode.js — “Official” releases，中文说明";
+    const fetch = vi.fn(async () => ({
+      status: 200,
+      text: JSON.stringify({
+        code: 0,
+        data: { title: garble("Node.js — 发布"), content: garble(page) },
+      }),
+    }));
+    expect(
+      await anysearchExtract("k", "https://nodejs.org/zh-cn", fetch),
+    ).toEqual({ title: "Node.js — 发布", text: page });
+    const results = parseAnysearch(
+      JSON.stringify({
+        code: 0,
+        data: {
+          results: [
+            {
+              title: garble("标题 — A"),
+              url: "https://a.com",
+              content: garble(page),
+            },
+          ],
+        },
+      }),
+    );
+    expect(results[0]?.title).toBe("标题 — A");
+    expect(results[0]?.snippet).toContain("中文说明");
   });
 });
 
