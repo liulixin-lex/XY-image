@@ -62,7 +62,7 @@ export const CHAT_EFFORT_LABEL: Record<ChatEffort, string> = {
 };
 
 export const CHAT_EFFORT_HINT: Record<ChatEffort, string> = {
-  auto: "理解需求时多想一点，执行步骤时回得快",
+  auto: "理解需求时多想一点，执行步骤按设置里的执行模型来",
   low: "回得快，适合简单改动",
   medium: "速度和思考兼顾",
   high: "多想一会儿，适合复杂需求",
@@ -182,3 +182,34 @@ export function chatOptionsForModelId(id: string | null | undefined): {
     webSearchMode,
   };
 }
+
+/**
+ * 第 70 条 执行步骤: the model calls that follow a tool result (the steps
+ * after the request was understood). The user picks a model and level for
+ * them in 设置 › 模型 › 执行步骤模型; without one they use the chat model at
+ * 低 (自动 where the model offers no levels).
+ */
+export function defaultExecutionEffort(ref: ChatModelRef | null): ChatEffort {
+  return chatEffortsFor(ref).includes("low") ? "low" : "auto";
+}
+
+/** A saved execution level the model still takes, else its default. */
+export function executionEffortFor(
+  ref: ChatModelRef | null,
+  saved: string | null | undefined,
+): ChatEffort {
+  const parsed = chatEffortSchema.safeParse(saved);
+  return parsed.success && chatEffortsFor(ref).includes(parsed.data)
+    ? parsed.data
+    : defaultExecutionEffort(ref);
+}
+
+/**
+ * 第 70 条 上下文: a conversation is held to CHAT_CONTEXT_WINDOW tokens (or
+ * the model's own window when smaller); at CHAT_CONTEXT_COMPACT_AT of it the
+ * older turns are summarised (agent/context-window.ts). The chat panel shows
+ * the same numbers and offers 压缩 by hand.
+ */
+export const CHAT_CONTEXT_WINDOW = 100_000;
+export const CHAT_CONTEXT_COMPACT_AT = 0.8;
+

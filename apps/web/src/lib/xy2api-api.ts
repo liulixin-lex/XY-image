@@ -64,6 +64,13 @@ export type AccountPreferences = {
    * other usable image key's models are offered. Absent on older servers.
    */
   disabled_image_key_ids?: number[];
+  /**
+   * 第 70 条 执行步骤模型 (设置 › 模型): a chat model id for the steps after
+   * a tool result (null = the chat model), and its level (null = 低).
+   * Absent on older servers.
+   */
+  agent_exec_model?: string | null;
+  agent_exec_effort?: string | null;
 };
 
 export type AccountLinks = {
@@ -120,6 +127,9 @@ export type PreferencesPatch = {
   defaultChatProviderId?: string | null;
   /** The full list of image keys to switch off (empty = all on). */
   disabledImageKeyIds?: number[];
+  /** 第 70 条: execution model id and level; null clears them. */
+  agentExecModel?: string | null;
+  agentExecEffort?: string | null;
 };
 
 // ---------------------------------------------------------------------------

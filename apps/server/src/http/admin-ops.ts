@@ -4,12 +4,14 @@ import {
   type DiskSample,
   type OpsAlert,
   adminAlertsResponseSchema,
+  adminSearchResponseSchema,
   adminStorageResponseSchema,
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 
 import type { ServerEnv } from "../config/env.js";
+import { sharedWebSearchService } from "../features/web-search/service.js";
 import type { AccountService } from "../features/xy2api/account-service.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
@@ -104,7 +106,9 @@ export async function registerAdminOpsRoutes(
     env: Pick<
       ServerEnv,
       "diskAlertWarnPercent" | "diskAlertCriticalPercent" | "opsAlertWebhookUrl"
-    >;
+    > &
+      Partial<Parameters<typeof sharedWebSearchService>[0]> &
+      Pick<Partial<ServerEnv>, "webSearchGeminiFallback">;
   },
 ) {
   /** The signed-in admin, or a reply already sent. */
@@ -164,6 +168,17 @@ export async function registerAdminOpsRoutes(
       request.log.error({ err: error }, "admin ops alerts failed");
       return failed(reply);
     }
+  });
+
+  // GET /api/admin/ops/search — the free web search's sources (第 70 条):
+  // AnySearch's daily count and rests, the key-less engines' state.
+  app.get("/api/admin/ops/search", async (request, reply) => {
+    if (!(await admin(request, reply))) return reply;
+    reply.header("Cache-Control", "no-store");
+    return adminSearchResponseSchema.parse({
+      sources: sharedWebSearchService(options.env).status(),
+      geminiFallback: options.env.webSearchGeminiFallback !== "off",
+    });
   });
 
   // GET /api/admin/ops/storage — the latest sample, a week of hourly peaks, alerts.

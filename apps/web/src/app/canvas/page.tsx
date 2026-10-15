@@ -11,6 +11,7 @@ import { AccountChip } from "../../components/account/account-chip";
 import { BrandLockup } from "../../components/brand/brand-mark";
 import { Button, buttonVariants } from "../../components/ui/button";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
+import type { CanvasNodeItem } from "../../components/chat/pick-menu";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useToast } from "../../components/toast";
 import { useAuth } from "../../lib/auth-context";
@@ -228,6 +229,34 @@ function CanvasPageContent() {
     });
   }, []);
 
+  // 第 70 条 指定 › 目标: every node but the edges, labelled the way the
+  // canvas shows them (the 「+」 menu reads this when it opens).
+  const handleRequestCanvasNodes = useCallback((): CanvasNodeItem[] => {
+    const store = canvasRef.current?.store;
+    if (!store) return [];
+    const short = (text: unknown, fallback: string) => {
+      const value = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
+      return value ? (value.length > 24 ? `${value.slice(0, 24)}…` : value) : fallback;
+    };
+    let images = 0;
+    return store.liveElements().flatMap((el): CanvasNodeItem[] => {
+      if (el.type === "arrow" || el.type === "line" || el.type === "freedraw") return [];
+      const data = (el.customData ?? {}) as Record<string, unknown>;
+      const generator = (data.generator ?? {}) as Record<string, unknown>;
+      const label =
+        el.type === "prompt"
+          ? short(el.text, "提示词卡片")
+          : el.type === "generator"
+            ? short(generator.prompt, "生成节点")
+            : el.type === "image"
+              ? short(data.title ?? data.label, `图片 ${++images}`)
+              : el.type === "frame"
+                ? short(el.name, "分组框")
+                : short(el.text ?? data.label, "图形");
+      return [{ id: el.id, type: String(el.type), label }];
+    });
+  }, []);
+
   // Only re-fetch when canvasId changes or on initial auth resolution.
   // Token refreshes (e.g. tab switch back) should NOT trigger a reload —
   // we depend on user.id (stable string) instead of the user object ref.
@@ -358,6 +387,7 @@ function CanvasPageContent() {
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
         onRequestCanvasImages={handleRequestCanvasImages}
+        onRequestCanvasNodes={handleRequestCanvasNodes}
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}

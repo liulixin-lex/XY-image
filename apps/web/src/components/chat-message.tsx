@@ -2,7 +2,12 @@
 
 import React, { useMemo } from "react";
 
-import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
+import type {
+  ContentBlock,
+  MessageMention,
+  ToolArtifact,
+  ToolBlock,
+} from "@loomic/shared";
 import { LiveDot } from "./ambient/live-dot";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
@@ -119,7 +124,7 @@ const UserMessage = React.memo(function UserMessage({
                   kind={
                     (
                       block as {
-                        mentionType: "image-model" | "brand-kit-asset" | "skill";
+                        mentionType: MessageMention["mentionType"];
                       }
                     ).mentionType
                   }
@@ -152,7 +157,7 @@ const UserMessage = React.memo(function UserMessage({
               kind={
                 (
                   block as {
-                    mentionType: "image-model" | "brand-kit-asset" | "skill";
+                    mentionType: MessageMention["mentionType"];
                   }
                 ).mentionType
               }

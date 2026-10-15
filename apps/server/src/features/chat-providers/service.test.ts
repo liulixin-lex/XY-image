@@ -251,6 +251,27 @@ describe("chat preference and runtime resolution", () => {
       f.keys.updatePreferences(userId, { defaultChatModel: "missing" }),
     ).rejects.toMatchObject({ code: "provider_model_not_found" });
   });
+  it("saves an execution model the user can use, and clears it (第 70 条)", async () => {
+    const f = setup();
+    const p = await f.providers.create(userId, input);
+    const prefs = await f.keys.updatePreferences(userId, {
+      agentExecModel: `custom:${p.id}:other`,
+      agentExecEffort: "low",
+    });
+    expect(prefs).toMatchObject({
+      agent_exec_model: `custom:${p.id}:other`,
+      agent_exec_effort: "low",
+    });
+    await expect(
+      f.keys.updatePreferences(userId, { agentExecModel: `custom:${p.id}:missing` }),
+    ).rejects.toMatchObject({ code: "provider_model_not_found" });
+    await expect(
+      f.keys.updatePreferences(userId, { agentExecModel: "not-a-ref" }),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(
+      await f.keys.updatePreferences(userId, { agentExecModel: null, agentExecEffort: null }),
+    ).toMatchObject({ agent_exec_model: null, agent_exec_effort: null });
+  });
   it("preserves the custom default during main-key sync; disabled defaults fall back to the first main-site model", async () => {
     const f = setup();
     const p = await f.providers.create(userId, input);

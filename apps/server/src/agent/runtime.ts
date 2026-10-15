@@ -12,8 +12,9 @@ import { createSupabaseFetch } from "../supabase/transport.js";
 import { createReviewImageStore, toModelImage } from "./vision.js";
 
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { HumanMessage } from "@langchain/core/messages";
+import { type BaseMessage, HumanMessage } from "@langchain/core/messages";
 import type {
+  AgentPickTool,
   BackgroundJob,
   ImageAttachment,
   ImageGenerationPreference,
@@ -49,9 +50,11 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
+  type ExecutionOptions,
   type LoomicAgent,
   type LoomicAgentFactory,
   createLoomicDeepAgent,
+  createSummaryModel,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -62,6 +65,12 @@ import type {
 } from "./tools/canvas-workflow.js";
 // Model tools have no host shell access because this process holds credentials.
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
+import {
+  type ThreadGraph,
+  compactAgentThread,
+  threadContext,
+} from "./context-window.js";
+import { resolveExecution, searchFallbackFor } from "./execution-model.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import {
   type WorkspaceSkillEntry,
@@ -228,7 +237,9 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
     );
   }
 
-  // Skill mentions — tell the agent to read and follow the mentioned skill
+  // Skill mentions: the user wants this skill followed. Its text is in the
+  // system prompt's 「技能」 section since 第 69 条 (skills-prompt.ts); a long
+  // one is only listed there, with its path.
   const mentionedSkills = mentions.filter(
     (mention): mention is Extract<MessageMention, { mentionType: "skill" }> =>
       mention.mentionType === "skill",
@@ -237,15 +248,83 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
     const skillXml = mentionedSkills
       .map(
         (mention, i) =>
-          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.\n</skill>`,
+          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}" />`,
       )
       .join("\n  ");
     xmlBlocks.push(
-      `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n</human_skill_mentions>`,
+      `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n  用户指定这一轮按这些技能来做。技能内容在系统提示词的「技能」部分；那里只列了名字和路径的，先 read_file 那个路径。\n</human_skill_mentions>`,
+    );
+  }
+
+  // 第 70 条 指定 (the chat panel's 「+」 menu): targets, a brand kit, tools.
+  const targets = mentions.filter(
+    (m): m is Extract<MessageMention, { mentionType: "canvas-node" }> =>
+      m.mentionType === "canvas-node",
+  );
+  if (targets.length > 0) {
+    const nodeXml = targets
+      .map(
+        (m, i) =>
+          `<target index="${i + 1}" element_id="${escapeXmlAttribute(m.id)}" type="${escapeXmlAttribute(m.nodeType)}" name="${escapeXmlAttribute(m.label)}" />`,
+      )
+      .join("\n  ");
+    xmlBlocks.push(
+      `<human_targets count="${targets.length}">\n  ${nodeXml}\n  用户指定这一轮针对这些画布元素（canvas_state 里有它们的 id 和位置）。修改、运行、审图都只针对它们，别的元素不动，除非用户另外说。找不到某个 id 时先 inspect_canvas 看一眼，仍然没有就告诉用户它可能已被删除。\n</human_targets>`,
+    );
+  }
+
+  const kit = [...mentions]
+    .reverse()
+    .find(
+      (m): m is Extract<MessageMention, { mentionType: "brand-kit" }> =>
+        m.mentionType === "brand-kit",
+    );
+  if (kit)
+    xmlBlocks.push(
+      `<human_brand_kit_choice id="${escapeXmlAttribute(kit.id)}" name="${escapeXmlAttribute(kit.label)}">\n  用户为这条消息指定了品牌套件「${escapeXmlText(kit.label)}」。这一轮 get_brand_kit 读到的就是它；先读，设计要符合它的颜色、字体、标志和语气。\n</human_brand_kit_choice>`,
+    );
+
+  const tools = mentions.filter(
+    (m): m is Extract<MessageMention, { mentionType: "tool" }> =>
+      m.mentionType === "tool",
+  );
+  if (tools.length > 0) {
+    const lines = tools.map(
+      (m, i) => `${i + 1}. ${m.label}：${TOOL_PICK_INSTRUCTIONS[m.id]}`,
+    );
+    xmlBlocks.push(
+      `<human_tool_choice count="${tools.length}">\n  用户指定这一轮用下面的工具完成：\n  ${lines.join("\n  ")}\n  按用户的意思用它们，不要换成别的做法；做不到时说明原因。\n</human_tool_choice>`,
     );
   }
 
   return xmlBlocks;
+}
+
+/** What each pickable tool (shared AGENT_PICK_TOOLS) asks of the model. */
+const TOOL_PICK_INSTRUCTIONS: Record<AgentPickTool, string> = {
+  generate_image: "用 generate_image 直接出图",
+  canvas_workflow:
+    "用 canvas_workflow 在画布上搭工作流（提示词卡片、生成节点、连线、分组框）",
+  run_workflow: "用 run_workflow 运行画布上的生成节点（会产生生图费用）",
+  web_search: "先联网搜索查资料（模型自带搜索或 search_web），再回答，并给出来源",
+  review:
+    "先看图再说：画布用 screenshot_canvas，指定的图片用 view_images；给出具体意见，需要时再改",
+  edit_canvas: "用 manipulate_canvas 编辑画布（移动、排版、改文字和形状）",
+};
+
+/** Whether the message picked this tool in the 「+」 menu (第 70 条). */
+export function pickedTool(
+  mentions: readonly MessageMention[] | undefined,
+  id: AgentPickTool,
+): boolean {
+  return (mentions ?? []).some((m) => m.mentionType === "tool" && m.id === id);
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function escapeXmlAttribute(value: string): string {
@@ -315,6 +394,24 @@ type CreateAgentRuntimeOptions = {
   runIdFactory?: () => string;
   viewerService?: ViewerService;
 };
+
+/** 第 70 条 压缩 while the conversation is still answering. */
+export class ContextBusyError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super("这段对话还在回复，等它结束再压缩");
+    this.name = "ContextBusyError";
+  }
+}
+
+/** No persisted threads (development without a database). */
+export class ContextUnavailableError extends Error {
+  readonly statusCode = 503;
+  constructor() {
+    super("对话记录暂时读不到");
+    this.name = "ContextUnavailableError";
+  }
+}
 
 export type AgentRunService = ReturnType<typeof createAgentRunService>;
 
@@ -424,6 +521,94 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       return runs.has(runId);
     },
 
+    /**
+     * 第 70 条 上下文: how full a stored conversation is, for the chat
+     * panel's meter. Read straight from the checkpoint (no model needed).
+     */
+    async sessionContext(params: { threadId: string }) {
+      const persistence = options.agentPersistenceService
+        ? await options.agentPersistenceService.getPersistence()
+        : null;
+      if (!persistence) throw new ContextUnavailableError();
+      const tuple = await persistence.checkpointer.getTuple({
+        configurable: { thread_id: params.threadId, checkpoint_ns: "" },
+      });
+      const values = (tuple?.checkpoint.channel_values ?? {}) as Record<
+        string,
+        unknown
+      >;
+      return threadContext(
+        (values.messages ?? []) as BaseMessage[],
+        values,
+      );
+    },
+
+    /**
+     * 第 70 条 压缩: summarises a stored conversation now (the chat panel's
+     * button). Same summary, model and history file as the automatic one
+     * inside a run (context-window.ts); refused while a run of the
+     * conversation is going.
+     */
+    async compactSession(params: {
+      userId: string;
+      threadId: string;
+      canvasId?: string;
+    }) {
+      const busy = [...runs.values()].some(
+        (r) =>
+          r.threadId === params.threadId &&
+          (r.status === "accepted" || r.status === "running"),
+      );
+      if (busy) throw new ContextBusyError();
+      const persistence = options.agentPersistenceService
+        ? await options.agentPersistenceService.getPersistence()
+        : null;
+      if (!persistence) throw new ContextUnavailableError();
+      const chat = await resolveRunChatModel({
+        userId: params.userId,
+        keys: options.xy2api.keys,
+        providers: options.xy2api.providers,
+        env: options.env,
+      });
+      const execution = await resolveExecution({
+        userId: params.userId,
+        chat,
+        prefs: await options.xy2api.keys.preferences(params.userId),
+        keys: options.xy2api.keys,
+        providers: options.xy2api.providers,
+        env: options.env,
+      });
+      const backendResult = createAgentBackend(options.env, params.canvasId);
+      const credentials =
+        chat.source === "custom"
+          ? { customChat: chat.customChat }
+          : { credentials: chat.credentials };
+      const agent = resolvedAgentFactory({
+        backendResult,
+        ...(params.canvasId ? { canvasId: params.canvasId } : {}),
+        checkpointer: persistence.checkpointer,
+        store: persistence.store,
+        env: options.env,
+        model: chat.ref,
+        execution,
+        ...credentials,
+      });
+      if (!agent.graph) throw new ContextUnavailableError();
+      return compactAgentThread({
+        graph: agent.graph as unknown as ThreadGraph,
+        threadId: params.threadId,
+        deps: {
+          model: createSummaryModel({
+            modelSpec: chat.ref,
+            ...credentials,
+            execution,
+          }),
+          backend: backendResult.factory,
+          store: persistence.store,
+        },
+      });
+    },
+
     async *streamRun(runId: string): AsyncGenerator<StreamEvent> {
       const run = runs.get(runId);
       if (!run) {
@@ -501,6 +686,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       let chatSelection: ResolvedChat;
       let availableImageModels: AvailableModel[] = [];
+      // 第 70 条: 执行步骤模型 and search_web's last resort (execution-model.ts).
+      let execution: ExecutionOptions = {};
+      let searchFallback:
+        | { baseUrl: string; apiKey: string; model: string }
+        | undefined;
       try {
         if (!run.userId)
           throw new BillingGuardError("xy2api_reauth_required", 401);
@@ -522,6 +712,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           providers: options.xy2api.providers,
           env: options.env,
         });
+        execution = await resolveExecution({
+          userId: run.userId,
+          chat: chatSelection,
+          prefs: await options.xy2api.keys.preferences(run.userId),
+          keys: options.xy2api.keys,
+          providers: options.xy2api.providers,
+          env: options.env,
+        });
+        if (run.webSearch || pickedTool(run.mentions, "web_search"))
+          searchFallback = await searchFallbackFor({
+            userId: run.userId,
+            keys: options.xy2api.keys,
+            env: options.env,
+          });
         // Existing model column stores a non-secret source/provider/model reference.
         if (run.threadId && options.agentRunMetadataService)
           await options.agentRunMetadataService.updateRun({
@@ -1125,9 +1329,45 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
+          // 第 70 条: a kit picked for this message (「+」 › 品牌套件) wins,
+          // when it is the user's own.
+          const pickedKit = [...(run.mentions ?? [])]
+            .reverse()
+            .find((m) => m.mentionType === "brand-kit");
+          if (
+            pickedKit &&
+            pickedKit.id !== brandKitId &&
+            run.accessToken &&
+            run.userId &&
+            options.createUserClient
+          ) {
+            try {
+              const { data: kit } = await (
+                options.createUserClient(run.accessToken) as UserSupabaseClient
+              )
+                .from("brand_kits")
+                .select("id")
+                .eq("id", pickedKit.id)
+                .eq("user_id", run.userId)
+                .maybeSingle();
+              if (kit?.id) brandKitId = kit.id;
+              else
+                console.warn(
+                  `[agent-runtime] run ${runId}: picked brand kit not found or not the user's`,
+                );
+            } catch {
+              console.warn(
+                `[agent-runtime] run ${runId}: picked brand kit lookup failed`,
+              );
+            }
+          }
           // A project without a kit uses the user's default (「应用到新项目」),
           // so projects made before the switch was set get it too (A1).
-          let brandKitSource = brandKitId ? "project" : "none";
+          let brandKitSource = pickedKit && brandKitId === pickedKit.id
+            ? "picked"
+            : brandKitId
+              ? "project"
+              : "none";
           if (
             !brandKitId &&
             run.accessToken &&
@@ -1231,6 +1471,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 }
               : {}),
             imageModels: availableImageModels,
+            execution,
+            ...(searchFallback ? { searchFallback } : {}),
             ...(chatSelection.source === "custom"
               ? { customChat: chatSelection.customChat }
               : { credentials: chatSelection.credentials }),
@@ -1259,7 +1501,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // leaves this server).
             chatOptions: {
               ...(run.effort ? { effort: run.effort } : {}),
-              ...(run.webSearch ? { webSearch: true } : {}),
+              // 第 70 条: picking 联网搜索 in the 「+」 menu turns it on for
+              // this message even when the globe is off.
+              ...(run.webSearch || pickedTool(run.mentions, "web_search")
+                ? { webSearch: true }
+                : {}),
               ...(run.threadId
                 ? {
                     promptCacheKey: `xyimg-${createHash("sha256").update(run.threadId).digest("hex").slice(0, 32)}`,

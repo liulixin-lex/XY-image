@@ -275,7 +275,7 @@ export function createInspectCanvasTool(deps: {
         .single();
 
       // 第 67 条: a dropped connection (no PostgREST code) is thrown, so the
-      // read-only retry (run-budget.ts) tries again; not "not found".
+      // read-only retry (run-guards.ts) tries again; not "not found".
       if (error && !error.code)
         throw new Error(`canvas read failed: ${error.message}`);
       if (error || !data) {

@@ -57,10 +57,56 @@ export const skillMentionSchema = z.object({
   slug: z.string().min(1),
 });
 
+/**
+ * 第 70 条 指定: things the user picks for this message from the chat
+ * panel's 「+」 menu (or @): a node on the canvas to work on, a whole brand
+ * kit, a tool to use. The server turns them into explicit instructions
+ * (agent/runtime.ts buildMentionXmlBlocks).
+ */
+export const canvasNodeMentionSchema = z.object({
+  mentionType: z.literal("canvas-node"),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  /** prompt, generator, image, text, frame or a shape type. */
+  nodeType: z.string().min(1).max(40),
+});
+
+export const brandKitMentionSchema = z.object({
+  mentionType: z.literal("brand-kit"),
+  id: z.string().min(1),
+  label: z.string().min(1),
+});
+
+export const AGENT_PICK_TOOLS = [
+  { id: "generate_image", label: "生图", hint: "直接生成图片" },
+  {
+    id: "canvas_workflow",
+    label: "搭建工作流",
+    hint: "在画布上搭提示词卡片、生成节点和连线",
+  },
+  { id: "run_workflow", label: "运行工作流", hint: "运行画布上的生成节点" },
+  { id: "web_search", label: "联网搜索", hint: "先查资料再回答" },
+  { id: "review", label: "审图", hint: "先看图，再给意见或修改" },
+  { id: "edit_canvas", label: "编辑画布", hint: "移动、排版、改文字和形状" },
+] as const;
+export type AgentPickTool = (typeof AGENT_PICK_TOOLS)[number]["id"];
+export const agentPickToolSchema = z.enum(
+  AGENT_PICK_TOOLS.map((t) => t.id) as [AgentPickTool, ...AgentPickTool[]],
+);
+
+export const toolMentionSchema = z.object({
+  mentionType: z.literal("tool"),
+  id: agentPickToolSchema,
+  label: z.string().min(1),
+});
+
 export const messageMentionSchema = z.discriminatedUnion("mentionType", [
   imageModelMentionSchema,
   brandKitAssetMentionSchema,
   skillMentionSchema,
+  canvasNodeMentionSchema,
+  brandKitMentionSchema,
+  toolMentionSchema,
 ]);
 
 export const imageGenerationPreferenceSchema = z.object({
@@ -235,10 +281,23 @@ export const skillMentionBlockSchema = z.object({
   slug: z.string().min(1),
 });
 
+export const canvasNodeMentionBlockSchema = canvasNodeMentionSchema.extend({
+  type: z.literal("mention"),
+});
+export const brandKitMentionBlockSchema = brandKitMentionSchema.extend({
+  type: z.literal("mention"),
+});
+export const toolMentionBlockSchema = toolMentionSchema.extend({
+  type: z.literal("mention"),
+});
+
 export const mentionBlockSchema = z.union([
   imageModelMentionBlockSchema,
   brandKitAssetMentionBlockSchema,
   skillMentionBlockSchema,
+  canvasNodeMentionBlockSchema,
+  brandKitMentionBlockSchema,
+  toolMentionBlockSchema,
 ]);
 
 export const contentBlockSchema = z.union([

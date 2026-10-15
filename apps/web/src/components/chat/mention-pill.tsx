@@ -4,13 +4,23 @@ import React from "react";
 
 type MentionPillProps = {
   label: string;
-  kind: "image-model" | "brand-kit-asset" | "skill";
+  kind:
+    | "image-model"
+    | "brand-kit-asset"
+    | "skill"
+    | "canvas-node"
+    | "brand-kit"
+    | "tool";
 };
 
 const MENTION_KIND: Record<MentionPillProps["kind"], string> = {
   "image-model": "模型",
   "brand-kit-asset": "品牌套件",
   skill: "技能",
+  // 第 70 条 指定 (the chat panel's 「+」 menu).
+  "canvas-node": "目标",
+  "brand-kit": "品牌套件",
+  tool: "工具",
 };
 
 /**

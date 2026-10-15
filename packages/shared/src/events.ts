@@ -134,7 +134,23 @@ export const billingErrorEventSchema = z.object({
   dailyClaimed: z.boolean().optional(),
 });
 
+/**
+ * 第 70 条 上下文: how full the conversation's context is after a model call,
+ * and whether older turns were just summarised (automatically at 80 %, or
+ * by the user's 压缩). Tokens are approximate.
+ */
+export const contextUpdatedEventSchema = z.object({
+  type: z.literal("context.updated"),
+  runId: runIdSchema.optional(),
+  usedTokens: z.number().int().nonnegative(),
+  windowTokens: z.number().int().positive(),
+  compacted: z.boolean(),
+  reason: z.enum(["auto", "manual", "overflow"]).optional(),
+  timestamp: timestampSchema,
+});
+
 export const streamEventSchema = z.discriminatedUnion("type", [
+  contextUpdatedEventSchema,
   runStartedEventSchema,
   messageDeltaEventSchema,
   thinkingDeltaEventSchema,

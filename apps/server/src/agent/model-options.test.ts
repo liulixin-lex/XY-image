@@ -280,15 +280,17 @@ describe("a model that refuses an option", () => {
     }
     const make = () => new Capturing({ responses: ["好的"] });
     const middleware = createChatOptionsMiddleware({
-      ref: { source: "xy2api", model: "gpt-6.1-sol" },
-      label: "gpt-6.1-sol",
-      effort: options.effort,
-      search: options.search,
-      ...(options.tools === false ? {} : { searchTools: fakeSearchTools() }),
-      rebuild: (effort, hosted) => {
-        rebuilt.push(hosted ? effort : `${effort}/no-search`);
-        return make() as never;
+      planning: {
+        ref: { source: "xy2api", model: "gpt-6.1-sol" },
+        label: "gpt-6.1-sol",
+        effort: options.effort,
+        search: options.search,
+        rebuild: (effort, hosted) => {
+          rebuilt.push(hosted ? effort : `${effort}/no-search`);
+          return make() as never;
+        },
       },
+      ...(options.tools === false ? {} : { searchTools: fakeSearchTools() }),
     });
     const deep = createDeepAgent({
       model: make() as never,

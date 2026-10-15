@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { CHAT_EFFORTS } from "@loomic/shared";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
 import { ChatProviderError } from "../features/chat-providers/errors.js";
@@ -58,6 +59,9 @@ export function registerAccountRoutes(
         .array(z.number().int().positive())
         .max(200)
         .optional(),
+      // 设置 › 模型 › 执行步骤模型 (第 70 条); null = the chat model / 低.
+      agentExecModel: z.string().min(3).max(300).nullable().optional(),
+      agentExecEffort: z.enum(CHAT_EFFORTS).nullable().optional(),
     })
     .strict();
   const links = {

@@ -147,14 +147,16 @@ export function lowerChatEffort(
 }
 
 /**
- * 第 69 条 思考强度 that does not run away. A design request is mostly
+ * 第 69 / 70 条 思考强度 that does not run away. A design request is mostly
  * "understand, plan, call a tool, report": deep thinking pays off when the
  * request is read (the call right after the user's message), not on every
- * step after a tool result. So:
- * - 自动 is 中 for that first call (where the model takes levels; personal
- *   providers keep sending nothing), and 低 afterwards;
- * - a chosen level is used for the first call; the calls after a tool
- *   result use at most 中 (低 stays 低).
+ * step after a tool result.
+ * - Planning call: the chosen level; 自动 is 中 there (where the model takes
+ *   levels; personal providers keep sending nothing).
+ * - Execution calls (after a tool result, 第 70 条): the model and level from
+ *   设置 › 模型 › 执行步骤模型; without one, the chat model at 低
+ *   (chat-options.ts defaultExecutionEffort). runtime.ts resolves them,
+ *   deep-agent.ts builds the models, createChatOptionsMiddleware switches.
  */
 export function planningEffort(
   ref: ChatModelRef | null,
@@ -178,17 +180,53 @@ function lowestOf(a: SentEffort, b: SentEffort): SentEffort {
   return EFFORT_RANK[a] <= EFFORT_RANK[b] ? a : b;
 }
 
-/** The level for a call that follows a tool result (see planningEffort). */
-export function executionEffort(
-  ref: ChatModelRef | null,
-  planning: SentEffort,
-  chosen: ChatEffort,
-): SentEffort {
-  if (planning === "off" || planning === "auto") return planning;
-  const cap: ChatEffort =
-    chosen === "auto" || chosen === "low" ? "low" : "medium";
-  if (EFFORT_RANK[planning] <= EFFORT_RANK[cap]) return planning;
-  return chatEffortsFor(ref).includes(cap) ? cap : planning;
+/**
+ * Reasoning a model left in the history (Responses API reasoning items,
+ * reasoning_content, thinking blocks). Another model may refuse them (an
+ * encrypted item belongs to the model that wrote it), so when two models
+ * share a run (第 70 条 执行步骤模型) each gets the history without them.
+ * Text, tool calls and tool results stay.
+ */
+export function withoutReasoning<T>(messages: readonly T[]): T[] {
+  return messages.map((message) => {
+    const m = message as {
+      getType?: () => string;
+      _getType?: () => string;
+      content?: unknown;
+      additional_kwargs?: Record<string, unknown>;
+    };
+    const type = m.getType?.() ?? m._getType?.();
+    if (type !== "ai") return message;
+    const kwargs = m.additional_kwargs ?? {};
+    const reasoningKeys = [
+      "reasoning",
+      "reasoning_content",
+      "reasoning_details",
+      "thinking",
+    ].filter((k) => k in kwargs);
+    const blocks = Array.isArray(m.content)
+      ? (m.content as Array<{ type?: string }>).filter(
+          (b) =>
+            !["reasoning", "thinking", "redacted_thinking"].includes(
+              String(b?.type),
+            ),
+        )
+      : m.content;
+    const changedBlocks =
+      Array.isArray(m.content) &&
+      (blocks as unknown[]).length !== m.content.length;
+    if (!reasoningKeys.length && !changedBlocks) return message;
+    const Ctor = (message as { constructor: new (fields: unknown) => T })
+      .constructor;
+    const fields = {
+      ...(message as Record<string, unknown>),
+      content: blocks,
+      additional_kwargs: Object.fromEntries(
+        Object.entries(kwargs).filter(([k]) => !reasoningKeys.includes(k)),
+      ),
+    };
+    return new Ctor(fields);
+  });
 }
 
 /** Whether this model call follows a tool result (not the user's message). */
@@ -208,78 +246,115 @@ function toolName(tool: unknown): string | undefined {
   return typeof name === "string" ? name : undefined;
 }
 
-export function createChatOptionsMiddleware(options: {
+/** One side of a run: the planning model or the execution model. */
+export type ModelTarget = {
   ref: ChatModelRef | null;
   label: string;
-  /** The level of the planning call (planningEffort applied). */
+  /** The level its calls send (planningEffort / execution effort applied). */
   effort: SentEffort;
-  /** What the chat panel asked for; picks the cap after tool results. */
-  chosen?: ChatEffort;
+  /** How it searches while 联网搜索 is on. */
   search: SearchRoute;
+  /**
+   * The model with other options (same transport, same key). Without
+   * hosted search a model that is not Responses-native goes back to Chat
+   * Completions (deep-agent.ts createStreamingChatModel).
+   */
+  rebuild: (effort: SentEffort, hostedSearch: boolean) => BaseChatModel;
+};
+
+export function createChatOptionsMiddleware(options: {
+  /** The planning model; the agent's own model is its (effort, search). */
+  planning: ModelTarget;
+  /**
+   * 第 70 条: the calls after a tool result. `separate` when it is another
+   * model than the planning one (both then get the history without
+   * reasoning, see withoutReasoning). Missing: the planning model as is.
+   */
+  execution?: ModelTarget & { separate: boolean };
   /**
    * search_web / read_webpage: used for "tools", and what a refused
    * "hosted" search falls back to. Empty: a refusal means no search.
    */
   searchTools?: StructuredTool[];
-  /**
-   * The chat model with other options (same transport, same key). Without
-   * hosted search a model that is not Responses-native goes back to Chat
-   * Completions (deep-agent.ts createStreamingChatModel). The agent's own
-   * model is the one for (effort, the initial search route).
-   */
-  rebuild: (effort: SentEffort, hostedSearch: boolean) => BaseChatModel;
 }) {
-  const chosen: ChatEffort =
-    options.chosen ?? (options.effort === "off" ? "auto" : options.effort);
-  /** Highest level any call may send after a refusal (none yet). */
-  let ceiling: SentEffort = "max";
-  let search: SearchRoute = options.search;
-  const initialKey = `${options.effort}|${options.search === "hosted"}`;
-  const models = new Map<string, BaseChatModel>();
-  const modelFor = (effort: SentEffort): BaseChatModel | undefined => {
-    const hosted = search === "hosted";
+  const searchTools = options.searchTools ?? [];
+  const searchNames = new Set(searchTools.map((t) => t.name));
+  type Side = {
+    target: ModelTarget;
+    /** Highest level any call may send after a refusal (none yet). */
+    ceiling: SentEffort;
+    search: SearchRoute;
+    models: Map<string, BaseChatModel>;
+    /** The agent's own model: the (effort, hosted) it was built with. */
+    ownKey?: string;
+  };
+  const planning: Side = {
+    target: options.planning,
+    ceiling: "max",
+    search: options.planning.search,
+    models: new Map(),
+    ownKey: `${options.planning.effort}|${options.planning.search === "hosted"}`,
+  };
+  const separate = options.execution?.separate ?? false;
+  // The same model at another level shares the planning side (a refusal or
+  // a search switch holds for both); another model has its own.
+  const execution: Side | undefined = !options.execution
+    ? undefined
+    : separate
+      ? {
+          target: options.execution,
+          ceiling: "max",
+          search: options.execution.search,
+          models: new Map(),
+        }
+      : planning;
+  const executionEffort = options.execution?.effort ?? options.planning.effort;
+  const modelFor = (s: Side, effort: SentEffort): BaseChatModel | undefined => {
+    const hosted = s.search === "hosted";
     const key = `${effort}|${hosted}`;
-    if (key === initialKey) return undefined;
-    let model = models.get(key);
+    if (key === s.ownKey) return undefined;
+    let model = s.models.get(key);
     if (!model) {
-      model = options.rebuild(effort, hosted);
-      models.set(key, model);
+      model = s.target.rebuild(effort, hosted);
+      s.models.set(key, model);
     }
     return model;
   };
-  const searchTools = options.searchTools ?? [];
-  const searchNames = new Set(searchTools.map((t) => t.name));
   let executionLogged = false;
   return createMiddleware({
     name: "LoomicChatOptions",
     // Registered so the agent can run them; shown per call below.
     ...(searchTools.length ? { tools: searchTools } : {}),
     wrapModelCall: async (request, handler) => {
-      const execution = followsToolResult(request.messages);
+      const executing = Boolean(execution) && followsToolResult(request.messages);
+      const s = executing ? (execution as Side) : planning;
+      const label = executing && separate ? (execution as Side).target.label : planning.target.label;
+      const wanted = executing ? executionEffort : options.planning.effort;
+      const messages = separate
+        ? withoutReasoning(request.messages)
+        : request.messages;
       for (let step = 0; ; step++) {
-        const wanted = execution
-          ? executionEffort(options.ref, options.effort, chosen)
-          : options.effort;
-        const effort = lowestOf(wanted, ceiling);
-        if (execution && effort !== options.effort && !executionLogged) {
+        const effort = lowestOf(wanted, s.ceiling);
+        if (executing && !executionLogged) {
           executionLogged = true;
           console.info(
-            `[agent-model] ${options.label} steps after a tool result use effort ${effort} (first call ${options.effort})`,
+            `[agent-model] steps after a tool result: ${label}${separate ? " (execution model)" : ""} effort ${effort} (first call ${planning.target.label} ${options.planning.effort})`,
           );
         }
-        const model = modelFor(effort);
+        const model = modelFor(s, effort);
         const base = request.tools.filter(
           (t) => !searchNames.has(toolName(t) ?? ""),
         );
         const tools =
-          search === "hosted"
+          s.search === "hosted"
             ? [...base, WEB_SEARCH_TOOL]
-            : search === "tools"
+            : s.search === "tools"
               ? [...base, ...searchTools]
               : base;
         try {
           return await handler({
             ...request,
+            messages,
             tools: tools as typeof request.tools,
             ...(model ? { model } : {}),
           });
@@ -295,9 +370,9 @@ export function createChatOptionsMiddleware(options: {
             rejectedRequest(error)
           ) {
             console.warn(
-              `[agent-model] ${options.label} refused a request with effort ${effort}; trying without`,
+              `[agent-model] ${label} refused a request with effort ${effort}; trying without`,
             );
-            ceiling = "auto";
+            s.ceiling = "auto";
             continue;
           }
           // With hosted search on, a 4xx that names nothing may be the
@@ -305,31 +380,31 @@ export function createChatOptionsMiddleware(options: {
           // model goes back to the API it used before 第 67 条 and searches
           // with the search tools instead (第 68 条).
           if (
-            search === "hosted" &&
+            s.search === "hosted" &&
             step < 6 &&
             (refused === "web_search" ||
               (!refused && rejectedRequest(error, [400, 404, 405, 422])))
           ) {
-            search = searchTools.length ? "tools" : "off";
+            s.search = searchTools.length ? "tools" : "off";
             console.warn(
-              `[agent-model] ${options.label} refused a request with built-in web search (${refused ?? "unnamed 4xx"}); this run ${search === "tools" ? "searches with the web search tool instead" : "goes on without it"}`,
+              `[agent-model] ${label} refused a request with built-in web search (${refused ?? "unnamed 4xx"}); this run ${s.search === "tools" ? "searches with the web search tool instead" : "goes on without it"}`,
             );
             continue;
           }
           if (refused === "effort" && effort !== "off") {
-            const next = lowerChatEffort(options.ref, effort);
+            const next = lowerChatEffort(s.target.ref, effort);
             console.warn(
-              `[agent-model] ${options.label} refused effort ${effort}; trying ${next}`,
+              `[agent-model] ${label} refused effort ${effort}; trying ${next}`,
             );
-            ceiling = next;
+            s.ceiling = next;
             continue;
           }
           // A provider that cannot take our search tools (some refuse
           // function tools they do not know): go on without them.
-          if (search === "tools" && step < 6 && refused === "web_search") {
-            search = "off";
+          if (s.search === "tools" && step < 6 && refused === "web_search") {
+            s.search = "off";
             console.warn(
-              `[agent-model] ${options.label} refused the web search tools; this run goes on without them`,
+              `[agent-model] ${label} refused the web search tools; this run goes on without them`,
             );
             continue;
           }

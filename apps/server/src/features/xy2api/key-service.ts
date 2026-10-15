@@ -1,3 +1,9 @@
+import {
+  type ChatEffort,
+  formatChatModelRef,
+  parseChatModelRef,
+} from "@loomic/shared";
+
 import type { ServerEnv } from "../../config/env.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { ChatProviderService } from "../chat-providers/service.js";
@@ -118,6 +124,8 @@ export class KeyService {
       default_chat_provider_id: data?.default_chat_provider_id ?? null,
       // bigint[] arrives as numbers; a row from before the column is all on.
       disabled_image_key_ids: (data?.disabled_image_key_ids ?? []).map(Number),
+      agent_exec_model: data?.agent_exec_model ?? null,
+      agent_exec_effort: data?.agent_exec_effort ?? null,
     };
   }
   /**
@@ -593,6 +601,8 @@ export class KeyService {
       defaultChatModel?: string | undefined;
       defaultChatProviderId?: string | null | undefined;
       disabledImageKeyIds?: number[] | undefined;
+      agentExecModel?: string | null | undefined;
+      agentExecEffort?: ChatEffort | null | undefined;
     },
   ) {
     const prefs = await this.preferences(userId);
@@ -710,6 +720,32 @@ export class KeyService {
         prefs.default_chat_model = model;
       }
     }
+    if (input.agentExecModel !== undefined) {
+      // 第 70 条 执行步骤模型: a model the user can chat with now (the runtime
+      // still falls back to the chat model if it goes away later).
+      if (input.agentExecModel === null) prefs.agent_exec_model = null;
+      else {
+        const ref = parseChatModelRef(input.agentExecModel);
+        if (!ref)
+          throw new BillingGuardError(
+            "invalid_input",
+            400,
+            "执行步骤模型的格式不对",
+          );
+        if (ref.source === "custom") {
+          if (!this.providers)
+            throw new BillingGuardError("model_not_accessible", 403);
+          await this.providers.validateModel(userId, ref.providerId, ref.model);
+        } else {
+          const row = await this.selected(userId, prefs.chat_key_id);
+          if (!row.chat_models.includes(ref.model))
+            throw new BillingGuardError("model_not_accessible", 403);
+        }
+        prefs.agent_exec_model = formatChatModelRef(ref);
+      }
+    }
+    if (input.agentExecEffort !== undefined)
+      prefs.agent_exec_effort = input.agentExecEffort;
     await this.savePreferences(prefs);
     return prefs;
   }

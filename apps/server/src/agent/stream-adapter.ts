@@ -10,6 +10,7 @@ import {
 } from "@langchain/core/messages";
 import { chatRunError } from "../features/chat-providers/run-error.js";
 import { describeErrorForLog } from "../utils/error-sanitizer.js";
+import { CONTEXT_EVENT, type ContextUpdate } from "./context-window.js";
 import { WEB_TOOL_NAMES } from "./tools/web-search.js";
 
 /** Tools that change the canvas: the page fetches it again after them. */
@@ -101,6 +102,33 @@ export async function* adaptDeepAgentStream(
       }
 
       const evt = rawEvent;
+
+      // 第 70 条 上下文: the context window's report after each model call
+      // (context-window.ts), for the chat panel's meter.
+      if (evt.event === "on_custom_event") {
+        const name = evt.name;
+        const data = evt.data as Partial<ContextUpdate> | undefined;
+        if (
+          name === CONTEXT_EVENT &&
+          typeof data?.usedTokens === "number" &&
+          typeof data.windowTokens === "number"
+        ) {
+          if (data.compacted)
+            console.info(
+              `[agent-context] run ${options.runId} compacted (${data.reason ?? "auto"}), now ~${data.usedTokens}/${data.windowTokens} tokens`,
+            );
+          yield {
+            type: "context.updated",
+            runId: options.runId,
+            usedTokens: Math.max(0, Math.round(data.usedTokens)),
+            windowTokens: Math.max(1, Math.round(data.windowTokens)),
+            compacted: Boolean(data.compacted),
+            ...(data.reason ? { reason: data.reason } : {}),
+            timestamp: now(),
+          };
+        }
+        continue;
+      }
 
       // Per-token streaming from the chat model
       if (evt.event === "on_chat_model_stream") {

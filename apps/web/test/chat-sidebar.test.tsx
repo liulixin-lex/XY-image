@@ -32,6 +32,9 @@ vi.mock("../src/lib/server-api", () => ({
   fetchMessages: fetchMessagesMock,
   fetchSessions: fetchSessionsMock,
   fetchWorkspaceSkills: vi.fn(async () => ({ skills: [] })),
+  // 第 70 条 上下文: the meter of the conversation.
+  fetchSessionContext: vi.fn(async () => ({ usedTokens: 1200, windowTokens: 100000, compacted: false })),
+  compactSessionContext: vi.fn(async () => ({ usedTokens: 600, windowTokens: 100000, compacted: true })),
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
 }));
@@ -344,6 +347,36 @@ describe("ChatSidebar", () => {
       });
     return { emit, ack: () => act(() => ack?.()) };
   }
+
+  it("shows how full the context is and follows the run's updates (第 70 条)", async () => {
+    const { emit } = renderWithEvents();
+    expect(await screen.findByRole("button", { name: /上下文约 1k \/ 100k/ })).toBeInTheDocument();
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
+    await userEvent.type(input, "继续{Enter}");
+    await emit({ type: "context.updated", usedTokens: 82_000, windowTokens: 100_000, compacted: false });
+    expect(await screen.findByRole("button", { name: /上下文约 82k \/ 100k（82%）/ })).toBeInTheDocument();
+    await emit({ type: "context.updated", usedTokens: 21_000, windowTokens: 100_000, compacted: true, reason: "auto" });
+    expect(await screen.findByText("对话较长，较早的部分已自动压缩成摘要")).toBeInTheDocument();
+  });
+
+  it("sends what was picked in the 「+」 menu with the message (第 70 条)", async () => {
+    renderWithEvents();
+    await userEvent.click(await screen.findByRole("button", { name: "指定目标、技能、品牌套件或工具" }));
+    await userEvent.click(await screen.findByRole("tab", { name: "工具" }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /联网搜索/ }));
+    // The pick shows as a chip above the input.
+    expect(await screen.findByRole("button", { name: "取消指定 联网搜索" })).toBeInTheDocument();
+    const input = await screen.findByPlaceholderText(/说说你想做什么/);
+    await userEvent.type(input, "查一下今年的流行色{Enter}");
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mentions: [{ mentionType: "tool", id: "web_search", label: "联网搜索" }],
+        }),
+        expect.any(Function),
+      ),
+    );
+  });
 
   it("stops a streaming run and frees the input when the run ends", async () => {
     const { emit } = renderWithEvents();

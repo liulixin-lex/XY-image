@@ -49,6 +49,12 @@ export type PreferencesRow = {
   default_chat_provider_id: string | null;
   /** Keys switched off for image generation (第 56 条); empty = all on. */
   disabled_image_key_ids: number[];
+  /**
+   * 第 70 条 执行步骤模型: a chat model id (openai:… / custom:…) for the calls
+   * after a tool result, and its level; null = the chat model, 低.
+   */
+  agent_exec_model: string | null;
+  agent_exec_effort: string | null;
 };
 type Table<Row> = {
   Row: Row;

@@ -1,6 +1,7 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
+  CHAT_CONTEXT_WINDOW,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
@@ -8,7 +9,14 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 
-import type { AgentRunService } from "../agent/runtime.js";
+import {
+  type AgentRunService,
+  ContextBusyError,
+  ContextUnavailableError,
+} from "../agent/runtime.js";
+import { findChatProviderError } from "../features/chat-providers/errors.js";
+import { BillingGuardError } from "../features/xy2api/errors.js";
+import { describeErrorForLog } from "../utils/error-sanitizer.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
@@ -137,6 +145,81 @@ export async function registerRunRoutes(
     const response = runCancelResponseSchema.parse(canceledRun);
     return reply.code(202).send(response);
   });
+
+  // 第 70 条 上下文: the chat panel's meter, and its 压缩 button.
+  const sessionThread = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const user = await options.auth?.authenticate(request);
+    if (!user) {
+      sendUnauthorized(reply);
+      return null;
+    }
+    if (!options.threadService) {
+      reply.code(503).send(contextError("对话记录暂时读不到"));
+      return null;
+    }
+    const { sessionId } = request.params as { sessionId: string };
+    const binding = await options.threadService.resolveOwnedSessionThread(
+      user,
+      sessionId,
+    );
+    return { user, binding };
+  };
+
+  app.get("/api/agent/sessions/:sessionId/context", async (request, reply) => {
+    try {
+      const found = await sessionThread(request, reply);
+      if (!found) return reply;
+      reply.header("Cache-Control", "no-store");
+      return await agentRuns.sessionContext({
+        threadId: found.binding.threadId,
+      });
+    } catch (error) {
+      return sendContextError(reply, error);
+    }
+  });
+
+  app.post(
+    "/api/agent/sessions/:sessionId/compact",
+    async (request, reply) => {
+      try {
+        const found = await sessionThread(request, reply);
+        if (!found) return reply;
+        const result = await agentRuns.compactSession({
+          userId: found.user.id,
+          threadId: found.binding.threadId,
+          ...(found.binding.canvasId
+            ? { canvasId: found.binding.canvasId }
+            : {}),
+        });
+        return result;
+      } catch (error) {
+        return sendContextError(reply, error);
+      }
+    },
+  );
+}
+
+function contextError(message: string, code = "application_error") {
+  return applicationErrorResponseSchema.parse({ error: { code, message } });
+}
+
+function sendContextError(reply: FastifyReply, error: unknown) {
+  if (error instanceof ThreadServiceError)
+    // A session without a thread has nothing to compact yet.
+    return error.statusCode === 409
+      ? reply.send({ usedTokens: 0, windowTokens: CHAT_CONTEXT_WINDOW, compacted: false })
+      : reply.code(error.statusCode).send(contextError(error.message, error.code));
+  if (error instanceof ContextBusyError || error instanceof ContextUnavailableError)
+    return reply.code(error.statusCode).send(contextError(error.message));
+  if (error instanceof BillingGuardError || findChatProviderError(error)) {
+    console.warn(`[context] compaction refused: ${describeErrorForLog(error)}`);
+    return reply.code(409).send(contextError("现在用不了对话模型，没能压缩"));
+  }
+  console.error(`[context] request failed: ${describeErrorForLog(error)}`);
+  return reply.code(500).send(contextError("压缩没有完成，稍后再试"));
 }
 
 function hasBearerAuthorization(
