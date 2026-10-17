@@ -1,6 +1,7 @@
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import { UPLOAD_MAX_BYTES } from "@loomic/shared";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createLinkedAuthenticator } from "./features/xy2api/linked-authenticator.js";
 import { createXy2apiServices } from "./features/xy2api/services.js";
@@ -168,7 +169,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   const taskDrain = registerTaskDrain(app);
   void app.register(multipart, {
-    limits: { fileSize: 10 * 1024 * 1024 },
+    // One picture per request (http/uploads.ts). The size is set by what
+    // the proxies in front let through (UPLOAD_MAX_BYTES).
+    limits: { fileSize: UPLOAD_MAX_BYTES, files: 1 },
   });
   void app.register(async (instance) => {
     await instance.register(websocket);

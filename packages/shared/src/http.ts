@@ -89,6 +89,7 @@ export const applicationErrorCodeSchema = z.enum([
   "settings_not_found",
   "settings_update_failed",
   "upload_failed",
+  "file_too_large",
   "asset_not_found",
   "job_not_found",
   "job_create_failed",
@@ -209,6 +210,18 @@ export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
 export type WorkspaceSettingsResponse = z.infer<typeof workspaceSettingsResponseSchema>;
 export type WorkspaceSettingsUpdateRequest = z.infer<typeof workspaceSettingsUpdateRequestSchema>;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
+
+/**
+ * Largest file POST /api/uploads takes. The proxies in front of the API cap
+ * request bodies at 20 MB (Caddy `request_body max_size 20MB`, i.e.
+ * 20 000 000 bytes; nginx `client_max_body_size 20m`). The API refuses just
+ * below that, leaving room for the multipart framing, so an oversized file
+ * gets the API's 413 `file_too_large` and its message, not the proxy's empty
+ * one. The web app shrinks pictures over 8 MB before they get here
+ * (apps/web/src/lib/reference-image.ts). Through 0.0.16 the API took 10 MB and
+ * answered anything larger with a bare 500.
+ */
+export const UPLOAD_MAX_BYTES = 19 * 1024 * 1024;
 
 export const uploadResponseSchema = z.object({
   asset: assetObjectSchema,
