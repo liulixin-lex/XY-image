@@ -60,6 +60,7 @@ vi.mock("../src/components/issues/issue-provider", () => ({
 }));
 
 const chatModelsState = vi.hoisted(() => ({ data: [] as unknown[] }));
+const imageModelsState = vi.hoisted(() => ({ data: [] as unknown[] }));
 
 vi.mock("../src/lib/account-context", () => ({
   useAccount: () => ({
@@ -70,7 +71,7 @@ vi.mock("../src/lib/account-context", () => ({
     imageModels: { data: [], loading: false, error: null },
   }),
   useImageModels: () => ({
-    data: [],
+    data: imageModelsState.data,
     loading: false,
     error: null,
     refresh: vi.fn(),
@@ -697,6 +698,110 @@ describe("ChatSidebar", () => {
         expect.not.objectContaining({ attachments: expect.anything() }),
         expect.any(Function),
       );
+    });
+  });
+
+  // The home page hands the first message to a new canvas (prompt in the
+  // URL, pictures and the image-model preference in sessionStorage).
+  describe("first message from the home page", () => {
+    const picture = {
+      assetId: "asset-ref-1",
+      url: "https://image.example/supabase/storage/v1/object/public/project-assets/ws/ref.png",
+      mimeType: "image/png",
+      source: "upload",
+      name: "ref.png",
+    };
+    const preference = { mode: "manual", models: ["gpt-image-2"] };
+
+    beforeEach(() => {
+      // A manual preference only goes out for models the account has.
+      imageModelsState.data = [{ id: "gpt-image-2" }];
+      fetchSessionsMock.mockResolvedValue({ sessions: [] });
+      sessionStorage.setItem(
+        "xy:initial-attachments",
+        JSON.stringify([picture]),
+      );
+      sessionStorage.setItem(
+        "xy:initial-image-generation-preference",
+        JSON.stringify(preference),
+      );
+    });
+
+    afterEach(() => {
+      sessionStorage.clear();
+      imageModelsState.data = [];
+    });
+
+    const ui = (ws: WebSocketHandle) => (
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          initialPrompt="照着这张图做一个头盔"
+          ws={ws}
+        />
+      </ToastProvider>
+    );
+
+    it("sends the pictures when the connection was already up", async () => {
+      render(ui(mockWs));
+
+      await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-created",
+          prompt: "照着这张图做一个头盔",
+          attachments: [picture],
+          imageGenerationPreference: preference,
+        }),
+        expect.any(Function),
+      );
+      expect(sessionStorage.getItem("xy:initial-attachments")).toBeNull();
+    });
+
+    // image.gguuai.com 2026-10-16: the session was ready before the socket;
+    // the re-render the connection caused cancelled the scheduled send after
+    // the stash had been cleared, and the prompt went out alone.
+    it("still sends the pictures when the connection comes up after the session", async () => {
+      const offline = { ...mockWs, connected: false };
+      const view = render(ui(offline));
+      await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+      await screen.findByPlaceholderText(/说说你想做什么/);
+      expect(mockWs.startRun).not.toHaveBeenCalled();
+      // Nothing is taken from the stash before the message can go out.
+      expect(sessionStorage.getItem("xy:initial-attachments")).not.toBeNull();
+
+      view.rerender(ui({ ...offline, connected: true }));
+
+      await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-created",
+          prompt: "照着这张图做一个头盔",
+          attachments: [picture],
+          imageGenerationPreference: preference,
+        }),
+        expect.any(Function),
+      );
+      await waitFor(() =>
+        expect(saveMessageMock).toHaveBeenCalledWith(
+          "token_abc",
+          "session-created",
+          expect.objectContaining({
+            contentBlocks: expect.arrayContaining([
+              expect.objectContaining({
+                type: "image",
+                assetId: "asset-ref-1",
+              }),
+            ]),
+          }),
+        ),
+      );
+      // Re-renders after it went out do not send it again.
+      view.rerender(ui({ ...offline, connected: true }));
+      expect(mockWs.startRun).toHaveBeenCalledTimes(1);
     });
   });
 });

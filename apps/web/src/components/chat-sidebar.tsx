@@ -14,11 +14,6 @@ import type {
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
-import {
-  INITIAL_AGENT_MODEL_KEY,
-  INITIAL_ATTACHMENTS_KEY,
-  INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
-} from "../hooks/use-create-project";
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import {
   canvasSelectionAttachments,
@@ -31,6 +26,7 @@ import {
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAccount, useImageModels } from "../lib/account-context";
 import { fetchBrandKit } from "../lib/brand-kit-api";
+import { takeInitialHandoff } from "../lib/initial-handoff";
 import {
   type SessionContext,
   compactSessionContext,
@@ -945,62 +941,41 @@ export function ChatSidebar({
   }, [activeSessionIdRef, accessTokenRef, compacting, contextUsage, showToast]);
 
   // ── Auto-send initial prompt ──
+  // A canvas started on the home page sends its first message once the
+  // panel can: sessions loaded, a session active, the socket up. The stash
+  // (pictures, image-model preference, chat model) is taken in the same tick
+  // as the send. This effect re-runs on most renders (handleSend changes
+  // with them), so a stash taken by a pass that then waited, or a send put
+  // off to a timer a re-render cancels, dropped the pictures whenever the
+  // socket connected after the session (lib/initial-handoff.ts).
   useEffect(() => {
     if (
       !initialPrompt ||
+      initialPromptSent.current ||
       sessionsLoading ||
+      streaming ||
       !ws.connected ||
-      initialPromptSent.current
+      !activeSessionIdRef.current
     )
       return;
 
-    let storedAttachments: ReadyAttachment[] | undefined;
-    let storedImageGenerationPreference: ImageGenerationPreference | undefined;
-    let storedAgentModel: string | undefined;
-    try {
-      const raw = sessionStorage.getItem(INITIAL_ATTACHMENTS_KEY);
-      if (raw) {
-        storedAttachments = JSON.parse(raw) as ReadyAttachment[];
-        sessionStorage.removeItem(INITIAL_ATTACHMENTS_KEY);
-      }
-
-      const preferenceRaw = sessionStorage.getItem(
-        INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
-      );
-      if (preferenceRaw) {
-        storedImageGenerationPreference = JSON.parse(
-          preferenceRaw,
-        ) as ImageGenerationPreference;
-        sessionStorage.removeItem(INITIAL_IMAGE_GENERATION_PREFERENCE_KEY);
-      }
-
-      const modelRaw = sessionStorage.getItem(INITIAL_AGENT_MODEL_KEY);
-      if (modelRaw) {
-        storedAgentModel = modelRaw;
-        sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
-      }
-    } catch {
-      // Malformed JSON or unavailable storage
-    }
-
-    if (storedAgentModel) {
-      agentModelRef.current = storedAgentModel;
-    }
-
-    const timer = setTimeout(() => {
-      if (!activeSessionIdRef.current) return;
-      initialPromptSent.current = true;
-      void handleSend(
-        initialPrompt,
-        storedAttachments,
-        storedImageGenerationPreference,
-      );
-    }, 0);
-
-    return () => clearTimeout(timer);
+    initialPromptSent.current = true;
+    const handoff = takeInitialHandoff();
+    if (handoff.agentModel) agentModelRef.current = handoff.agentModel;
+    console.info("[chat] sending the first message from the home page", {
+      pictures: handoff.attachments?.length ?? 0,
+      imagePreference: handoff.imageGenerationPreference?.mode ?? "none",
+      agentModel: handoff.agentModel ?? null,
+    });
+    void handleSend(
+      initialPrompt,
+      handoff.attachments,
+      handoff.imageGenerationPreference,
+    );
   }, [
     initialPrompt,
     sessionsLoading,
+    streaming,
     ws.connected,
     handleSend,
     activeSessionIdRef,

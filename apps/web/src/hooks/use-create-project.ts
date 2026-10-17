@@ -7,23 +7,8 @@ import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useAuth } from "@/lib/auth-context";
+import { stashInitialHandoff } from "@/lib/initial-handoff";
 import { ApiAuthError, createProject } from "@/lib/server-api";
-
-/** sessionStorage keys used to hand the first prompt from Home to the canvas. */
-export const INITIAL_ATTACHMENTS_KEY = "xy:initial-attachments";
-export const INITIAL_IMAGE_GENERATION_PREFERENCE_KEY =
-  "xy:initial-image-generation-preference";
-export const INITIAL_AGENT_MODEL_KEY = "xy:initial-agent-model";
-
-function stash(key: string, value: string | undefined) {
-  try {
-    if (value === undefined) sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
-  } catch {
-    // Storage can be unavailable (private mode quotas); the prompt still
-    // travels in the URL, only attachments/preferences are lost.
-  }
-}
 
 /**
  * Create a project and open its canvas in the same tab. When a prompt is
@@ -49,17 +34,14 @@ export function useCreateProject() {
       creatingRef.current = true;
       setCreating(true);
 
-      stash(
-        INITIAL_ATTACHMENTS_KEY,
-        opts?.attachments?.length ? JSON.stringify(opts.attachments) : undefined,
-      );
-      stash(
-        INITIAL_IMAGE_GENERATION_PREFERENCE_KEY,
-        opts?.imageGenerationPreference
-          ? JSON.stringify(opts.imageGenerationPreference)
-          : undefined,
-      );
-      stash(INITIAL_AGENT_MODEL_KEY, opts?.model);
+      // The canvas's chat panel takes these when it sends the prompt.
+      stashInitialHandoff({
+        ...(opts?.attachments?.length ? { attachments: opts.attachments } : {}),
+        ...(opts?.imageGenerationPreference
+          ? { imageGenerationPreference: opts.imageGenerationPreference }
+          : {}),
+        ...(opts?.model ? { agentModel: opts.model } : {}),
+      });
 
       try {
         const name =
