@@ -3,6 +3,7 @@
 import {
   ArrowRightIcon,
   ChevronDownIcon,
+  CircleAlertIcon,
   LayoutTemplateIcon,
   MinusIcon,
   PlusIcon,
@@ -29,7 +30,12 @@ import {
   resolveImageParams,
 } from "@loomic/shared";
 
-import { ATTACHMENT_ACCEPT, useImageAttachments } from "@/hooks/use-image-attachments";
+import {
+  ATTACHMENT_ACCEPT,
+  attachmentsBlocker,
+  useImageAttachments,
+} from "@/hooks/use-image-attachments";
+import { AttachmentNotice } from "@/components/image-attachment-bar";
 import { type StudioSubmitInput, type StudioSubmitResult } from "@/hooks/use-studio-jobs";
 import { useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
@@ -484,7 +490,8 @@ export const Composer = forwardRef<
           ? `${refLimiter?.displayName ?? current.displayName} 不支持参考图，去掉参考图或换个模型`
           : `${refLimiter?.displayName ?? current.displayName} 最多 ${refLimit} 张参考图`
         : attachments.some((a) => a.error)
-          ? "有参考图上传失败，重试或移除后再提交"
+          ? (attachmentsBlocker(attachments, "生成")?.message ??
+            "有参考图上传失败，重试或移除后再提交")
           : null;
   const canSubmit = Boolean(trimmed) && !blockedReason && !submitting;
 
@@ -777,15 +784,27 @@ export const Composer = forwardRef<
                   </span>
                 ) : null}
                 {att.error ? (
-                  <button
-                    type="button"
-                    onClick={() => retryUpload(att.id)}
-                    title={att.error}
-                    aria-label="重试上传"
-                    className="absolute inset-0 flex items-center justify-center rounded-[12px] bg-alert-wash text-alert"
-                  >
-                    <RotateCwIcon className="size-4" />
-                  </button>
+                  att.retryable === false ? (
+                    // Too large or not a picture: 重试 would fail the same way.
+                    <div
+                      role="img"
+                      title={att.error}
+                      aria-label={att.error}
+                      className="absolute inset-0 flex items-center justify-center rounded-[12px] bg-alert-wash text-alert"
+                    >
+                      <CircleAlertIcon className="size-4" strokeWidth={2} />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => retryUpload(att.id)}
+                      title={att.error}
+                      aria-label="重试上传"
+                      className="absolute inset-0 flex items-center justify-center rounded-[12px] bg-alert-wash text-alert"
+                    >
+                      <RotateCwIcon className="size-4" />
+                    </button>
+                  )
                 ) : null}
                 <button
                   type="button"
@@ -820,6 +839,7 @@ export const Composer = forwardRef<
               </button>
             ) : null}
           </div>
+          <AttachmentNotice attachments={attachments} verb="生成" className="mt-2" />
         </Field>
 
         <Field label="比例" note={sendRatio !== ratio ? `当前模型用 ${sendRatio}` : undefined}>

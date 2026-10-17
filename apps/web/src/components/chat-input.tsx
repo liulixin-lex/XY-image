@@ -4,12 +4,16 @@ import { ArrowUpIcon, BoxSelectIcon, ImageIcon, ImagePlusIcon, SlidersHorizontal
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import type { MessageMention } from "@loomic/shared";
-import { ATTACHMENT_ACCEPT, type ImageAttachmentState } from "../hooks/use-image-attachments";
+import {
+  ATTACHMENT_ACCEPT,
+  type ImageAttachmentState,
+  attachmentsBlocker,
+} from "../hooks/use-image-attachments";
 import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { AgentChatOptions } from "./agent-chat-options";
 import { AgentModelSelector } from "./agent-model-selector";
-import { ImageAttachmentBar } from "./image-attachment-bar";
+import { AttachmentNotice, ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 import { cn } from "../lib/utils";
 
@@ -90,9 +94,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     },
   }));
 
+  // Pictures go with a message only once uploaded. A failed one used to be
+  // left out without a word, so the prompt went to the assistant alone.
+  const attachmentsBlocked = attachmentsBlocker(attachments) !== null;
+
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
     if ((!trimmed && (!attachments || attachments.length === 0)) || disabled || isUploading) return;
+    if (attachmentsBlocker(attachments)) {
+      console.info("[chat-input] send held: pictures not ready");
+      return;
+    }
     onSend(trimmed);
     setValue("");
     if (textareaRef.current) {
@@ -246,6 +258,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
           />
         )}
+        <AttachmentNotice attachments={attachments} className="px-1.5" />
         {mentions && mentions.length > 0 && onRemoveMention && (
           <div className="flex flex-wrap items-center gap-1 px-1 py-1">
             {mentions.map((mention) => (
@@ -348,7 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={disabled || !hasContent || isUploading}
+              disabled={disabled || !hasContent || isUploading || attachmentsBlocked}
               aria-label="发送"
               className="sk flex h-9 w-11 shrink-0 items-center justify-center rounded-[10px] bg-acc text-acc-ink shadow-acc transition-[background-color,box-shadow,translate] hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:translate-y-px disabled:cursor-not-allowed disabled:bg-tint/[0.09] disabled:text-fg-muted disabled:shadow-none"
             >

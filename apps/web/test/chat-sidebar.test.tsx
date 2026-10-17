@@ -17,6 +17,7 @@ const {
   fetchSessionsMock,
   saveMessageMock,
   updateSessionTitleMock,
+  uploadFileMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
@@ -24,20 +25,30 @@ const {
   fetchSessionsMock: vi.fn(),
   saveMessageMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
+  uploadFileMock: vi.fn(),
 }));
 
-vi.mock("../src/lib/server-api", () => ({
-  createSession: createSessionMock,
-  deleteSession: deleteSessionMock,
-  fetchMessages: fetchMessagesMock,
-  fetchSessions: fetchSessionsMock,
-  fetchWorkspaceSkills: vi.fn(async () => ({ skills: [] })),
-  // 第 70 条 上下文: the meter of the conversation.
-  fetchSessionContext: vi.fn(async () => ({ usedTokens: 1200, windowTokens: 100000, compacted: false })),
-  compactSessionContext: vi.fn(async () => ({ usedTokens: 600, windowTokens: 100000, compacted: true })),
-  saveMessage: saveMessageMock,
-  updateSessionTitle: updateSessionTitleMock,
-}));
+vi.mock("../src/lib/server-api", async () => {
+  const actual = await vi.importActual<typeof import("../src/lib/server-api")>(
+    "../src/lib/server-api",
+  );
+  return {
+    // The attachment hook tells failures apart by these.
+    ApiApplicationError: actual.ApiApplicationError,
+    ApiAuthError: actual.ApiAuthError,
+    uploadFile: uploadFileMock,
+    createSession: createSessionMock,
+    deleteSession: deleteSessionMock,
+    fetchMessages: fetchMessagesMock,
+    fetchSessions: fetchSessionsMock,
+    fetchWorkspaceSkills: vi.fn(async () => ({ skills: [] })),
+    // 第 70 条 上下文: the meter of the conversation.
+    fetchSessionContext: vi.fn(async () => ({ usedTokens: 1200, windowTokens: 100000, compacted: false })),
+    compactSessionContext: vi.fn(async () => ({ usedTokens: 600, windowTokens: 100000, compacted: true })),
+    saveMessage: saveMessageMock,
+    updateSessionTitle: updateSessionTitleMock,
+  };
+});
 
 const { reportCodeMock, notifyGenerationSettledMock } = vi.hoisted(() => ({
   reportCodeMock: vi.fn(),
@@ -591,5 +602,101 @@ describe("ChatSidebar", () => {
       "safety_filter",
       "内容未通过审核，请修改提示词",
     );
+  });
+
+  describe("pictures attached in the panel", () => {
+    beforeEach(() => {
+      URL.createObjectURL = vi.fn(() => "blob:preview");
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.spyOn(console, "info").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      uploadFileMock.mockReset();
+    });
+
+    async function attachPicture() {
+      const view = render(
+        <ToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </ToastProvider>,
+      );
+      const input = await screen.findByPlaceholderText(/说说你想做什么/);
+      const picker =
+        view.container.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!picker) throw new Error("no file input");
+      await userEvent.upload(
+        picker,
+        new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "ref.png", {
+          type: "image/png",
+        }),
+      );
+      return input;
+    }
+
+    it("sends an uploaded picture with the message", async () => {
+      uploadFileMock.mockResolvedValue({
+        asset: { id: "asset-9" },
+        url: "https://image.example/supabase/storage/v1/object/public/project-assets/ws/ref.png",
+      });
+      const input = await attachPicture();
+      await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "发送" })).not.toBeDisabled(),
+      );
+      await userEvent.type(input, "照这个做{Enter}");
+      await waitFor(() =>
+        expect(mockWs.startRun).toHaveBeenCalledWith(
+          expect.objectContaining({
+            prompt: "照这个做",
+            attachments: [expect.objectContaining({ assetId: "asset-9" })],
+          }),
+          expect.any(Function),
+        ),
+      );
+    });
+
+    // The panel used to send the text alone when a picture had failed,
+    // without a word: "the reference did not go with the prompt".
+    it("holds the message while a picture did not make it, and says why", async () => {
+      const { ApiApplicationError } = await vi.importActual<
+        typeof import("../src/lib/server-api")
+      >("../src/lib/server-api");
+      uploadFileMock.mockRejectedValue(
+        new ApiApplicationError(
+          "file_too_large",
+          "图片超过 19 MB，换一张小一点的",
+          413,
+        ),
+      );
+      const input = await attachPicture();
+      expect(
+        await screen.findByText(/移除这张图片就能发送/),
+      ).toBeInTheDocument();
+
+      await userEvent.type(input, "照这个做{Enter}");
+      expect(mockWs.startRun).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+      expect(input).toHaveValue("照这个做");
+      // No 重试 for a picture that would fail the same way again.
+      expect(
+        screen.queryByRole("button", { name: /重试/ }),
+      ).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "移除图片" }));
+      await userEvent.type(input, "{Enter}");
+      await waitFor(() => expect(mockWs.startRun).toHaveBeenCalledTimes(1));
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.not.objectContaining({ attachments: expect.anything() }),
+        expect.any(Function),
+      );
+    });
   });
 });
