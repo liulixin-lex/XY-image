@@ -1,14 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { uploadFile } from "../lib/server-api";
+import { UPLOAD_MAX_BYTES } from "@loomic/shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  ReferenceImageError,
+  isCandidateImageType,
+  prepareReferenceImage,
+} from "../lib/reference-image";
+import { ApiApplicationError, ApiAuthError, uploadFile } from "../lib/server-api";
+
+export { ATTACHMENT_ACCEPT } from "../lib/reference-image";
 
 export type ImageAttachmentState = {
   id: string;
   file?: File;
   preview: string;
+  /** Being shrunk (lib/reference-image.ts) or uploaded. */
   uploading: boolean;
+  /** Shown to the user. */
   error?: string;
+  /** With an error: false when trying again cannot help (too large, not a picture). */
+  retryable?: boolean;
   assetId?: string;
   url?: string;
   mimeType: string;
@@ -65,21 +78,76 @@ export function canvasSelectionAttachments(
     }));
 }
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MiB, the API's per-image limit
-// Generation accepts PNG / JPEG / WebP references only (no GIF).
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-export const ATTACHMENT_ACCEPT = "image/png,image/jpeg,image/webp";
+/**
+ * What an attachment that did not make it says, and whether 重试 can help.
+ * Through 0.0.16 every failure read 「上传失败，点击重试」, including a
+ * picture too large to ever go through.
+ */
+export function describeAttachmentFailure(error: unknown): {
+  message: string;
+  retryable: boolean;
+} {
+  if (error instanceof ReferenceImageError)
+    return { message: error.message, retryable: false };
+  if (error instanceof ApiAuthError)
+    return { message: "登录已过期，重新登录后再传", retryable: true };
+  if (error instanceof ApiApplicationError) {
+    // 413 without our code is a proxy in front of the API.
+    if (error.code === "file_too_large" || error.status === 413)
+      return {
+        message: `图片超过 ${Math.floor(UPLOAD_MAX_BYTES / (1024 * 1024))} MB，换一张小一点的`,
+        retryable: false,
+      };
+    if (error.code === "project_not_found")
+      return { message: "项目已经不在了，刷新页面后再传", retryable: false };
+    if (error.status === 400)
+      return { message: "这张图片上传不了，换一张试试", retryable: false };
+  }
+  return { message: "上传失败，点击重试", retryable: true };
+}
+
+/**
+ * Why a message with these attachments cannot be sent yet, or null. Only
+ * uploaded pictures go with a message; one that failed was dropped without
+ * a word by the chat panel through 0.0.16.
+ */
+export function attachmentsBlocker(
+  attachments: readonly ImageAttachmentState[] | undefined,
+  /** What the button does: 发送 (chat, home) or 生成 (studio). */
+  verb = "发送",
+): { tone: "wait" | "alert"; message: string } | null {
+  if (!attachments?.length) return null;
+  if (attachments.some((a) => a.uploading))
+    return { tone: "wait", message: `图片还在上传，传完就能${verb}` };
+  const failed = attachments.filter((a) => a.error);
+  const first = failed[0];
+  if (!first) return null;
+  if (failed.length === 1 && first.retryable === false)
+    return { tone: "alert", message: `${first.error}（移除这张图片就能${verb}）` };
+  const which = failed.length > 1 ? `有 ${failed.length} 张图片` : "有一张图片";
+  return failed.every((a) => a.retryable === false)
+    ? { tone: "alert", message: `${which}用不了，移除后再${verb}` }
+    : {
+        tone: "alert",
+        message: `${which}没传上去，点图片上的「重试」或移除后再${verb}`,
+      };
+}
 
 export function useImageAttachments(
   accessToken: string,
   projectId?: string,
-  options?: { onReject?: (message: string) => void },
+  options?: {
+    /** A picture could not be attached: a message for a toast. */
+    onReject?: (message: string) => void;
+  },
 ) {
   const onRejectRef = useRef(options?.onReject);
   onRejectRef.current = options?.onReject;
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
 
   // Use a ref mirror of attachments for retryUpload to avoid stale closures.
   // Without this, retryUpload would capture a snapshot of `attachments` at
@@ -98,70 +166,93 @@ export function useImageAttachments(
     };
   }, []);
 
+  const patch = useCallback(
+    (id: string, update: (a: ImageAttachmentState) => ImageAttachmentState) => {
+      setAttachments((prev) => prev.map((a) => (a.id === id ? update(a) : a)));
+    },
+    [],
+  );
+
+  /**
+   * Shrinks the picture when it needs it, then uploads it. A retry comes
+   * here too, so it gets the same checks (it used to upload the original
+   * of a picture refused as too large).
+   */
+  const attach = useCallback(
+    async (id: string, file: File) => {
+      try {
+        const prepared = await prepareReferenceImage(file);
+        // A retry uploads this one; it is not shrunk twice.
+        patch(id, (a) => ({ ...a, file: prepared.file, mimeType: prepared.file.type }));
+        const res = await uploadFile(
+          accessTokenRef.current,
+          prepared.file,
+          projectIdRef.current,
+        );
+        console.info("[image-attachments] uploaded", {
+          bytes: prepared.file.size,
+          type: prepared.file.type,
+          shrunk: Boolean(prepared.shrunk),
+        });
+        patch(id, (a) => ({
+          ...a,
+          uploading: false,
+          assetId: res.asset.id,
+          url: res.url,
+        }));
+      } catch (error) {
+        const failure = describeAttachmentFailure(error);
+        console.warn(
+          "[image-attachments] not attached",
+          { name: file.name, bytes: file.size, type: file.type, ...failure },
+          error,
+        );
+        patch(id, (a) => ({
+          ...a,
+          uploading: false,
+          error: failure.message,
+          retryable: failure.retryable,
+        }));
+        onRejectRef.current?.(
+          failure.retryable
+            ? "图片没传上去，可以点图片上的「重试」"
+            : failure.message,
+        );
+      }
+    },
+    [patch],
+  );
+
   const addFiles = useCallback(
     (files: File[]) => {
       const newAttachments: ImageAttachmentState[] = [];
 
       for (const file of files) {
-        if (!ALLOWED_TYPES.has(file.type)) {
+        // Clearly not a picture generation takes (GIF, SVG, PDF, …): say so
+        // and add nothing. Unlabelled files are checked by their bytes.
+        if (!isCandidateImageType(file.type)) {
           console.warn("[image-attachments] Rejected file type:", file.type);
           onRejectRef.current?.("只支持 PNG、JPEG、WebP 格式的图片");
           continue;
         }
-        if (file.size > MAX_FILE_SIZE_BYTES) {
-          const id = crypto.randomUUID();
-          newAttachments.push({
-            id,
-            file,
-            preview: "",
-            uploading: false,
-            error: "图片超过 10 MB",
-            mimeType: file.type,
-            source: "upload",
-          });
-          continue;
-        }
-
         const id = crypto.randomUUID();
-        const preview = URL.createObjectURL(file);
         newAttachments.push({
           id,
           file,
-          preview,
+          preview: URL.createObjectURL(file),
           uploading: true,
           mimeType: file.type,
           source: "upload",
           name: file.name,
         });
-
-        // Start upload
-        uploadFile(accessTokenRef.current, file, projectId)
-          .then((res) => {
-            setAttachments((prev) =>
-              prev.map((a) =>
-                a.id === id
-                  ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
-                  : a,
-              ),
-            );
-          })
-          .catch((err) => {
-            console.warn("[image-attachments] Upload failed:", err);
-            setAttachments((prev) =>
-              prev.map((a) =>
-                a.id === id
-                  ? { ...a, uploading: false, error: "上传失败，点击重试" }
-                  : a,
-              ),
-            );
-          });
+        void attach(id, file);
       }
 
       if (newAttachments.length > 0) {
         setAttachments((prev) => [...prev, ...newAttachments]);
       }
     },
-    [projectId],
+    [attach],
   );
 
   const addCanvasRef = useCallback((ref: CanvasImageRef) => {
@@ -185,41 +276,15 @@ export function useImageAttachments(
     (id: string) => {
       // Read from ref to get the latest attachments state, avoiding stale closure
       const att = attachmentsRef.current.find((a) => a.id === id);
-      if (!att?.file) return;
-
-      setAttachments((prev) =>
-        prev.map((a) =>
-          a.id === id
-            ? (() => {
-                const { error: _error, ...rest } = a;
-                return { ...rest, uploading: true };
-              })()
-            : a,
-        ),
-      );
-
-      uploadFile(accessTokenRef.current, att.file, projectId)
-        .then((res) => {
-          setAttachments((prev) =>
-            prev.map((a) =>
-              a.id === id
-                ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
-                : a,
-            ),
-          );
-        })
-        .catch((err) => {
-          console.warn("[image-attachments] Retry upload failed:", err);
-          setAttachments((prev) =>
-            prev.map((a) =>
-              a.id === id
-                ? { ...a, uploading: false, error: "上传失败，点击重试" }
-                : a,
-            ),
-          );
-        });
+      if (!att?.file || att.uploading || att.retryable === false) return;
+      const file = att.file;
+      patch(id, (a) => {
+        const { error: _error, retryable: _retryable, ...rest } = a;
+        return { ...rest, uploading: true };
+      });
+      void attach(id, file);
     },
-    [projectId],
+    [attach, patch],
   );
 
   const removeAttachment = useCallback((id: string) => {
@@ -245,15 +310,21 @@ export function useImageAttachments(
 
   const isUploading = attachments.some((a) => a.uploading);
 
-  const readyAttachments = attachments
-    .filter((a) => a.assetId && a.url && !a.error)
-    .map((a) => ({
-      assetId: a.assetId!,
-      url: a.url!,
-      mimeType: a.mimeType,
-      source: a.source,
-      ...(a.name ? { name: a.name } : {}),
-    }));
+  // Memoized: the chat panel's send handler depends on it, and a new array
+  // on every render re-created that handler on every render.
+  const readyAttachments = useMemo<ReadyAttachment[]>(
+    () =>
+      attachments
+        .filter((a) => a.assetId && a.url && !a.error)
+        .map((a) => ({
+          assetId: a.assetId!,
+          url: a.url!,
+          mimeType: a.mimeType,
+          source: a.source,
+          ...(a.name ? { name: a.name } : {}),
+        })),
+    [attachments],
+  );
 
   return {
     attachments,

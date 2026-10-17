@@ -28,7 +28,7 @@ import {
 import { useAccount } from "../lib/account-context";
 import { cn } from "../lib/utils";
 import { AgentModelSelector } from "./agent-model-selector";
-import { ImageAttachmentBar } from "./image-attachment-bar";
+import { AttachmentNotice, ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 
 export type HomePromptHandle = {
@@ -148,6 +148,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               onRemove={onRemoveAttachment}
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
+            <AttachmentNotice attachments={attachments} className="px-1 pb-2" />
           </div>
         ) : null}
 
