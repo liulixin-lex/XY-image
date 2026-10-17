@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { LiveDot } from "@/components/ambient/live-dot";
+import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import type { ToolBlock } from "@loomic/shared";
 import { ChatImage } from "./image-lightbox";
@@ -450,22 +451,12 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      fetch(artifact.url)
-        .then((res) => res.blob())
-        .then((blob) => {
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = `${artifact.title ?? "gguu-image"}.${downloadExtension(artifact.mimeType)}`;
-          a.click();
-          URL.revokeObjectURL(a.href);
-        })
-        .catch((err) => {
-          console.warn(
-            "[chat] image download failed, opening in a new tab",
-            err,
-          );
-          window.open(artifact.url, "_blank", "noopener");
-        });
+      // Shared helper: decodes a data: URL instead of fetching it (blocked
+      // by connect-src), opens the picture when the download fails.
+      void downloadImage(
+        artifact.url,
+        `${artifact.title ?? "gguu-image"}.${downloadExtension(artifact.mimeType)}`,
+      );
     },
     [artifact.url, artifact.title, artifact.mimeType],
   );
