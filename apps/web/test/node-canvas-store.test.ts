@@ -743,10 +743,12 @@ describe("generator runtime", () => {
         f1: { id: "f1", dataURL: "data:image/png;base64,iVBORw0KGgo=" },
       },
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(new Blob(["png"], { type: "image/png" }))),
+    // The page's CSP (connect-src 'self') refuses fetch() of a data: URL:
+    // the picture is decoded in the page, never requested.
+    const fetchSpy = vi.fn(
+      async () => new Response(new Blob(["png"], { type: "image/png" })),
     );
+    vi.stubGlobal("fetch", fetchSpy);
     const runtime = new GeneratorRuntime(store, deps);
     await runtime.generate("gen1", {
       model: "m",
@@ -754,7 +756,11 @@ describe("generator runtime", () => {
       resolution: "1K",
       quality: "low",
     });
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(api.uploadFile).toHaveBeenCalledTimes(1);
+    const uploaded = api.uploadFile.mock.calls[0]?.[1] as File;
+    expect(uploaded).toMatchObject({ name: "ref1.png", type: "image/png" });
+    expect(uploaded.size).toBe(8); // the 8 bytes of the PNG signature
     expect(api.createImageBatch.mock.calls[0]?.[1].input_images).toEqual([
       "https://storage.example/storage/v1/object/sign/uploads/ref.png",
     ]);

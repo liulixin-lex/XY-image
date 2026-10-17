@@ -9,6 +9,7 @@ import { useCallback, useRef } from "react";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/lib/auth-context";
 import { downloadImage } from "@/lib/download";
+import { readImageBlob } from "@/lib/image-blob";
 import { type ImageJobView, downloadName } from "@/lib/image-jobs";
 import { deleteJobs, restoreJobs } from "@/lib/server-api";
 import { ZIP_MAX_ENTRIES, createZip, uniqueNames } from "@/lib/zip";
@@ -57,9 +58,8 @@ export async function downloadJobs(
       const index = next++;
       const job = list[index] as ImageJobView;
       try {
-        const response = await fetch(job.url as string, { mode: "cors" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        blobs[index] = { name: names[index] as string, data: await response.blob(), modified: new Date(job.createdAt) };
+        const data = await readImageBlob(job.url as string, { mode: "cors" });
+        blobs[index] = { name: names[index] as string, data, modified: new Date(job.createdAt) };
       } catch (error) {
         console.warn("[works] picture not downloaded", { job: job.id, error: String(error) });
       }

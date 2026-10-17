@@ -27,6 +27,7 @@ import type {
 } from "@loomic/shared";
 
 import type { IssueSpec } from "../generation-errors";
+import { dataUrlToBlob } from "../image-blob";
 import {
   type ImageJobView,
   isActiveJob,
@@ -239,8 +240,9 @@ export function composePrompt(
     .slice(0, PROMPT_MAX);
 }
 
-async function dataUrlToFile(dataURL: string, name: string): Promise<File> {
-  const blob = await (await fetch(dataURL)).blob();
+/** Decoded in the page: `fetch(data:)` is refused by connect-src (lib/image-blob.ts). */
+function dataUrlToFile(dataURL: string, name: string): File {
+  const blob = dataUrlToBlob(dataURL);
   return new File([blob], name, { type: blob.type || "image/png" });
 }
 
@@ -421,7 +423,7 @@ export class GeneratorRuntime {
       }
       const upload = await this.deps.api.uploadFile(
         token,
-        await dataUrlToFile(source, `${image.id}.png`),
+        dataUrlToFile(source, `${image.id}.png`),
         this.deps.projectId,
       );
       if (fileId) this.referenceUrls.set(fileId, upload.url);

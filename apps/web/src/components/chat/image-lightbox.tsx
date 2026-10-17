@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { downloadImage } from "@/lib/download";
+
 /* ------------------------------------------------------------------ */
 /*  LightboxBtn — toolbar icon button                                  */
 /* ------------------------------------------------------------------ */
@@ -91,19 +93,9 @@ export function ImageLightbox({
   }, []);
 
   const handleDownload = useCallback(async () => {
-    try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = alt || "image";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      // Fallback: open in new tab if download fails (e.g. CORS)
-      window.open(src, "_blank");
-    }
+    // A canvas picture not yet stored is a data: URL; the shared helper
+    // decodes it instead of fetching it (blocked by connect-src).
+    await downloadImage(src, alt || "image");
   }, [src, alt]);
 
   const overlayRef = useRef<HTMLDivElement>(null);
