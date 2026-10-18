@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  type CanvasPlacement,
+  CanvasPlacementProvider,
+} from "../src/components/chat/canvas-placement";
+import type { PlacementStatus } from "../src/lib/node-canvas/placement";
 
 import { ToolBlockView } from "../src/components/chat/tool-block-view";
 import {
@@ -265,5 +272,59 @@ describe("ToolBlockView", () => {
     expect(
       screen.getByRole("button", { name: "查看「方向 B」的详情，已放到画布" }),
     ).toBeInTheDocument();
+  });
+  // On a canvas page the stamp follows what the page's canvas holds, not the
+  // server's word alone (image.gguuai.com 2026-10-17: stamped, not visible).
+  describe("on a canvas page", () => {
+    const placedBlock = {
+      type: "tool" as const,
+      toolCallId: "t9",
+      toolName: "generate_image",
+      status: "completed" as const,
+      input: { model: "gpt-image-2" },
+      output: { elementId: "el-9", title: "方向 C" },
+      artifacts: [
+        {
+          type: "image" as const,
+          title: "方向 C",
+          url: "https://example.com/c.jpg",
+          mimeType: "image/jpeg",
+          width: 1024,
+          height: 1024,
+        },
+      ],
+    };
+    function onCanvas(status: PlacementStatus, live = false) {
+      const placement: CanvasPlacement = {
+        subscribe: () => () => {},
+        status: () => status,
+        locate: vi.fn(),
+      };
+      render(
+        <CanvasPlacementProvider value={placement}>
+          <ToolBlockView block={placedBlock} live={live} />
+        </CanvasPlacementProvider>,
+      );
+      return placement;
+    }
+
+    it("offers to find a picture that is on the canvas", async () => {
+      const placement = onCanvas("placed");
+      expect(screen.getByText("已放到画布")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "在画布中查看" }));
+      expect(placement.locate).toHaveBeenCalledTimes(1);
+    });
+
+    it("says it is on its way until the canvas has it", () => {
+      onCanvas("unknown", true);
+      expect(screen.queryByText("已放到画布")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("正在放到画布");
+    });
+
+    it("stamps nothing for a picture deleted from the canvas", () => {
+      onCanvas("removed");
+      expect(screen.queryByText("已放到画布")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "在画布中查看" })).not.toBeInTheDocument();
+    });
   });
 });

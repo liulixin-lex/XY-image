@@ -368,6 +368,17 @@ type RuntimeRunStatus =
   | "failed"
   | "running";
 
+/** The middle of a canvas view, or undefined without one. */
+function centreOf(
+  view: RunCreateRequest["canvasView"],
+): { x: number; y: number } | undefined {
+  if (!view) return undefined;
+  return {
+    x: Math.round(view.x + view.width / 2),
+    y: Math.round(view.y + view.height / 2),
+  };
+}
+
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
   consumed: boolean;
@@ -807,6 +818,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
+        // The middle of what the page showed when the message was sent: the
+        // worker places each picture in free room near it (older pages send
+        // no view; their pictures go right of everything, as before).
+        const canvasNear = canvasId ? centreOf(run.canvasView) : undefined;
 
         submitImageJob = async (input) => {
           const jobT0 = Date.now();
@@ -878,6 +893,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     ...(input.inputImages
                       ? { input_images: input.inputImages }
                       : {}),
+                    ...(canvasNear ? { canvas_near: canvasNear } : {}),
                   },
                 });
               } catch (error) {
@@ -964,6 +980,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       mimeType: result.mime_type ?? "image/png",
                       title: input.title,
                       jobId: job.id,
+                      ...(canvasNear ? { near: canvasNear } : {}),
                     },
                     explicitPlacement,
                   );

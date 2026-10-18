@@ -10,6 +10,7 @@ import type {
   ImageGenerationPreference,
   MessageMention,
   StreamEvent,
+  CanvasView,
 } from "@loomic/shared";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -77,7 +78,28 @@ type ChatSidebarProps = {
   currentBrandKitId?: string | null;
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
+  /** What the canvas shows now (canvas coordinates): sent with each message. */
+  getCanvasView?: () => CanvasView | null;
 };
+
+/**
+ * The view as the run schema takes it (bounded, finite), or null. A value
+ * out of bounds would fail validation of the whole run command, so it is
+ * clamped here rather than sent as is.
+ */
+function sendableView(view: CanvasView | null | undefined): CanvasView | null {
+  if (!view) return null;
+  const { x, y, width, height } = view;
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  const clamp = (value: number, min: number, max: number) =>
+    Math.round(Math.min(max, Math.max(min, value)));
+  return {
+    x: clamp(x, -1_000_000, 1_000_000),
+    y: clamp(y, -1_000_000, 1_000_000),
+    width: clamp(width, 1, 1_000_000),
+    height: clamp(height, 1, 1_000_000),
+  };
+}
 
 /** The run command could not go out (not connected); nothing was started. */
 class RunNotSentError extends Error {}
@@ -117,6 +139,7 @@ export function ChatSidebar({
   currentBrandKitId,
   ws,
   selectedCanvasElements,
+  getCanvasView,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
@@ -191,6 +214,8 @@ export function ChatSidebar({
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
+  const getCanvasViewRef = useRef(getCanvasView);
+  getCanvasViewRef.current = getCanvasView;
   const prevConnectedRef = useRef(false);
 
   const { toast: showToast } = useToast();
@@ -678,6 +703,11 @@ export function ChatSidebar({
                 : {}),
               // 第 67 条: sent as asked; the server keeps what the model takes.
               ...chatRunOptions(),
+              // Pictures from this message land near where the user looks.
+              ...(() => {
+                const canvasView = sendableView(getCanvasViewRef.current?.());
+                return canvasView ? { canvasView } : {};
+              })(),
             },
             (ack) => {
               clearTimeout(timeout);

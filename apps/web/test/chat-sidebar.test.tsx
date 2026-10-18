@@ -36,7 +36,8 @@ vi.mock("../src/lib/server-api", async () => {
     // The attachment hook tells failures apart by these.
     ApiApplicationError: actual.ApiApplicationError,
     ApiAuthError: actual.ApiAuthError,
-    uploadFile: uploadFileMock,
+    uploadFileWithProgress: uploadFileMock,
+    UploadStalledError: actual.UploadStalledError,
     createSession: createSessionMock,
     deleteSession: deleteSessionMock,
     fetchMessages: fetchMessagesMock,
@@ -658,6 +659,39 @@ describe("ChatSidebar", () => {
           expect.objectContaining({
             prompt: "照这个做",
             attachments: [expect.objectContaining({ assetId: "asset-9" })],
+          }),
+          expect.any(Function),
+        ),
+      );
+    });
+
+    // Through 0.0.17 the button was grey and Enter did nothing until the
+    // picture was up (10–37 s on a slow line), which read as stuck.
+    it("sends by itself once the picture is up when Enter was pressed during the upload", async () => {
+      let finish: (value: unknown) => void = () => {};
+      uploadFileMock.mockImplementation(
+        () => new Promise((resolve) => (finish = resolve)),
+      );
+      const input = await attachPicture();
+      await waitFor(() => expect(uploadFileMock).toHaveBeenCalledTimes(1));
+      await userEvent.type(input, "照这个做{Enter}");
+      expect(mockWs.startRun).not.toHaveBeenCalled();
+      expect(
+        await screen.findByRole("button", { name: "传完自动发送，点击取消" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/传完自动发送/, { selector: "span" })).toBeInTheDocument();
+
+      act(() =>
+        finish({
+          asset: { id: "asset-q" },
+          url: "https://image.example/supabase/storage/v1/object/public/project-assets/ws/q.png",
+        }),
+      );
+      await waitFor(() =>
+        expect(mockWs.startRun).toHaveBeenCalledWith(
+          expect.objectContaining({
+            prompt: "照这个做",
+            attachments: [expect.objectContaining({ assetId: "asset-q" })],
           }),
           expect.any(Function),
         ),

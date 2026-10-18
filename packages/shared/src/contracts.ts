@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { chatEffortSchema } from "./chat-options.js";
+import { canvasViewSchema } from "./job-contracts.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.string().datetime({ offset: true });
@@ -134,6 +135,11 @@ export const runCreateRequestSchema = z.object({
   effort: chatEffortSchema.optional(),
   /** 第 67 条: built-in web search; ignored for models without it. */
   webSearch: z.boolean().optional(),
+  /**
+   * What the canvas page showed when the message was sent: the assistant's
+   * pictures go in free room near its middle (canvas-element-writer).
+   */
+  canvasView: canvasViewSchema.optional(),
 });
 
 export const runCreateResponseSchema = z.object({

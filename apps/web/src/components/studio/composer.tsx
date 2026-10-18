@@ -33,9 +33,15 @@ import {
 import {
   ATTACHMENT_ACCEPT,
   attachmentsBlocker,
+  attachmentsProgress,
   useImageAttachments,
+  useSendWhenUploaded,
 } from "@/hooks/use-image-attachments";
-import { AttachmentNotice } from "@/components/image-attachment-bar";
+import {
+  AttachmentNotice,
+  AttachmentUploadOverlay,
+} from "@/components/image-attachment-bar";
+import { UploadRing } from "@/components/upload-ring";
 import { type StudioSubmitInput, type StudioSubmitResult } from "@/hooks/use-studio-jobs";
 import { useAccount } from "@/lib/account-context";
 import { useAuth } from "@/lib/auth-context";
@@ -494,6 +500,11 @@ export const Composer = forwardRef<
             "有参考图上传失败，重试或移除后再提交")
           : null;
   const canSubmit = Boolean(trimmed) && !blockedReason && !submitting;
+  // Only the references' upload in the way: 生成 can be pressed now and
+  // goes once they are up (through 0.0.17 it was grey for the whole upload).
+  const uploadOnlyWait =
+    isUploading && Boolean(trimmed) && Boolean(current) && !overRefLimit && !submitting;
+  const uploadProgress = attachmentsProgress(attachments);
 
   // A big click (CONFIRM_FROM pictures or more) takes a second click within a
   // few seconds: not a limit, a guard against a typo of extra digits.
@@ -506,6 +517,9 @@ export const Composer = forwardRef<
     const timer = setTimeout(() => setArmed(false), CONFIRM_WINDOW_MS);
     return () => clearTimeout(timer);
   }, [armed]);
+
+  // The hook calls the latest closure, so this always submits what is on screen then.
+  const waitingSubmit = useSendWhenUploaded(attachments, () => void submit());
 
   const submit = async () => {
     if (!canSubmit || !current) return;
@@ -775,14 +789,10 @@ export const Composer = forwardRef<
                   alt={att.name ?? "参考图"}
                   className={cn(
                     "size-full rounded-[12px] object-cover shadow-[0_6px_14px_-8px_var(--shadow-2)]",
-                    (att.uploading || att.error) && "opacity-50",
+                    att.error && "opacity-50",
                   )}
                 />
-                {att.uploading ? (
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <LiveDot />
-                  </span>
-                ) : null}
+                <AttachmentUploadOverlay att={att} className="rounded-[12px]" />
                 {att.error ? (
                   att.retryable === false ? (
                     // Too large or not a picture: 重试 would fail the same way.
@@ -839,7 +849,12 @@ export const Composer = forwardRef<
               </button>
             ) : null}
           </div>
-          <AttachmentNotice attachments={attachments} verb="生成" className="mt-2" />
+          <AttachmentNotice
+            attachments={attachments}
+            verb="生成"
+            queued={waitingSubmit.queued}
+            className="mt-2"
+          />
         </Field>
 
         <Field label="比例" note={sendRatio !== ratio ? `当前模型用 ${sendRatio}` : undefined}>
@@ -1004,11 +1019,41 @@ export const Composer = forwardRef<
             size="poster"
             slant
             className="h-14 w-full text-[21px]"
-            disabled={!canSubmit}
-            onClick={() => void submit()}
-            title={blockedReason ?? undefined}
+            disabled={!canSubmit && !uploadOnlyWait}
+            onClick={() => {
+              if (uploadOnlyWait) {
+                // A second press cancels the wait.
+                if (waitingSubmit.queued) waitingSubmit.cancel();
+                else waitingSubmit.queue();
+                return;
+              }
+              void submit();
+            }}
+            aria-pressed={uploadOnlyWait ? waitingSubmit.queued : undefined}
+            title={
+              uploadOnlyWait
+                ? waitingSubmit.queued
+                  ? "参考图传完自动生成（再点一次取消）"
+                  : "参考图上传中，现在点会在传完后自动生成"
+                : (blockedReason ?? undefined)
+            }
           >
-          {submitting ? (
+          {uploadOnlyWait ? (
+            <>
+              <UploadRing
+                progress={uploadProgress.phase === "uploading" ? uploadProgress.fraction : null}
+                size={20}
+                stroke={2.75}
+              />
+              {waitingSubmit.queued
+                ? "传完自动生成"
+                : uploadProgress.phase === "preparing"
+                  ? "压缩参考图"
+                  : uploadProgress.percent !== null
+                    ? `参考图上传 ${uploadProgress.percent}%`
+                    : "参考图上传中"}
+            </>
+          ) : submitting ? (
             <>
               <LiveDot className="bg-acc-ink" />
               正在提交
@@ -1028,7 +1073,7 @@ export const Composer = forwardRef<
         {/* 第 59 条: only when there is something to say (why it is blocked,
             the second click for a big request, what 多模型 does). */}
         <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted empty:hidden" aria-live="polite">
-          {blockedReason && trimmed ? (
+          {blockedReason && trimmed && !uploadOnlyWait ? (
             <span className="text-fg-soft">{blockedReason}</span>
           ) : armed ? (
             <span className="font-semibold text-acc-text">一次 {total} 张，再点一次确认发出。</span>

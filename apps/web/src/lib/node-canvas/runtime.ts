@@ -71,7 +71,14 @@ export type RuntimeDeps = {
   /** Fetch and merge the server's copy of the canvas (worker-placed pictures). */
   requestSync: () => void;
   onModelsStale?: () => void;
+  /**
+   * Shrinks a picture before it is uploaded as a reference (the editor
+   * passes lib/reference-image.ts); as it is when left out (tests).
+   */
+  prepareReference?: (file: File) => Promise<File>;
 };
+
+const passThrough = async (file: File) => file;
 
 export type SendParams = {
   model: string;
@@ -241,9 +248,11 @@ export function composePrompt(
 }
 
 /** Decoded in the page: `fetch(data:)` is refused by connect-src (lib/image-blob.ts). */
-function dataUrlToFile(dataURL: string, name: string): File {
+function dataUrlToFile(dataURL: string, baseName: string): File {
   const blob = dataUrlToBlob(dataURL);
-  return new File([blob], name, { type: blob.type || "image/png" });
+  const type = blob.type || "image/png";
+  const extension = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
+  return new File([blob], `${baseName}.${extension}`, { type });
 }
 
 export class GeneratorRuntime {
@@ -421,9 +430,18 @@ export class GeneratorRuntime {
         urls.push(source);
         continue;
       }
+      // A picture not saved yet (still inline): shrunk like any reference
+      // before it goes up (canvases from before 0.0.18 hold originals of up
+      // to 10 MB).
+      const original = dataUrlToFile(source, image.id);
+      const prepared = await (this.deps.prepareReference ?? passThrough)(original);
+      if (prepared !== original)
+        console.info(
+          `[node-canvas/runtime] reference ${image.id} shrunk ${original.size} → ${prepared.size} bytes before upload`,
+        );
       const upload = await this.deps.api.uploadFile(
         token,
-        dataUrlToFile(source, `${image.id}.png`),
+        prepared,
         this.deps.projectId,
       );
       if (fileId) this.referenceUrls.set(fileId, upload.url);

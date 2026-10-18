@@ -560,6 +560,128 @@ export async function uploadFile(
   return (await response.json()) as UploadResponse;
 }
 
+/** No upload progress for this long: the connection is stuck. */
+export const UPLOAD_STALL_MS = 30_000;
+/** All bytes sent, no answer for this long: storage is stuck. */
+const UPLOAD_ANSWER_MS = 60_000;
+
+/** An upload that stopped moving (no progress, or no answer once sent). */
+export class UploadStalledError extends Error {
+  constructor(message = "upload stalled") {
+    super(message);
+    this.name = "UploadStalledError";
+  }
+}
+
+export type UploadWithProgressOptions = {
+  projectId?: string;
+  /** Aborts the request (the picture was removed). Rejects with an AbortError. */
+  signal?: AbortSignal;
+  /** Share of the bytes sent, 0–1, when the browser knows the total. */
+  onProgress?: (fraction: number) => void;
+  /** For the API's log only: the picture's size before it was shrunk, and how long shrinking took. */
+  clientInfo?: { originalBytes?: number; prepMs?: number };
+  stallMs?: number;
+};
+
+/**
+ * POST /api/uploads with progress, for the pictures people attach. fetch()
+ * cannot report upload progress, so through 0.0.17 a 10–37 s upload on a
+ * slow line showed nothing but a small pulsing dot. XMLHttpRequest can; it
+ * also aborts when the picture is removed (the bytes stop competing with
+ * the others), and gives up when the upload stops moving for
+ * UPLOAD_STALL_MS instead of leaving the picture 上传中 forever.
+ *
+ * Errors match uploadFile: ApiAuthError / ApiApplicationError for answers,
+ * TypeError for a network failure, UploadStalledError, AbortError.
+ */
+export function uploadFileWithProgress(
+  accessToken: string,
+  file: File,
+  options: UploadWithProgressOptions = {},
+): Promise<UploadResponse> {
+  const { signal, onProgress, clientInfo } = options;
+  const stallMs = options.stallMs ?? UPLOAD_STALL_MS;
+  return new Promise<UploadResponse>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("upload aborted", "AbortError"));
+      return;
+    }
+    const formData = new FormData();
+    // Plain fields before the file: the API reads the ones that came first.
+    if (options.projectId) formData.append("projectId", options.projectId);
+    if (clientInfo?.originalBytes !== undefined)
+      formData.append("clientOriginalBytes", String(clientInfo.originalBytes));
+    if (clientInfo?.prepMs !== undefined)
+      formData.append("clientPrepMs", String(clientInfo.prepMs));
+    formData.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    let lastMove = Date.now();
+    let sent = false;
+    const watchdog = setInterval(() => {
+      const quiet = Date.now() - lastMove;
+      if (quiet < (sent ? UPLOAD_ANSWER_MS : stallMs)) return;
+      console.warn(
+        `[upload] ${sent ? "no answer" : "no progress"} for ${Math.round(quiet / 1000)} s, giving up on ${file.name} (${file.size} bytes)`,
+      );
+      finish(() => reject(new UploadStalledError()));
+      xhr.abort();
+    }, 1_000);
+    const onAbort = () => {
+      finish(() => reject(new DOMException("upload aborted", "AbortError")));
+      xhr.abort();
+    };
+    function finish(settle: () => void) {
+      if (settled) return;
+      settled = true;
+      clearInterval(watchdog);
+      signal?.removeEventListener("abort", onAbort);
+      settle();
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    xhr.upload.onprogress = (event) => {
+      lastMove = Date.now();
+      if (event.lengthComputable && event.total > 0)
+        onProgress?.(Math.min(1, event.loaded / event.total));
+    };
+    xhr.upload.onload = () => {
+      sent = true;
+      lastMove = Date.now();
+      onProgress?.(1);
+    };
+    xhr.onerror = () => finish(() => reject(new TypeError("Failed to fetch")));
+    xhr.onload = () => {
+      const status = xhr.status;
+      if (status >= 200 && status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText) as UploadResponse;
+          finish(() => resolve(body));
+        } catch (error) {
+          finish(() => reject(error));
+        }
+        return;
+      }
+      // The same mapping as every other call (401 → sign-in expired, codes).
+      const retryAfter = xhr.getResponseHeader("Retry-After");
+      const response = new Response(xhr.responseText || null, {
+        status,
+        headers: retryAfter ? { "Retry-After": retryAfter } : {},
+      });
+      void toApiError(response, { source: "upload" }).then((error) =>
+        finish(() => reject(error)),
+      );
+    };
+
+    xhr.open("POST", `${getServerBaseUrl()}/api/uploads`);
+    for (const [name, value] of Object.entries(authHeaders(accessToken)))
+      xhr.setRequestHeader(name, value);
+    xhr.send(formData);
+  });
+}
+
 export async function getAssetUrl(
   accessToken: string,
   assetId: string,

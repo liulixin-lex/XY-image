@@ -156,6 +156,28 @@ export const canvasSlotSchema = z.object({
 });
 export type CanvasSlot = z.infer<typeof canvasSlotSchema>;
 
+/**
+ * The part of the canvas the page was showing when a chat message was sent
+ * (canvas coordinates). The design assistant's pictures are placed in free
+ * room near its middle, not right of everything where nobody is looking
+ * (image.gguuai.com 2026-10-17: six pictures strung out to x = 5700, off
+ * screen, while the chat said 「已放到画布」).
+ */
+export const canvasViewSchema = z.object({
+  x: z.number().finite().min(-1_000_000).max(1_000_000),
+  y: z.number().finite().min(-1_000_000).max(1_000_000),
+  width: z.number().finite().min(1).max(1_000_000),
+  height: z.number().finite().min(1).max(1_000_000),
+});
+export type CanvasView = z.infer<typeof canvasViewSchema>;
+
+/** A point on the canvas (canvas coordinates). */
+export const canvasPointSchema = z.object({
+  x: z.number().finite().min(-1_000_000).max(1_000_000),
+  y: z.number().finite().min(-1_000_000).max(1_000_000),
+});
+export type CanvasPoint = z.infer<typeof canvasPointSchema>;
+
 /** A canvas element id (node canvas ids and Excalidraw's both fit). */
 export const canvasElementIdSchema = z
   .string()
@@ -164,10 +186,13 @@ export const canvasElementIdSchema = z
 /**
  * Where the worker puts one picture of a canvas job, stored in its payload:
  * the slot, and the generator node an edge links it from. Both optional;
- * without a slot the writer places the picture next to the rest.
+ * without a slot the writer places the picture in free room near
+ * `canvas_near` (the middle of what the page showed, design assistant jobs),
+ * or else next to the rest.
  */
 export const canvasPlacementPayloadSchema = z.object({
   canvas_slot: canvasSlotSchema.optional(),
+  canvas_near: canvasPointSchema.optional(),
   canvas_source_id: canvasElementIdSchema.optional(),
 });
 export type CanvasPlacementPayload = z.infer<
