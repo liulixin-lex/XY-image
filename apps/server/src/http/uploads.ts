@@ -37,6 +37,7 @@ export async function registerUploadRoutes(
   // pictures a generator needs a URL for.
   app.post("/api/uploads", async (request, reply) => {
     const requestBytes = Number(request.headers["content-length"] ?? 0);
+    const startedAt = Date.now();
     try {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
@@ -70,18 +71,15 @@ export async function registerUploadRoutes(
 
       // Throws FST_REQ_FILE_TOO_LARGE past UPLOAD_MAX_BYTES (app.ts).
       const fileBuffer = await file.toBuffer();
+      // Until here the time is the user's network; after it, storage's.
+      const receivedAt = Date.now();
 
       // Resolve workspace from viewer
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
 
       // Extract projectId from fields if provided
-      const projectId =
-        typeof file.fields.projectId === "object" &&
-        file.fields.projectId !== null &&
-        "value" in file.fields.projectId
-          ? String(file.fields.projectId.value)
-          : undefined;
+      const projectId = fieldValue(file.fields, "projectId");
 
       const result = await options.uploadService.uploadFile(user, {
         bucket: "project-assets",
@@ -98,6 +96,11 @@ export async function registerUploadRoutes(
           mimeType,
           inProject: Boolean(projectId),
           assetId: result.asset.id,
+          // Network vs storage: a slow upload with a fast store is the
+          // user's connection (image.gguuai.com: 50–300 KB/s for some).
+          receiveMs: receivedAt - startedAt,
+          storeMs: Date.now() - receivedAt,
+          ...clientUploadInfo(file.fields),
         },
         "upload OK",
       );
@@ -105,7 +108,12 @@ export async function registerUploadRoutes(
         .code(201)
         .send(uploadResponseSchema.parse(result));
     } catch (error) {
-      logRouteError(request, error, { requestBytes }, "upload FAILED");
+      logRouteError(
+        request,
+        error,
+        { requestBytes, elapsedMs: Date.now() - startedAt },
+        "upload FAILED",
+      );
       return sendUploadError(error, reply);
     }
   });
@@ -151,6 +159,36 @@ export async function registerUploadRoutes(
       }
     },
   );
+}
+
+type MultipartFields = Record<string, unknown>;
+
+/** A plain form field sent before the file part, or undefined. */
+function fieldValue(fields: MultipartFields, name: string): string | undefined {
+  const field = fields[name];
+  return typeof field === "object" &&
+    field !== null &&
+    "value" in field &&
+    (field as { value?: unknown }).value != null
+    ? String((field as { value: unknown }).value)
+    : undefined;
+}
+
+/**
+ * What the browser says it did before uploading (web lib/server-api.ts
+ * uploadFileWithProgress): the picture's size before it was shrunk and how
+ * long shrinking took. For the log only; nothing depends on it.
+ */
+function clientUploadInfo(fields: MultipartFields): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [field, key] of [
+    ["clientOriginalBytes", "originalBytes"],
+    ["clientPrepMs", "prepMs"],
+  ] as const) {
+    const value = Number(fieldValue(fields, field));
+    if (Number.isFinite(value) && value >= 0) out[key] = Math.round(value);
+  }
+  return out;
 }
 
 function sendUnauthorized(reply: FastifyReply) {

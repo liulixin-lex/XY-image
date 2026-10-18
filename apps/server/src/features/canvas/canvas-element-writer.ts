@@ -1,6 +1,6 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
-import type { CanvasContent, Json } from "@loomic/shared";
+import { type CanvasContent, type Json, freeSpotNear } from "@loomic/shared";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +22,12 @@ type ImageInsertOpts = {
    * on the canvas, an edge (a bound arrow) links it to the image.
    */
   sourceElementId?: string;
+  /**
+   * The middle of what the page showed when the message was sent (design
+   * assistant jobs): without a placement, the picture goes in free room
+   * near it instead of right of everything.
+   */
+  near?: { x: number; y: number };
 };
 
 type VideoInsertOpts = {
@@ -89,6 +95,44 @@ function calculateAutoPlacement(
     width: scaled.width,
     height: scaled.height,
   };
+}
+
+// Edges, lines and frames don't take room: a picture may sit over or inside them.
+const NOT_OBSTACLES = new Set(["arrow", "line", "freedraw", "frame", "magicframe"]);
+
+/**
+ * Free room for a picture near `near` (the middle of the user's view):
+ * the spot itself when nothing is there, else the closest free one around
+ * it (shared freeSpotNear, the same search the page uses).
+ *
+ * Until 0.0.17 every picture went right of the rightmost element: on a busy
+ * canvas that is off screen, so the chat said 「已放到画布」 over a picture
+ * nobody could see (image.gguuai.com 2026-10-17, x = 1620 … 5712).
+ */
+function placementNear(
+  elements: CanvasElement[],
+  assetWidth: number,
+  assetHeight: number,
+  maxSize: number,
+  near: { x: number; y: number },
+): Placement {
+  const scaled = scaleToFit(assetWidth, assetHeight, maxSize);
+  const obstacles = elements
+    .filter(
+      (el) =>
+        !el.isDeleted &&
+        !NOT_OBSTACLES.has(String(el.type)) &&
+        // A container's label lies inside its container.
+        !el.containerId,
+    )
+    .map((el) => ({
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      width: Math.abs(Number(el.width) || 0),
+      height: Math.abs(Number(el.height) || 0),
+    }));
+  const spot = freeSpotNear(near, scaled, obstacles);
+  return { x: spot.x, y: spot.y, width: scaled.width, height: scaled.height };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,10 +348,13 @@ export async function insertImageElement(
       }
     }
 
-    // 2. Placement
-    const placement = explicitPlacement ?? calculateAutoPlacement(
-      elements, opts.width, opts.height, IMAGE_MAX_SIZE,
-    );
+    // 2. Placement: the job's slot, else free room near the user's view,
+    // else right of everything (jobs from pages that send no view).
+    const placement =
+      explicitPlacement ??
+      (opts.near
+        ? placementNear(elements, opts.width, opts.height, IMAGE_MAX_SIZE, opts.near)
+        : calculateAutoPlacement(elements, opts.width, opts.height, IMAGE_MAX_SIZE));
 
     // 3. Build element + files entry pointing at the stored image
     const fileId = generateId();
@@ -354,7 +401,9 @@ export async function insertImageElement(
       throw new Error(`Failed to write canvas: ${writeError.message}`);
     }
     if (written?.length) {
-      console.log(`[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`);
+      console.log(
+        `[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id} at=${Math.round(placement.x)},${Math.round(placement.y)} ${explicitPlacement ? "slot" : opts.near ? `near=${opts.near.x},${opts.near.y}` : "right-of-all"}`,
+      );
       return { elementId: element.id as string, inserted: true };
     }
     if (attempt >= WRITE_ATTEMPTS) {

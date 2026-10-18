@@ -194,6 +194,78 @@ describe("placing a job's image on the canvas", () => {
   });
 });
 
+// image.gguuai.com 2026-10-17: six pictures strung out right of everything
+// (x = 1620 … 5712), off screen, while the chat said 「已放到画布」.
+describe("placing a design assistant picture near the user's view", () => {
+  const box = (id: string, x: number, y: number, type = "image") => ({
+    type,
+    id,
+    x,
+    y,
+    width: 600,
+    height: 400,
+  });
+  const insertNear = (
+    fake: ReturnType<typeof fakeCanvas>,
+    near: { x: number; y: number },
+  ) =>
+    insertImageElement(fake.client, {
+      canvasId: "canvas-1",
+      objectPath: "ws-1/generated/job-1.png",
+      width: 1024,
+      height: 1024,
+      mimeType: "image/png",
+      jobId: "job-1",
+      near,
+    });
+  const placedImage = (fake: ReturnType<typeof fakeCanvas>, id: string) =>
+    fake.state.content.elements.find((el) => el.id === id) as {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+
+  it("puts it in the middle of the view when that room is free", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    // Far right, as the old placement would have gone past it.
+    const fake = fakeCanvas({ elements: [box("far", 4000, 0)] });
+    const { elementId } = await insertNear(fake, { x: 100, y: 50 });
+    // 1024 px fitted to 600, centred on the view's middle.
+    expect(placedImage(fake, elementId)).toMatchObject({
+      x: -200,
+      y: -250,
+      width: 600,
+      height: 600,
+    });
+  });
+
+  it("finds free room next to what already fills the middle", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fake = fakeCanvas({
+      elements: [
+        box("busy", -300, -200),
+        // An edge over the spot does not count as taken.
+        { ...box("edge", -500, -500, "arrow"), width: 1000, height: 1000 },
+      ],
+    });
+    const { elementId } = await insertNear(fake, { x: 0, y: 0 });
+    const image = placedImage(fake, elementId);
+    const overlapsBusy =
+      image.x < 300 && image.x + image.width > -300 && image.y < 200 && image.y + image.height > -200;
+    expect(overlapsBusy).toBe(false);
+    // Next to it, not thousands of pixels away.
+    expect(Math.hypot(image.x + 300, image.y + 300)).toBeLessThan(1500);
+  });
+
+  it("keeps the old right-of-everything placement without a view", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const fake = fakeCanvas({ elements: [box("a", 0, 0)] });
+    const { elementId } = await insert(fake, "job-2");
+    expect(placedImage(fake, elementId).x).toBe(640);
+  });
+});
+
 describe("placing a generator node's picture (node canvas)", () => {
   const generator = {
     type: "generator",

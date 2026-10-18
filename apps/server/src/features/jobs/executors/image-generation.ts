@@ -29,7 +29,9 @@ registerExecutor("image_generation", async (jobId, _rawPayload, ctx) => {
  *
  * A node-canvas job carries its slot and generator node (`canvas_slot`,
  * `canvas_source_id`): the picture goes in that slot with an edge from the
- * generator. A malformed placement is ignored, never fatal.
+ * generator. A design assistant job carries the middle of the user's view
+ * (`canvas_near`): the picture goes in free room near it. A malformed
+ * placement is ignored, never fatal.
  *
  * A failure only logs: the image is in the user's history either way, and the
  * agent runtime places it itself when the result has no `element_id`.
@@ -49,8 +51,11 @@ async function placeOnCanvas(
       console.warn(
         `[image-generation] job ${jobId}: canvas placement ignored (invalid)`,
       );
-    const { canvas_slot: slot, canvas_source_id: sourceElementId } =
-      placement.success ? placement.data : {};
+    const {
+      canvas_slot: slot,
+      canvas_source_id: sourceElementId,
+      canvas_near: near,
+    } = placement.success ? placement.data : {};
     const { elementId, inserted } = await insertImageElement(
       ctx.getAdminClient(),
       {
@@ -62,6 +67,8 @@ async function placeOnCanvas(
         jobId,
         ...titleOf(job.payload),
         ...(sourceElementId ? { sourceElementId } : {}),
+        // Design assistant jobs: near where the user was looking.
+        ...(near ? { near } : {}),
       },
       slot,
     );

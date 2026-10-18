@@ -21,6 +21,17 @@ const CANVAS_WRITING_TOOLS = new Set([
   "run_workflow",
 ]);
 
+/**
+ * Tools whose result was placed on the canvas by the worker (an `elementId`
+ * in the output). The runtime pushes a sync when the job lands, but straight
+ * to the sockets: a page that was reconnecting missed it, and the replayed
+ * tool.completed stamped 「已放到画布」 on a picture its canvas never
+ * fetched. This sync goes through the run's stream, so it is buffered and
+ * replayed on resume. (Not CANVAS_WRITING_TOOLS: a failed generation must
+ * not count as an answer.)
+ */
+const CANVAS_PLACING_TOOLS = new Set(["generate_image", "generate_video"]);
+
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
 
@@ -384,7 +395,12 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.delete(toolCallId);
         }
 
-        if (CANVAS_WRITING_TOOLS.has(toolName)) {
+        if (
+          CANVAS_WRITING_TOOLS.has(toolName) ||
+          (CANVAS_PLACING_TOOLS.has(toolName) &&
+            typeof (extractedOutput as { elementId?: unknown } | undefined)
+              ?.elementId === "string")
+        ) {
           yield {
             type: "canvas.sync" as const,
             runId: options.runId,

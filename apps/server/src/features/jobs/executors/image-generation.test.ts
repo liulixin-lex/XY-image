@@ -81,6 +81,20 @@ describe("image_generation executor", () => {
     );
   });
 
+  // A design assistant job: the middle of what the page showed.
+  it("hands the writer the point the user was looking at", async () => {
+    insertImageElement.mockResolvedValue({ elementId: "el-1", inserted: true });
+    await run({
+      canvas_id: "canvas-1",
+      payload: { prompt: "a red fox", canvas_near: { x: 420, y: -80 } },
+    });
+    expect(insertImageElement).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ canvasId: "canvas-1", near: { x: 420, y: -80 } }),
+      undefined,
+    );
+  });
+
   it("ignores a malformed placement and still places the picture", async () => {
     insertImageElement.mockResolvedValue({ elementId: "el-1", inserted: true });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

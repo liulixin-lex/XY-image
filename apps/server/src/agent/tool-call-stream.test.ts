@@ -406,6 +406,27 @@ describe("a run that only read things", () => {
     const out = await run([...tool("manipulate_canvas", "t1", { ok: true })]);
     expect(out.at(-1)).toMatchObject({ type: "run.completed" });
   });
+
+  // A page reconnecting while the picture landed missed the runtime's direct
+  // sync; this one is in the run's stream, so a resumed page replays it.
+  it("asks the page to sync after a picture the worker placed", async () => {
+    const out = await run([
+      ...tool("generate_image", "t1", { jobId: "job-1", elementId: "el-1" }),
+    ]);
+    const types = out.map((event) => event.type);
+    expect(types).toContain("canvas.sync");
+    expect(types.indexOf("canvas.sync")).toBe(
+      types.indexOf("tool.completed") + 1,
+    );
+  });
+
+  it("does not sync, or count as an answer, when nothing was placed", async () => {
+    const out = await run([
+      ...tool("generate_image", "t1", { jobId: "job-1", error: "生成失败" }),
+    ]);
+    expect(out.map((event) => event.type)).not.toContain("canvas.sync");
+    expect(out.at(-1)).toMatchObject({ type: "run.failed" });
+  });
 });
 
 // FINDINGS A2: an upstream 503 on the second turn arrived inside a 200
