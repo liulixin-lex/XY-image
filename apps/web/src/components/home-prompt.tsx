@@ -19,6 +19,9 @@ import {
   ATTACHMENT_ACCEPT,
   type ImageAttachmentState,
   type ReadyAttachment,
+  attachmentsBlocker,
+  attachmentsProgress,
+  useSendWhenUploaded,
 } from "../hooks/use-image-attachments";
 import { useAgentModel } from "../hooks/use-agent-model";
 import {
@@ -30,6 +33,7 @@ import { cn } from "../lib/utils";
 import { AgentModelSelector } from "./agent-model-selector";
 import { AttachmentNotice, ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
+import { UploadRing } from "./upload-ring";
 
 export type HomePromptHandle = {
   /** Programmatically set the textarea value (e.g. from an example pill). */
@@ -114,6 +118,32 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       requestAnimationFrame(resize);
     }, [value, canSubmit, readyAttachments, onSubmit, preference, imageModels.data, agentModel, resize]);
 
+    // 交给助手 while pictures are still going up: it goes once they are
+    // (through 0.0.17 the button was grey and Enter did nothing).
+    const blocker = attachmentsBlocker(attachments);
+    const waitingForPictures = blocker?.tone === "wait";
+    const { queued, queue, cancel } = useSendWhenUploaded(attachments, handleSubmit);
+    const [nudge, setNudge] = useState(0);
+    const requestSubmit = useCallback(
+      (fromKey: boolean) => {
+        if (!hasContent || disabled) return;
+        const reason = attachmentsBlocker(attachments);
+        if (reason?.tone === "wait") {
+          if (!queued) queue();
+          else if (!fromKey) cancel();
+          return;
+        }
+        if (reason) {
+          console.info("[home-prompt] send held: a picture did not make it");
+          setNudge((n) => n + 1);
+          return;
+        }
+        handleSubmit();
+      },
+      [hasContent, disabled, attachments, queued, queue, cancel, handleSubmit],
+    );
+    const progress = attachmentsProgress(attachments);
+
     const handlePaste = useCallback(
       (e: React.ClipboardEvent) => {
         if (!onAddFiles) return;
@@ -148,7 +178,12 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
               onRemove={onRemoveAttachment}
               {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
             />
-            <AttachmentNotice attachments={attachments} className="px-1 pb-2" />
+            <AttachmentNotice
+              attachments={attachments}
+              queued={queued}
+              nudge={nudge}
+              className="px-1 pb-2"
+            />
           </div>
         ) : null}
 
@@ -166,7 +201,7 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              handleSubmit();
+              requestSubmit(true);
             }
           }}
           onPaste={handlePaste}
@@ -228,19 +263,51 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
             onClose={() => setModelPopoverOpen(false)}
             anchorRef={prefBtnRef}
           />
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            aria-label="开始"
-            title={failedUpload ? "有图片上传失败，重试或移除后再发送" : "发送（Enter）"}
-            className="sk ml-auto flex h-12 shrink-0 items-center rounded-[14px] bg-acc px-4 font-display text-[17px] whitespace-nowrap text-acc-ink sm:px-6 sm:text-[19px] shadow-acc transition-[background-color,scale] hover:bg-acc-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted disabled:shadow-none"
-          >
-            <span className="sk-in gap-1.5">
-              交给助手
-              <ArrowUpIcon className="size-[18px]" strokeWidth={2.4} />
-            </span>
-          </button>
+          {waitingForPictures && hasContent && !disabled ? (
+            // Pictures on their way: how far, and a press that waits for them.
+            <button
+              type="button"
+              onClick={() => requestSubmit(false)}
+              aria-label={queued ? "传完自动交给助手，点击取消" : "图片上传中，点击后传完自动交给助手"}
+              aria-pressed={queued}
+              title={queued ? "传完自动发送（再点一次取消）" : "图片上传中，现在点会在传完后自动发出"}
+              className={cn(
+                "sk ml-auto flex h-12 shrink-0 items-center rounded-[14px] px-4 font-display text-[17px] whitespace-nowrap sm:px-6 sm:text-[19px] transition-[background-color,box-shadow]",
+                queued
+                  ? "bg-acc text-acc-ink shadow-acc"
+                  : "bg-acc-soft text-acc-text hover:bg-acc/[0.18]",
+              )}
+            >
+              <span className="sk-in gap-2">
+                <UploadRing
+                  progress={progress.phase === "uploading" ? progress.fraction : null}
+                  size={18}
+                  stroke={2.5}
+                />
+                {queued
+                  ? "传完自动发送"
+                  : progress.phase === "preparing"
+                    ? "压缩图片中"
+                    : progress.percent !== null
+                      ? `上传中 ${progress.percent}%`
+                      : "上传中"}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => requestSubmit(false)}
+              disabled={!canSubmit}
+              aria-label="开始"
+              title={failedUpload ? "有图片上传失败，重试或移除后再发送" : "发送（Enter）"}
+              className="sk ml-auto flex h-12 shrink-0 items-center rounded-[14px] bg-acc px-4 font-display text-[17px] whitespace-nowrap text-acc-ink sm:px-6 sm:text-[19px] shadow-acc transition-[background-color,scale] hover:bg-acc-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-tint/[0.1] disabled:text-fg-muted disabled:shadow-none"
+            >
+              <span className="sk-in gap-1.5">
+                交给助手
+                <ArrowUpIcon className="size-[18px]" strokeWidth={2.4} />
+              </span>
+            </button>
+          )}
         </div>
       </div>
     );

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 
 import type { ImageArtifact, StreamEvent } from "@loomic/shared";
 import { RotateCwIcon } from "lucide-react";
@@ -28,6 +28,11 @@ import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { imageSourceOf } from "../../lib/node-canvas/render";
+import { placementStatus } from "../../lib/node-canvas/placement";
+import {
+  type CanvasPlacement,
+  CanvasPlacementProvider,
+} from "../../components/chat/canvas-placement";
 import { useAccount } from "../../lib/account-context";
 import { BRAND, pageTitle } from "../../lib/brand";
 import { cn } from "../../lib/utils";
@@ -39,6 +44,13 @@ import {
 } from "../../lib/server-api";
 import { markFilesStored } from "../../lib/canvas-files";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
+
+/** A failed canvas sync is tried again after these (then left to the next change). */
+const SYNC_RETRY_MS = [2_000, 5_000, 15_000];
+/** Back to the front after this long without a sync: fetch the canvas again. */
+const VISIBLE_SYNC_AFTER_MS = 15_000;
+/** After a tool placed a picture: look again at these delays if it is not here. */
+const ENSURE_PLACED_MS = [2_500, 8_000];
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -112,6 +124,13 @@ function CanvasPageContent() {
   // One fetch at a time; calls made meanwhile run once more after it.
   const syncInFlightRef = useRef(false);
   const syncAgainRef = useRef(false);
+  const lastSyncAtRef = useRef(0);
+  // A failed sync is tried again (it used to only log): a picture the
+  // worker placed would otherwise stay missing until the page reloaded.
+  const syncRetryRef = useRef<{ attempt: number; timer: ReturnType<typeof setTimeout> | null }>({
+    attempt: 0,
+    timer: null,
+  });
   const handleCanvasSync = useCallback(async () => {
     const handle = canvasRef.current;
     const token = accessTokenRef.current;
@@ -121,8 +140,15 @@ function CanvasPageContent() {
       return;
     }
     syncInFlightRef.current = true;
+    const retry = syncRetryRef.current;
+    if (retry.timer) {
+      clearTimeout(retry.timer);
+      retry.timer = null;
+    }
     try {
       const { canvas: remote } = await fetchCanvas(token, canvasData.id);
+      lastSyncAtRef.current = Date.now();
+      retry.attempt = 0;
       const files = ((remote.content as Record<string, unknown>).files ?? {}) as Record<
         string,
         Record<string, unknown>
@@ -131,12 +157,19 @@ function CanvasPageContent() {
       markFilesStored(canvasData.id, Object.keys(files));
       // Merge, don't replace: the page may hold edits it has not saved yet.
       // Newer local versions (and local deletions) win; elements only the
-      // server has, such as a picture the worker placed, are added.
-      const { added, updated } = handle.store.mergeRemote(remote.content.elements ?? [], files);
+      // server has, such as a picture the worker placed, are added (and
+      // brought into view when they landed off screen).
+      const { added, updated } = handle.mergeServerCopy(remote.content.elements ?? [], files);
       if (added.length || updated.length)
         console.info(`[canvas] synced: ${added.length} added, ${updated.length} updated`);
     } catch (err) {
-      console.warn("[canvas] failed to sync canvas:", err);
+      const delay = SYNC_RETRY_MS[retry.attempt];
+      retry.attempt++;
+      console.warn(
+        `[canvas] failed to sync canvas${delay ? `, trying again in ${delay / 1000} s` : ", giving up until the next change"}:`,
+        err,
+      );
+      if (delay) retry.timer = setTimeout(() => void syncRef.current(), delay);
     } finally {
       syncInFlightRef.current = false;
     }
@@ -145,6 +178,53 @@ function CanvasPageContent() {
       void handleCanvasSync();
     }
   }, [canvasData]);
+  // Timers and listeners call the latest one.
+  const syncRef = useRef(handleCanvasSync);
+  syncRef.current = handleCanvasSync;
+
+  // Picked up again after the connection comes back: a picture the worker
+  // placed while it was down was announced to nobody.
+  const wasConnectedRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const was = wasConnectedRef.current;
+    wasConnectedRef.current = ws.connected;
+    if (ws.connected && was === false) {
+      console.info("[canvas] reconnected: syncing what may have landed meanwhile");
+      void syncRef.current();
+    }
+  }, [ws.connected]);
+
+  // And when the tab comes back to the front (phones suspend background
+  // tabs and their sockets), unless it synced a moment ago.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastSyncAtRef.current < VISIBLE_SYNC_AFTER_MS) return;
+      void syncRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      const { timer } = syncRetryRef.current;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  /**
+   * A tool said it put a picture on the canvas: if it is still not here a
+   * moment later (the sync was missed or failed), fetch again. The chat
+   * shows 「正在放到画布」 until it is.
+   */
+  const ensureOnCanvas = useCallback((elementId: string) => {
+    for (const delay of ENSURE_PLACED_MS) {
+      setTimeout(() => {
+        const store = canvasRef.current?.store;
+        if (!store || placementStatus(store.scene, elementId) !== "unknown") return;
+        console.info(`[canvas] ${elementId} still not here ${delay} ms after its tool finished, syncing`);
+        void syncRef.current();
+      }, delay);
+    }
+  }, []);
 
   // Fallback polling for timed-out generation jobs.
   // When the agent's tool times out but the worker eventually succeeds,
@@ -172,6 +252,14 @@ function CanvasPageContent() {
   const handleStreamEvent = useCallback(
     (event: StreamEvent) => {
       checkForTimedOutJobs(event);
+      // Live or replayed after a reconnect: make sure the picture arrives.
+      if (
+        event.type === "tool.completed" &&
+        (event.toolName === "generate_image" || event.toolName === "generate_video")
+      ) {
+        const elementId = (event.output as Record<string, unknown> | undefined)?.elementId;
+        if (typeof elementId === "string") ensureOnCanvas(elementId);
+      }
       // A stopped or failed run leaves no tool result for an image the
       // worker is still generating. Look a moment later, once the run has
       // canceled a job that was not sent yet (agent/runtime.ts), and only at
@@ -190,8 +278,29 @@ function CanvasPageContent() {
         }, 3_000);
       }
     },
-    [checkForTimedOutJobs, watchCanvasJobs, canvasData?.id, showToast],
+    [checkForTimedOutJobs, watchCanvasJobs, canvasData?.id, showToast, ensureOnCanvas],
   );
+
+  // Chat → canvas: whether a picture the assistant made is here, and 查看.
+  const placement = useMemo<CanvasPlacement | null>(
+    () =>
+      canvas
+        ? {
+            subscribe: canvas.store.subscribe,
+            status: (elementId) => placementStatus(canvas.store.scene, elementId),
+            locate: (elementId) => {
+              // Below lg the chat lies over the canvas: get it out of the way.
+              if (window.innerWidth < 1024) setChatOpen(false);
+              canvas.focusElement(elementId);
+              console.info(`[canvas] located ${elementId} from the chat`);
+            },
+          }
+        : null,
+    [canvas],
+  );
+
+  // Sent with each chat message: the assistant's pictures land near it.
+  const getCanvasView = useCallback(() => canvasRef.current?.getView() ?? null, []);
 
   const handleSessionChange = useCallback(
     (sessionId: string) => {
@@ -375,6 +484,7 @@ function CanvasPageContent() {
         />
         <CanvasEmptyHint store={canvas?.store ?? null} onOpenChat={handleOpenChat} />
       </div>
+      <CanvasPlacementProvider value={placement}>
       <ChatSidebar
         accessToken={accessToken}
         canvasId={canvasData.id}
@@ -391,7 +501,9 @@ function CanvasPageContent() {
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
+        getCanvasView={getCanvasView}
       />
+      </CanvasPlacementProvider>
     </div>
   );
 }

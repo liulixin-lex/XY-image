@@ -857,7 +857,62 @@
   animation: shimmer-scan 1.5s ease-in-out infinite;
 }
 
+/* A picture finished uploading: a check pops in on the thumbnail, then
+   fades, so the moment it becomes sendable is seen, not guessed. */
+@keyframes upload-done {
+  0% { opacity: 0; scale: 0.6; }
+  18% { opacity: 1; scale: 1.08; }
+  32% { scale: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-upload-done {
+  animation: upload-done 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Pressing 发送 while a picture failed: the reason under the pictures
+   shakes once instead of nothing happening. */
+@keyframes nudge {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+.animate-nudge {
+  animation: nudge 0.36s ease-in-out;
+}
+
+/* A picture the design assistant just put on the canvas: a coral ring
+   settles around it once (node-canvas-editor revealArrived). */
+@keyframes arrive-ring {
+  0% { opacity: 0; scale: 1.08; }
+  25% { opacity: 1; scale: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.react-flow__node.canvas-arrived::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 16px;
+  border: 3px solid var(--acc);
+  box-shadow: 0 0 0 6px var(--acc-soft);
+  pointer-events: none;
+  animation: arrive-ring 2.2s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  /* No pop, no fade: the check would stay put, so it is not shown. */
+  .animate-upload-done {
+    animation: none;
+    opacity: 0;
+  }
+  .react-flow__node.canvas-arrived::after {
+    animation: none;
+    opacity: 1;
+  }
+  .animate-nudge,
   .animate-live::after,
   .animate-enter,
   .animate-stamp,

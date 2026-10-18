@@ -10,6 +10,7 @@ import {
   DownloadIcon,
   EyeIcon,
   ImageIcon,
+  LocateFixedIcon,
   type LucideIcon,
   PaletteIcon,
   SearchIcon,
@@ -25,6 +26,7 @@ import { LiveDot } from "@/components/ambient/live-dot";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import type { ToolBlock } from "@loomic/shared";
+import { useCanvasPlacement } from "./canvas-placement";
 import { ChatImage } from "./image-lightbox";
 import { type MediaOutcome, describeMediaOutcome } from "./media-outcome";
 import {
@@ -133,7 +135,8 @@ export const ToolBlockView = React.memo(function ToolBlockView({
       ? describeMediaOutcome(mediaOutput, isVideoTool ? "video" : "image")
       : null;
   // The worker or the run placed it (the element id comes back with it).
-  const placed = typeof mediaOutput?.elementId === "string";
+  const placedId =
+    typeof mediaOutput?.elementId === "string" ? mediaOutput.elementId : undefined;
   const inputData = block.input as Record<string, unknown> | undefined;
   const modelName = inputData?.model as string | undefined;
   const aspectRatio =
@@ -179,7 +182,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           cardTitle={cardTitle}
           modelName={modelName}
           hasDetails={!!hasDetails}
-          placed={placed}
+          placedId={placedId}
           live={live}
           onOpenPanel={handleOpenPanel}
         />
@@ -427,7 +430,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   cardTitle,
   modelName,
   hasDetails,
-  placed,
+  placedId,
   live,
   onOpenPanel,
 }: {
@@ -442,11 +445,26 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   cardTitle: string;
   modelName: string | undefined;
   hasDetails: boolean;
-  placed: boolean;
+  /** The canvas element the server placed it as, when it did. */
+  placedId: string | undefined;
   live: boolean;
   onOpenPanel: () => void;
 }) {
   const title = artifact.title ?? cardTitle;
+  // On a canvas page: whether this page's canvas has it yet. Through 0.0.17
+  // the stamp went by the server alone and showed over pictures the page
+  // never fetched, with no way to find them (image.gguuai.com 2026-10-17).
+  const placement = useCanvasPlacement(placedId);
+  const onCanvas = placedId
+    ? placement
+      ? placement.status === "placed"
+        ? "placed"
+        : placement.status === "unknown" && live
+          ? "arriving"
+          : null
+      : "placed"
+    : null;
+  const placed = onCanvas === "placed";
 
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
@@ -517,6 +535,25 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
       >
         <DownloadIcon aria-hidden className="size-4" strokeWidth={2} />
       </button>
+      {placed && placement ? (
+        // Takes the user to it (and closes the chat over the canvas on phones).
+        <button
+          type="button"
+          onClick={placement.locate}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-line px-3 py-2 text-[12.5px] font-semibold text-acc-text transition-colors hover:bg-acc-soft focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acc"
+        >
+          <LocateFixedIcon aria-hidden className="size-3.5" strokeWidth={2} />
+          在画布中查看
+        </button>
+      ) : onCanvas === "arriving" ? (
+        <p
+          role="status"
+          className="flex items-center justify-center gap-2 border-t border-line px-3 py-2 text-[12px] text-fg-muted"
+        >
+          <LiveDot />
+          正在放到画布…
+        </p>
+      ) : null}
     </div>
   );
 });

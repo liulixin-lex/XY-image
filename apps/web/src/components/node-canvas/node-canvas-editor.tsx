@@ -51,7 +51,7 @@ import {
 import { useCanvasTheme } from "../../hooks/use-canvas-theme";
 import type { WebSocketHandle } from "../../hooks/use-websocket";
 import { useAccount } from "../../lib/account-context";
-import { fetchAsDataURL, scaleToFit } from "../../lib/canvas-elements";
+import { fetchImageBlob, scaleToFit } from "../../lib/canvas-elements";
 import {
   forgetStoredFiles,
   markFilesStored,
@@ -79,7 +79,14 @@ import {
   freeSpotNear,
   rightOfEverything,
 } from "../../lib/node-canvas/layout";
+import { planArrivals } from "../../lib/node-canvas/arrivals";
 import { imageSourceOf, renderSceneToBlob } from "../../lib/node-canvas/render";
+import {
+  ATTACHMENT_ACCEPT,
+  ReferenceImageError,
+  isCandidateImageType,
+  prepareReferenceImageInBackground,
+} from "../../lib/reference-image";
 import { GeneratorRuntime } from "../../lib/node-canvas/runtime";
 import {
   type CanvasContent,
@@ -133,8 +140,25 @@ const SAVE_RETRY_MAX_MS = 60_000;
 const MAX_FILE_RESENDS = 2;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 400;
-const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-const UPLOAD_TYPES = ["image/png", "image/jpeg", "image/webp"];
+/**
+ * A picture dropped on the canvas stays inline in it until a save moves it
+ * to storage, so it travels in a save request (base64, a third larger; the
+ * API takes 20 MB per request). It is shrunk to this first: the canvas
+ * shows it at 480 px, and as a reference the server sends at most 2048 px.
+ * Through 0.0.17 a 10 MB original went inline as ~13 MB, so two in one save
+ * went over the limit.
+ */
+const CANVAS_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+/** When the browser cannot shrink it: the old limit for the original. */
+const CANVAS_IMAGE_FALLBACK_MAX_BYTES = 10 * 1024 * 1024;
+const CANVAS_IMAGE_LIMITS = {
+  maxBytes: CANVAS_IMAGE_MAX_BYTES,
+  uploadMaxBytes: CANVAS_IMAGE_FALLBACK_MAX_BYTES,
+};
+/** A press, drag or scroll on the canvas this recent: do not move the view under the user. */
+const USER_BUSY_MS = 2500;
+/** How long a picture that just arrived wears its ring (globals.css canvas-arrived). */
+const ARRIVED_RING_MS = 2400;
 /** Room for the edge between nodes placed next to each other. */
 const NODE_GAP = 96;
 
@@ -181,6 +205,18 @@ export type NodeCanvasHandle = {
   importImages: () => void;
   /** Places a picture the design assistant made (when the server did not). */
   insertImageArtifact: (artifact: ImageArtifact) => Promise<void>;
+  /**
+   * Merges the server's copy (canvas sync) and shows what arrived: pictures
+   * from the design assistant are brought into view when they landed off
+   * screen (or offered with 查看 while the user is busy on the canvas), and
+   * every new picture gets a ring for a moment.
+   */
+  mergeServerCopy: (
+    elements: readonly unknown[],
+    files: Record<string, Record<string, unknown>>,
+  ) => { added: string[]; updated: string[] };
+  /** What the canvas shows now, in canvas coordinates (sent with chat messages). */
+  getView: () => { x: number; y: number; width: number; height: number } | null;
   undo: () => void;
   redo: () => void;
   duplicateSelection: () => void;
@@ -313,7 +349,7 @@ function EditorInner({
   const flow = useReactFlow<SceneNode, SceneEdge>();
   const { notifyGenerationSettled, refreshImageModels } = useAccount();
   const { report, reportCode } = useIssues();
-  const { error: toastError } = useToast();
+  const { error: toastError, toast: showToast, show: showToastWith } = useToast();
 
   // Callbacks used from outside React (runtime, timers) read the latest values.
   const tokenRef = useRef(accessToken);
@@ -349,6 +385,15 @@ function EditorInner({
         reportCode: (code, message) => latest.current.reportCode(code, message),
         requestSync: () => latest.current.onSyncRequest?.(),
         onModelsStale: () => void latest.current.refreshImageModels(),
+        prepareReference: async (file) => {
+          try {
+            return (await prepareReferenceImageInBackground(file)).file;
+          } catch (error) {
+            // The server takes it as it is, or says why it does not.
+            console.warn("[node-canvas] reference not shrunk, sending as it is", error);
+            return file;
+          }
+        },
       }),
   );
   useEffect(() => {
@@ -715,17 +760,22 @@ function EditorInner({
       const elements: SceneElement[] = [];
       const sceneFiles: SceneFile[] = [];
       let spot = at ?? viewportCentre();
+      // Shrinking a big photo takes a moment: say so if it is not instant.
+      const slow = setTimeout(
+        () => showToast("正在压缩图片，马上放到画布上", "info"),
+        600,
+      );
       for (const file of files) {
-        if (!UPLOAD_TYPES.includes(file.type)) {
+        if (!isCandidateImageType(file.type)) {
           toastError("只支持 PNG、JPEG、WebP 图片");
           continue;
         }
-        if (file.size > UPLOAD_MAX_BYTES) {
-          toastError("图片超过 10 MB，换一张小一点的");
-          continue;
-        }
         try {
-          const dataURL = await readAsDataURL(file);
+          const prepared = await prepareReferenceImageInBackground(
+            file,
+            CANVAS_IMAGE_LIMITS,
+          );
+          const dataURL = await readAsDataURL(prepared.file);
           const natural = await imageSize(dataURL);
           const size = scaleToFit(natural.width, natural.height, 480);
           const taken = [...obstacles(), ...elements];
@@ -735,7 +785,7 @@ function EditorInner({
           const fileId = newElementId();
           sceneFiles.push({
             id: fileId,
-            mimeType: file.type,
+            mimeType: prepared.file.type,
             created: Date.now(),
             dataURL,
           });
@@ -758,15 +808,20 @@ function EditorInner({
           );
           spot = { x: spot.x + 24, y: spot.y + 24 };
         } catch (error) {
+          if (error instanceof ReferenceImageError) {
+            toastError(error.message);
+            continue;
+          }
           console.warn("[node-canvas] picture not read:", error);
           toastError("这张图片读不出来，换一张试试");
         }
       }
+      clearTimeout(slow);
       if (elements.length === 0) return;
       store.addElements(elements, { files: sceneFiles, select: true });
       console.info(`[node-canvas] added ${elements.length} picture(s)`);
     },
-    [store, obstacles, viewportCentre, toastError],
+    [store, obstacles, viewportCentre, toastError, showToast],
   );
 
   const create = useCallback(
@@ -965,7 +1020,16 @@ function EditorInner({
         )
       )
         return;
-      const dataURL = await fetchAsDataURL(artifact.url);
+      // Inline until the next save stores it: shrunk like a dropped picture
+      // (a 4K result is 12–15 MB, over a save's limit once in base64).
+      const fetched = await fetchImageBlob(artifact.url);
+      const prepared = await prepareReferenceImageInBackground(
+        new File([fetched], artifact.title || "image", {
+          type: fetched.type || artifact.mimeType,
+        }),
+        CANVAS_IMAGE_LIMITS,
+      );
+      const dataURL = await readAsDataURL(prepared.file);
       const size = artifact.placement
         ? { width: artifact.placement.width, height: artifact.placement.height }
         : scaleToFit(artifact.width, artifact.height, 600);
@@ -993,7 +1057,7 @@ function EditorInner({
         files: [
           {
             id: fileId,
-            mimeType: artifact.mimeType,
+            mimeType: prepared.file.type,
             created: Date.now(),
             dataURL,
           },
@@ -1002,6 +1066,130 @@ function EditorInner({
       console.info("[node-canvas] placed a picture from the design assistant");
     },
     [store, obstacles, viewportCentre],
+  );
+
+  // ── pictures arriving from the server ────────────────────────────────
+
+  // Last press, drag or scroll on the canvas (revealArrived leaves the view
+  // alone right after one).
+  const lastTouchRef = useRef(0);
+  const markTouched = useCallback(() => {
+    lastTouchRef.current = Date.now();
+  }, []);
+
+  const currentView = useCallback(() => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return null;
+    const { x, y, zoom } = flow.getViewport();
+    return {
+      x: -x / zoom,
+      y: -y / zoom,
+      width: rect.width / zoom,
+      height: rect.height / zoom,
+    };
+  }, [flow]);
+
+  /** A coral ring around nodes that just arrived, once they are drawn. */
+  const ringArrived = useCallback((ids: readonly string[]) => {
+    const apply = () => {
+      for (const id of ids) {
+        const selector = `.react-flow__node[data-id="${typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id}"]`;
+        const node = wrapperRef.current?.querySelector(selector);
+        if (!node) continue;
+        node.classList.add("canvas-arrived");
+        setTimeout(() => node.classList.remove("canvas-arrived"), ARRIVED_RING_MS);
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(apply));
+  }, []);
+
+  const bringIntoView = useCallback(
+    (ids: readonly string[]) => {
+      // After the new nodes are drawn and measured.
+      setTimeout(() => {
+        const present = ids.filter((id) =>
+          store.scene.nodes.some((n) => n.id === id),
+        );
+        if (present.length === 0) return;
+        void flow.fitView({
+          nodes: present.map((id) => ({ id })),
+          padding: 0.35,
+          // Never zoom in past where the user was (nor past 100%).
+          maxZoom: Math.min(1, flow.getZoom()),
+          duration: 450,
+        });
+      }, 80);
+    },
+    [store, flow],
+  );
+
+  /**
+   * Shows pictures that just arrived from the server. A generator's own
+   * pictures (`fromPending`: their pending slot was on screen) only get the
+   * ring. The design assistant's are brought into view when off screen,
+   * unless the user is busy on the canvas: then a toast offers 查看.
+   *
+   * Through 0.0.17 nothing moved: the chat stamped 「已放到画布」 while the
+   * picture sat thousands of pixels off screen (image.gguuai.com
+   * 2026-10-17). A new project's first picture was the exception (React
+   * Flow's initial fitView waits for the first nodes), hence "sometimes".
+   */
+  const revealArrived = useCallback(
+    (ids: readonly string[], fromPending: ReadonlySet<string>) => {
+      const plan = planArrivals(
+        store.scene.nodes,
+        ids,
+        fromPending,
+        currentView(),
+        rectOfNode,
+      );
+      if (plan.ring.length) ringArrived(plan.ring);
+      if (plan.reveal.length === 0) return;
+      const targets = plan.reveal;
+      const busy = Date.now() - lastTouchRef.current < USER_BUSY_MS;
+      console.info(
+        `[node-canvas] ${targets.length} new picture(s) off screen: ${busy ? "offered" : "brought into view"}`,
+      );
+      if (busy) {
+        showToastWith({
+          message:
+            targets.length > 1
+              ? `${targets.length} 张新图片已放到画布`
+              : "新图片已放到画布",
+          variant: "info",
+          action: {
+            label: "查看",
+            onClick: () => {
+              store.select(targets);
+              bringIntoView(targets);
+            },
+          },
+        });
+        return;
+      }
+      bringIntoView(targets);
+    },
+    [store, currentView, ringArrived, bringIntoView, showToastWith],
+  );
+
+  const mergeServerCopy = useCallback(
+    (
+      elements: readonly unknown[],
+      files: Record<string, Record<string, unknown>>,
+    ) => {
+      // Pending slots before the merge: their pictures replace them in place.
+      const fromPending = new Set(
+        store.scene.nodes.flatMap((n) =>
+          n.type === "pending" && n.data.pending?.jobId
+            ? [n.data.pending.jobId]
+            : [],
+        ),
+      );
+      const { added, updated } = store.mergeRemote(elements, files);
+      if (added.length) revealArrived(added, fromPending);
+      return { added, updated };
+    },
+    [store, revealArrived],
   );
 
   const handle = useMemo<NodeCanvasHandle>(
@@ -1025,11 +1213,13 @@ function EditorInner({
       },
       importImages: () => fileInputRef.current?.click(),
       insertImageArtifact,
+      mergeServerCopy,
+      getView: currentView,
       undo: () => store.undo(),
       redo: () => store.redo(),
       duplicateSelection: () => store.duplicateSelection(),
     }),
-    [store, flow, insertImageArtifact],
+    [store, flow, insertImageArtifact, mergeServerCopy, currentView],
   );
 
   const readyRef = useRef(onReady);
@@ -1254,6 +1444,8 @@ function EditorInner({
         data-connecting={connecting || undefined}
         onDragOver={onDragOver}
         onDrop={onDrop}
+        onPointerDownCapture={markTouched}
+        onWheelCapture={markTouched}
       >
         <ReactFlow<SceneNode, SceneEdge>
           nodes={state.scene.nodes}
@@ -1325,7 +1517,7 @@ function EditorInner({
         <input
           ref={fileInputRef}
           type="file"
-          accept={UPLOAD_TYPES.join(",")}
+          accept={ATTACHMENT_ACCEPT}
           multiple
           className="hidden"
           onChange={(event) => {

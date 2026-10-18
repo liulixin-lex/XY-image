@@ -8,6 +8,8 @@ import {
   ATTACHMENT_ACCEPT,
   type ImageAttachmentState,
   attachmentsBlocker,
+  attachmentsProgress,
+  useSendWhenUploaded,
 } from "../hooks/use-image-attachments";
 import type { CanvasSelectedElement } from "./node-canvas/node-canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -15,6 +17,7 @@ import { AgentChatOptions } from "./agent-chat-options";
 import { AgentModelSelector } from "./agent-model-selector";
 import { AttachmentNotice, ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
+import { UploadRing } from "./upload-ring";
 import { cn } from "../lib/utils";
 
 type ChatInputProps = {
@@ -96,7 +99,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   // Pictures go with a message only once uploaded. A failed one used to be
   // left out without a word, so the prompt went to the assistant alone.
-  const attachmentsBlocked = attachmentsBlocker(attachments) !== null;
+  const blocker = attachmentsBlocker(attachments);
+  const waitingForPictures = blocker?.tone === "wait";
+  const attachmentsFailed = blocker?.tone === "alert";
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
@@ -112,15 +117,45 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     }
   }, [value, disabled, isUploading, onSend, attachments]);
 
+  // 发送 while pictures are still going up: the message waits for them
+  // (through 0.0.17 the button was grey and Enter did nothing at all).
+  const { queued, queue, cancel } = useSendWhenUploaded(attachments, handleSubmit);
+  // Bumped when 发送 is pressed while a failed picture is in the way.
+  const [nudge, setNudge] = useState(0);
+
+  /** Enter (`fromKey`) or the button. A second click cancels a waiting send. */
+  const requestSend = useCallback(
+    (fromKey: boolean) => {
+      const trimmed = value.trim();
+      if ((!trimmed && (!attachments || attachments.length === 0)) || disabled) return;
+      const reason = attachmentsBlocker(attachments);
+      if (reason?.tone === "wait") {
+        if (!queued) queue();
+        else if (!fromKey) {
+          console.info("[chat-input] waiting send canceled");
+          cancel();
+        }
+        return;
+      }
+      if (reason) {
+        console.info("[chat-input] send held: a picture did not make it");
+        setNudge((n) => n + 1);
+        return;
+      }
+      handleSubmit();
+    },
+    [value, attachments, disabled, queued, queue, cancel, handleSubmit],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       // Ignore Enter during IME composition (e.g. Chinese input confirming a candidate)
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
-        handleSubmit();
+        requestSend(true);
       }
     },
-    [handleSubmit],
+    [requestSend],
   );
 
   // Auto-resize textarea when value changes
@@ -258,7 +293,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             {...(onRetryAttachment ? { onRetry: onRetryAttachment } : {})}
           />
         )}
-        <AttachmentNotice attachments={attachments} className="px-1.5" />
+        <AttachmentNotice
+          attachments={attachments}
+          queued={queued}
+          nudge={nudge}
+          className="px-1.5"
+        />
         {mentions && mentions.length > 0 && onRemoveMention && (
           <div className="flex flex-wrap items-center gap-1 px-1 py-1">
             {mentions.map((mention) => (
@@ -357,11 +397,35 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <SquareIcon className="size-3.5" fill="currentColor" strokeWidth={0} />
               </span>
             </button>
+          ) : waitingForPictures && hasContent && !disabled ? (
+            // Pictures on their way: the button shows how far, and pressing
+            // it makes the message go by itself once they are up.
+            <button
+              type="button"
+              onClick={() => requestSend(false)}
+              aria-label={queued ? "传完自动发送，点击取消" : "图片上传中，点击后传完自动发送"}
+              title={queued ? "传完自动发送（再点一次取消）" : "图片上传中，现在点发送会在传完后自动发出"}
+              aria-pressed={queued}
+              className={cn(
+                "sk flex h-9 w-11 shrink-0 items-center justify-center rounded-[10px] transition-[background-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc",
+                queued
+                  ? "bg-acc text-acc-ink shadow-acc"
+                  : "bg-acc-soft text-acc-text hover:bg-acc/[0.18]",
+              )}
+            >
+              <span className="sk-in">
+                <UploadRing
+                  progress={attachmentsProgress(attachments).fraction}
+                  size={18}
+                  stroke={2.5}
+                />
+              </span>
+            </button>
           ) : (
             <button
               type="button"
-              onClick={handleSubmit}
-              disabled={disabled || !hasContent || isUploading || attachmentsBlocked}
+              onClick={() => requestSend(false)}
+              disabled={disabled || !hasContent || isUploading || attachmentsFailed}
               aria-label="发送"
               className="sk flex h-9 w-11 shrink-0 items-center justify-center rounded-[10px] bg-acc text-acc-ink shadow-acc transition-[background-color,box-shadow,translate] hover:bg-acc-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc active:translate-y-px disabled:cursor-not-allowed disabled:bg-tint/[0.09] disabled:text-fg-muted disabled:shadow-none"
             >

@@ -38,18 +38,23 @@ export function scaleToFit(
   };
 }
 
-/**
- * Fetch an image URL and convert it to a data URL string.
- * Routes through the server proxy to bypass browser CORS restrictions.
- */
-export async function fetchAsDataURL(url: string): Promise<string> {
+/** The picture at `url`, through the server's image proxy (CORS, other hosts). */
+export async function fetchImageBlob(url: string): Promise<Blob> {
   const proxyUrl = `${getServerBaseUrl()}/api/proxy-image?url=${encodeURIComponent(url)}`;
 
   const response = await fetch(proxyUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }
-  const blob = await response.blob();
+  return response.blob();
+}
+
+/**
+ * Fetch an image URL and convert it to a data URL string.
+ * Routes through the server proxy to bypass browser CORS restrictions.
+ */
+export async function fetchAsDataURL(url: string): Promise<string> {
+  const blob = await fetchImageBlob(url);
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);

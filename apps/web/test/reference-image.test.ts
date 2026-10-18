@@ -4,10 +4,11 @@ import { UPLOAD_MAX_BYTES } from "@loomic/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CodecUnavailableError,
   type DecodedImage,
   type ImageCodec,
+  REFERENCE_KEEP_BYTES,
   REFERENCE_READ_MAX_BYTES,
-  REFERENCE_SEND_BYTES,
   ReferenceImageError,
   detectImageType,
   isCandidateImageType,
@@ -112,12 +113,19 @@ describe("detectImageType", () => {
 });
 
 describe("prepareReferenceImage", () => {
-  it("uploads a picture up to 8 MB byte for byte", async () => {
-    const { codec, encode } = fakeCodec({ width: 4000, height: 3000 });
-    const file = picture(PNG, "image/png", REFERENCE_SEND_BYTES);
+  it("uploads a light picture as it is, without decoding it", async () => {
+    const { codec, fit } = fakeCodec({ width: 4000, height: 3000 });
+    const file = picture(JPEG, "image/jpeg", REFERENCE_KEEP_BYTES);
     const prepared = await prepareReferenceImage(file, codec);
     expect(prepared.file).toBe(file);
-    expect(prepared.shrunk).toBeUndefined();
+    expect(fit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a picture that is already inside 2048 px and light", async () => {
+    const { codec, encode } = fakeCodec({ width: 1600, height: 1200 });
+    const file = picture(JPEG, "image/jpeg", 1.2 * MB);
+    const prepared = await prepareReferenceImage(file, codec);
+    expect(prepared.file).toBe(file);
     expect(encode).not.toHaveBeenCalled();
   });
 
@@ -141,30 +149,47 @@ describe("prepareReferenceImage", () => {
     });
   });
 
-  // image.gguuai.com 2026-10-16/17: 12–19 MB pictures (the site's own 4K
-  // results among them) were refused, then failed as a bare 500 on 重试.
-  it("shrinks a 12.6 MB photo the way the server would send it: 3072 px JPEG q90", async () => {
+  // image.gguuai.com 2026-10-15/17: 1.6–5.6 MB pictures took 8–37 s for
+  // users at 50–300 KB/s; through 0.0.17 everything up to 8 MB went up as is.
+  it("shrinks a 3.2 MB phone photo to 2048 px before it goes up", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const { codec, encode, release } = fakeCodec({
+      width: 4032,
+      height: 3024,
+      sizes: { 2048: 0.7 * MB },
+    });
+    const prepared = await prepareReferenceImage(
+      picture(JPEG, "image/jpeg", 3.2 * MB, "IMG_1234.jpeg"),
+      codec,
+    );
+    expect(encode).toHaveBeenCalledWith(2048, "image/jpeg", 0.88);
+    expect(prepared.file).toMatchObject({ type: "image/jpeg", name: "IMG_1234.jpg" });
+    expect(prepared.shrunk).toMatchObject({
+      fromWidth: 4032,
+      fromHeight: 3024,
+      toWidth: 2048,
+      toHeight: 1536,
+      toBytes: 0.7 * MB,
+    });
+    expect(release).toHaveBeenCalled();
+  });
+
+  // image.gguuai.com 2026-10-16/17: 12–19 MB pictures (the site's own 4K
+  // results among them) were refused, then failed as a bare 500 on 重试.
+  it("shrinks a 12.6 MB 4K result", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { codec, encode } = fakeCodec({
       width: 5120,
       height: 2880,
-      sizes: { 3072: 2.1 * MB },
+      sizes: { 2048: 1.1 * MB },
     });
     const prepared = await prepareReferenceImage(
       picture(PNG, "image/png", 13_180_000, "result-4k.png"),
       codec,
     );
-    expect(encode).toHaveBeenCalledWith(3072, "image/jpeg", 0.9);
-    expect(prepared.file.type).toBe("image/jpeg");
+    expect(encode).toHaveBeenCalledWith(2048, "image/jpeg", 0.88);
     expect(prepared.file.name).toBe("result-4k.jpg");
-    expect(prepared.shrunk).toMatchObject({
-      fromWidth: 5120,
-      fromHeight: 2880,
-      toWidth: 3072,
-      toHeight: 1728,
-      toType: "image/jpeg",
-    });
-    expect(release).toHaveBeenCalled();
+    expect(prepared.shrunk).toMatchObject({ toWidth: 2048, toHeight: 1152 });
   });
 
   it("keeps transparency as PNG", async () => {
@@ -173,39 +198,70 @@ describe("prepareReferenceImage", () => {
       width: 4096,
       height: 4096,
       transparent: true,
-      sizes: { 3072: 6 * MB },
+      sizes: { 2048: 3 * MB },
     });
     const prepared = await prepareReferenceImage(
       picture(PNG, "image/png", 14 * MB),
       codec,
     );
-    expect(encode).toHaveBeenCalledWith(3072, "image/png", undefined);
+    expect(encode).toHaveBeenCalledWith(2048, "image/png", undefined);
     expect(prepared.file.type).toBe("image/png");
   });
 
-  it("goes down to 2048 px when 3072 px is still over 8 MB", async () => {
+  it("keeps the original when re-encoding would save little", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { codec } = fakeCodec({
+      width: 1800,
+      height: 1800,
+      transparent: true,
+      sizes: { 2048: 4.6 * MB },
+    });
+    const file = picture(PNG, "image/png", 5 * MB);
+    const prepared = await prepareReferenceImage(file, codec);
+    expect(prepared.file).toBe(file);
+    expect(prepared.shrunk).toBeUndefined();
+  });
+
+  it("goes smaller when 2048 px is still over 8 MB", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const { codec, fit } = fakeCodec({
       width: 8000,
       height: 8000,
       transparent: true,
-      sizes: { 3072: 9 * MB, 2048: 4 * MB },
+      sizes: { 2048: 9 * MB, 1536: 5 * MB },
     });
     const prepared = await prepareReferenceImage(
       picture(PNG, "image/png", 30 * MB),
       codec,
     );
-    expect(fit.mock.calls.map(([edge]) => edge)).toEqual([3072, 2048]);
-    expect(prepared.shrunk?.toWidth).toBe(2048);
+    expect(fit.mock.calls.map(([edge]) => edge)).toEqual([2048, 1536]);
+    expect(prepared.shrunk?.toWidth).toBe(1536);
   });
 
-  it("says so when even 2048 px is over 8 MB", async () => {
+  it("holds canvas pictures to a smaller limit when asked", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { codec, fit } = fakeCodec({
+      width: 6000,
+      height: 4000,
+      transparent: true,
+      sizes: { 2048: 5 * MB, 1536: 3 * MB },
+    });
+    const prepared = await prepareReferenceImage(
+      picture(PNG, "image/png", 18 * MB),
+      codec,
+      { maxBytes: 4 * MB },
+    );
+    expect(fit.mock.calls.map(([edge]) => edge)).toEqual([2048, 1536]);
+    expect(prepared.shrunk).toMatchObject({ toWidth: 1536, toBytes: 3 * MB });
+  });
+
+  it("says so when even the smallest size is over 8 MB", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { codec } = fakeCodec({
       width: 8000,
       height: 8000,
       transparent: true,
-      sizes: { 3072: 20 * MB, 2048: 9 * MB },
+      sizes: { 2048: 20 * MB, 1536: 12 * MB, 1024: 9 * MB },
     });
     const error = await prepareReferenceImage(
       picture(PNG, "image/png", 30 * MB),
@@ -243,19 +299,32 @@ describe("prepareReferenceImage", () => {
     ).rejects.toMatchObject({ problem: "too_large" });
   });
 
+  // The worker's codec cannot read some pictures an <img> can: the page
+  // tries those itself instead of the worker giving up on them.
+  it("lets a codec that cannot read the picture hand it back", async () => {
+    const { codec } = fakeCodec({
+      width: 1,
+      height: 1,
+      decodeError: new CodecUnavailableError("worker could not decode"),
+    });
+    await expect(
+      prepareReferenceImage(picture(JPEG, "image/jpeg", 3 * MB), codec),
+    ).rejects.toBeInstanceOf(CodecUnavailableError);
+  });
+
   it("converts HEIC where the browser reads it, and says what to do where it cannot", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const safari = fakeCodec({
       width: 4032,
       height: 3024,
-      sizes: { 4096: 3 * MB },
+      sizes: { 2048: 0.8 * MB },
     });
     const prepared = await prepareReferenceImage(
       picture(HEIC, "image/heic", 2 * MB, "IMG_0002.HEIC"),
       safari.codec,
     );
-    expect(safari.encode).toHaveBeenCalledWith(4096, "image/jpeg", 0.9);
+    expect(safari.encode).toHaveBeenCalledWith(2048, "image/jpeg", 0.88);
     expect(prepared.file).toMatchObject({
       type: "image/jpeg",
       name: "IMG_0002.jpg",
