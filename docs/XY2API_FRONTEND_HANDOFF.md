@@ -134,12 +134,17 @@ v0.0.7 起响应还带 `keys: [{ keyId, name, groupName, isDefault }]`，`models
 | 模型 | 画质 | 质量 | 比例 | 参考图上限 |
 | --- | --- | --- | --- | --- |
 | gpt-image-2 | 1K / 2K / 4K（1K 最宽 1.6:1） | 自动 / 低 / 中 / 高 | 10 种 | 10 |
-| gpt-image-2.5-sunburst | 同上 | 同上 | 10 种 | 10 |
+| gpt-image-2.5-sunburst | 同上 | 自动 / 低 / 中 / 高 / 极高 / 最高 | 10 种 | 10 |
 | gpt-image-2.5-flare | 同上 | 同上 | 10 种 | 10 |
+| gpt-image-2.6 | 同上 | 同上 | 10 种 | 10 |
+| gpt-image-2.6-sunburst | 同上 | 同上 | 10 种 | 10 |
+| gpt-image-2.6-flare | 同上 | 同上 | 10 种 | 10 |
 | nano-banana-2.1 | 1K / 2K / 4K | 自动 / 低 / 中 / 高 | 10 种 | 14 |
 | nano-banana-pro（gemini-3-pro-image 及 preview 别名） | 1K / 2K / 4K | 仅自动 | 10 种 | 14 |
 | grok-imagine-image-2.0 | 1K / 2K | 自动 / 低 / 中 | 8 种（无 4:5、5:4） | 0 |
 | gemini-3.1-flash-image（preview、nano-banana-2 别名） | 1K / 2K / 4K | 自动 / 低 / 高 | 10 种 | 14 |
+
+2026-11-05 补充：GPT Image 2.6 的基础 ID、Sunburst、Flare 分别登记，主站返回哪个 ID 就原样发送哪个，不互相替换。沿用 OpenAI Images 协议，支持本站的 PNG / JPEG / WebP、透明背景与局部重绘 / 扩图；参考图保持本站现有的 10 张上限。官方型号见 [Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst) 和 [Flare](https://developers.openai.com/api/docs/models/gpt-image-2.6-flare)，基础 ID 为主站兼容名称。具体参数见 [生图参数对标](XY_IMAGE_IMAGE_PARAMS.md)。
 
 各协议的传参（与主站 xy2api 0.2.5 的计费规则对齐，改动前先读 `docs/XY2API_OPERATIONS.md` 的计费说明）：
 
