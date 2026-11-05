@@ -2,7 +2,7 @@
 
 接入 xy2api 主站的 AI 生图站：用主站账号登录，用自己的主站 Key 生图和对话，按次从主站余额扣费。基于 [Loomic](https://github.com/fancyboi999/Loomic) 二次开发。
 
-**状态（2026-10-18，v0.0.18）：正式站 [image.gguuai.com](https://image.gguuai.com) 部署在主站服务器上（和 gguuai.com 同机），接真实主站；预上线站 [image2.gguuai.com](https://image2.gguuai.com) 在另一台服务器上。** 本版：参考图上传前先在浏览器里压缩（长边 2048），上传有真实进度，上传中点发送会在传完后自动发出；设计助手出的图放在当前视野附近，落在屏幕外时自动移过去，对话里可以「在画布中查看」；重连和回到前台时会补同步画布。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
+**状态（2026-11-05，源码 v0.0.19；正式站和预上线站仍为 v0.0.18）：**正式站 [image.gguuai.com](https://image.gguuai.com) 部署在主站服务器上（和 gguuai.com 同机），接真实主站；预上线站 [image2.gguuai.com](https://image2.gguuai.com) 在另一台服务器上。本次源码版新增 GPT Image 2.6、Sunburst、Flare 元数据，**尚未部署到线上**。**还没有对外开放**：差内测、异地备份和告警渠道、CDN。详见 [发布说明与上线验收](docs/XY_IMAGE_RELEASE.md)。
 
 ## 功能
 
@@ -44,7 +44,7 @@ Node.js 22，pnpm 10.26.2。配置从 `.env.example` 复制到私有的 `.env.lo
 pnpm install --frozen-lockfile
 pnpm --filter @loomic/shared build
 pnpm turbo run typecheck          # 8 项
-pnpm --filter @loomic/server test # 955 项
+pnpm --filter @loomic/server test # 958 项
 pnpm --filter @loomic/web test    # 366 项
 pnpm --filter @loomic/shared test # 67 项
 pnpm test:workspace               # 10 项
