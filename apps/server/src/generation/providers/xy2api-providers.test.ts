@@ -6,6 +6,8 @@ import {
   loadImageCatalog,
   resolveImageParams,
 } from "../../features/xy2api/catalog.js";
+import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
+import { EDIT_PREPARE_FAILED } from "../mask-edit.js";
 import {
   Xy2apiGeminiImageProvider,
   geminiImageConfig,
@@ -14,9 +16,7 @@ import {
   Xy2apiOpenAIImageProvider,
   openaiImageSize,
 } from "./xy2api-openai-image.js";
-import { EDIT_PREPARE_FAILED } from "../mask-edit.js";
 import { Xy2apiXaiImageProvider } from "./xy2api-xai-image.js";
-import { XY2API_USER_AGENT } from "../../utils/user-agent.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -196,11 +196,16 @@ describe("per-call gateway image transports", () => {
       quality: "high",
     });
   });
-  it("sends GPT Image 2.5's top levels, format, background and moderation (第 66 条)", async () => {
+  it.each([
+    "gpt-image-2.5-sunburst",
+    "gpt-image-2.6",
+    "gpt-image-2.6-sunburst",
+    "gpt-image-2.6-flare",
+  ])("sends %s's top quality and output options", async (model) => {
     const server = await gateway(200, { data: [{ b64_json: await png() }] });
     await openai.generate(
       {
-        model: "gpt-image-2.5-sunburst",
+        model,
         prompt: "fixture",
         resolution: "2K",
         quality: "max",
@@ -210,7 +215,9 @@ describe("per-call gateway image transports", () => {
       { apiKey: "synthetic-openai-key", baseUrl: server.baseUrl },
     );
     const sent = JSON.parse(server.requests[0]?.body ?? "{}");
+    expect(server.requests).toHaveLength(1);
     expect(sent).toMatchObject({
+      model,
       quality: "max",
       background: "transparent",
       moderation: "low",

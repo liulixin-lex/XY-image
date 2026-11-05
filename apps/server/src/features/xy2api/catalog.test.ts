@@ -66,6 +66,14 @@ describe("image catalog", () => {
     expect(
       matchImageModels(catalog, "openai", ["gpt-image-2.5-flare", "gpt-5.5"]),
     ).toEqual(["gpt-image-2.5-flare"]);
+    for (const id of [
+      "gpt-image-2.6",
+      "gpt-image-2.6-sunburst",
+      "gpt-image-2.6-flare",
+    ]) {
+      expect(matchImageModels(catalog, "openai", [id, "gpt-5.5"])).toEqual([id]);
+      expect(matchImageModels(catalog, "composite", [id])).toEqual([id]);
+    }
     expect(matchImageModels(catalog, "claude", [])).toEqual([]);
   });
   it("rejects malformed catalogs without echoing their content", () => {
@@ -89,6 +97,9 @@ describe("image catalog", () => {
       "gpt-image-2",
       "gpt-image-2.5-sunburst",
       "gpt-image-2.5-flare",
+      "gpt-image-2.6",
+      "gpt-image-2.6-sunburst",
+      "gpt-image-2.6-flare",
       "nano-banana-2.1",
       "nano-banana-pro",
       "grok-imagine-image-2.0",
@@ -98,15 +109,24 @@ describe("image catalog", () => {
     ]);
     // 第 66 条: GPT Image 2.5 takes xhigh / max and transparent backgrounds;
     // gpt-image-2 stops at high, its transparency is preview-only (not offered).
-    expect(pick("gpt-image-2.5-flare")).toMatchObject({
-      vendor: "openai",
-      resolutions: ["1K", "2K", "4K"],
-      qualities: ["auto", "low", "medium", "high", "xhigh", "max"],
-      backgrounds: ["auto", "opaque", "transparent"],
-      outputFormats: ["jpeg", "png", "webp"],
-      moderations: ["auto", "low"],
-      sizing: "flexible",
-    });
+    for (const id of [
+      "gpt-image-2.5-flare",
+      "gpt-image-2.6",
+      "gpt-image-2.6-sunburst",
+      "gpt-image-2.6-flare",
+    ]) {
+      expect(pick(id)).toMatchObject({
+        vendor: "openai",
+        resolutions: ["1K", "2K", "4K"],
+        qualities: ["auto", "low", "medium", "high", "xhigh", "max"],
+        backgrounds: ["auto", "opaque", "transparent"],
+        outputFormats: ["jpeg", "png", "webp"],
+        moderations: ["auto", "low"],
+        sizing: "flexible",
+        supportsEdit: true,
+        maxInputImages: 10,
+      });
+    }
     expect(pick("gpt-image-2")).toMatchObject({
       qualities: ["auto", "low", "medium", "high"],
       backgrounds: [],

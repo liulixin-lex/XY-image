@@ -2,6 +2,8 @@
 
 2026-10-14，agent01。网站上的「比例 / 画质 / 质量」和「更多参数」，对应到 OpenAI、Google、xAI 各自接口里的哪个字段，每个模型能选什么。服务端以模型目录 `apps/server/src/features/xy2api/catalog.ts` 为准，前端只显示目录里该模型有的选项；请求里有模型不支持的值时，服务端会换成最接近的值，并在日志里写明换成了什么（`[billing-guard] … adjusted …`）。
 
+2026-11-05：目录及前端兼容元数据新增 `gpt-image-2.6`、`gpt-image-2.6-sunburst`、`gpt-image-2.6-flare`，使用现有 OpenAI Images 栅格图片能力；基础 ID 为主站兼容名称，分别保留原始 ID。本次只扩充模型元数据，输出仍为 PNG / JPEG / WebP，未接入 2.6 的 SVG、动画 GIF、`complexity` 和 `markup` 参数。未进行真实付费生图验收。
+
 ## 质量
 
 | 网站 | OpenAI `quality` | Google `thinkingLevel` | xAI `quality` |
@@ -10,14 +12,15 @@
 | 低 | `low` | `minimal` | `low` |
 | 中 | `medium` | `medium`（只有 Nano Banana 2.1） | `medium` |
 | 高 | `high` | `high` | — |
-| 极高 | `xhigh`（只有 GPT Image 2.5） | — | — |
-| 最高 | `max`（只有 GPT Image 2.5） | — | — |
+| 极高 | `xhigh`（GPT Image 2.5 / 2.6） | — | — |
+| 最高 | `max`（GPT Image 2.5 / 2.6） | — | — |
 
 各模型实际提供的档位：
 
 | 模型 | 质量 | 「自动」相当于 |
 | --- | --- | --- |
 | GPT Image 2.5 Sunburst / Flare | 自动、低、中、高、极高、最高 | 由模型决定 |
+| GPT Image 2.6 / Sunburst / Flare | 自动、低、中、高、极高、最高 | 由模型决定 |
 | GPT Image 2 | 自动、低、中、高 | 由模型决定 |
 | Nano Banana 2.1 | 自动、低、中、高 | 中（Google 文档的默认） |
 | Nano Banana 2（gemini-3.1-flash-image） | 自动、低、高 | 低（默认 minimal） |
@@ -35,7 +38,7 @@
 | --- | --- | --- | --- |
 | 格式 | `output_format` | 默认、PNG、JPEG、WebP | 「默认」是站点设置 `LOOMIC_IMAGE_OUTPUT_FORMAT`（正式站 JPEG） |
 | 压缩 | `output_compression` | 默认、100、85、70、50 | 只对 JPEG、WebP 生效；「默认」是 `LOOMIC_IMAGE_OUTPUT_COMPRESSION`（正式站 90） |
-| 背景 | `background` | 自动、不透明、透明 | 透明只开给 GPT Image 2.5（OpenAI 写明完整支持；GPT Image 2 还是预览，不开）。透明背景要 PNG 或 WebP，选了 JPEG 或「默认」时按 PNG 出图 |
+| 背景 | `background` | 自动、不透明、透明 | 透明开放给 GPT Image 2.5 / 2.6；GPT Image 2 还是预览，不开。透明背景要 PNG 或 WebP，选了 JPEG 或「默认」时按 PNG 出图 |
 | 审核 | `moderation` | 标准（auto）、宽松（low） | 只在生成时发送；改图接口没有这个字段 |
 
 生图页把这几项放在「质量」下面的「更多参数」里，默认收起；收起时右边显示改过的项。格式、压缩、审核会记住，背景不记（透明背景如果带到下次，用户容易没注意到）。画布的生成节点在模型支持时多出「格式 / 压缩 / 背景 / 审核」几行。设计助手的 `generate_image` 也可以传 `outputFormat`、`background`（用于标志、贴纸、抠图）。
@@ -60,6 +63,7 @@
 
 ## 依据
 
+- OpenAI：[GPT Image 2.6 Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst)、[GPT Image 2.6 Flare](https://developers.openai.com/api/docs/models/gpt-image-2.6-flare)、[Image generation](https://developers.openai.com/api/docs/guides/image-generation)（2026-11-05 核对，2.6 的 `xhigh` / `max`、现有栅格输出及新参数的范围）
 - OpenAI：[Create image](https://developers.openai.com/api/reference/cli/resources/images/methods/generate/index.md)、[Create image edit](https://developers.openai.com/api/reference/cli/resources/images/methods/edit/index.md)（2026-10 版，GPT Image 2.5 的 `xhigh` / `max`、透明背景、自定义尺寸）
 - Google：[Gemini 图片生成](https://ai.google.dev/gemini-api/docs/image-generation)（各模型的 `image_size`、思考档位和默认值、联网搜索）
 - xAI：[Image generation](https://docs.x.ai/developers/model-capabilities/images/generation)（`quality` 只有 `grok-imagine-image-2.0` 支持，取值 low / medium / auto）

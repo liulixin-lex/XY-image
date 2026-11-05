@@ -114,6 +114,9 @@ describe("image model parameters", () => {
       }),
     ).toBe("1K · 1:1");
     expect(modelNote("gpt-image-2.5-sunburst")).toBe("效果优先");
+    expect(modelNote("gpt-image-2.6-sunburst")).toBe("效果优先");
+    expect(modelNote("gpt-image-2.6-flare")).toBe("速度优先");
+    expect(modelNote("gpt-image-2.6")).toBeNull();
     expect(modelNote("gpt-image-2")).toBeNull();
     expect(modelNote("not-in-catalog")).toBeNull();
   });
@@ -121,14 +124,29 @@ describe("image model parameters", () => {
   it("offers each model its own 质量 levels and says what 自动 means (第 66 条)", () => {
     const caps = (id: string) =>
       modelCapabilities({ id, displayName: id, description: "", provider: "xy2api" });
-    expect(qualityOptions(caps("gpt-image-2.5-sunburst"))).toEqual([
-      "auto",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+    for (const id of [
+      "gpt-image-2.5-sunburst",
+      "gpt-image-2.6",
+      "gpt-image-2.6-sunburst",
+      "gpt-image-2.6-flare",
+    ]) {
+      expect(qualityOptions(caps(id))).toEqual([
+        "auto",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]);
+      expect(caps(id)).toMatchObject({
+        resolutions: ["1K", "2K", "4K"],
+        maxRatio: { "1K": 1.6 },
+        maxInputImages: 10,
+        backgrounds: ["auto", "opaque", "transparent"],
+        outputFormats: ["jpeg", "png", "webp"],
+        moderations: ["auto", "low"],
+      });
+    }
     expect(qualityOptions(caps("gpt-image-2"))).toEqual(["auto", "low", "medium", "high"]);
     expect(qualityOptions(caps("grok-imagine-image"))).toEqual(["auto"]);
     expect(qualityHint("auto", caps("nano-banana-2.1"))).toBe("由模型决定，相当于中");
